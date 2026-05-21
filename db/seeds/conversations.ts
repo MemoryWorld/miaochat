@@ -27,6 +27,7 @@ export function buildSeedConversations(workspaceId = "default-workspace"): {
         createdAt: new Date(),
         id: "msg_seed_1",
         isPinned: true,
+        mentionedAgentIds: [],
         role: "user",
         sourceAgentId: null,
         workspaceId

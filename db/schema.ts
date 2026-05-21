@@ -69,6 +69,7 @@ export const messages = pgTable("messages", {
     .references(() => conversations.id, { onDelete: "cascade" }),
   id: text("id").primaryKey(),
   isPinned: boolean("is_pinned").notNull().default(false),
+  mentionedAgentIds: jsonb("mentioned_agent_ids").$type<string[]>().notNull().default([]),
   role: messageRole("role").notNull(),
   sourceAgentId: text("source_agent_id"),
   workspaceId: text("workspace_id").notNull(),

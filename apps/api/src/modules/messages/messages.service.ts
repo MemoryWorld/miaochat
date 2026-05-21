@@ -12,6 +12,7 @@ import {
 import type { PoolClient } from "pg";
 import { z } from "zod";
 
+import { GroupMembersService } from "../conversations/group-members.service.js";
 import { DatabaseService } from "../database/database.service.js";
 
 type MessageRow = {
@@ -20,6 +21,7 @@ type MessageRow = {
   created_at: Date;
   id: string;
   is_pinned: boolean;
+  mentioned_agent_ids: string[];
   role: Message["role"];
   source_agent_id: string | null;
   workspace_id: string;
@@ -29,6 +31,7 @@ type CreateStoredMessageInput = {
   content: string;
   conversationId: string;
   id: string;
+  mentionedAgentIds: string[];
   role: Message["role"];
   sourceAgentId: string | null;
   workspaceId: string;
@@ -46,15 +49,24 @@ export type PinMessageResponse = {
 
 @Injectable()
 export class MessagesService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(GroupMembersService) private readonly groupMembersService: GroupMembersService
+  ) {}
 
   async create(input: unknown): Promise<Message> {
     const parsed = createMessageInputSchema.parse(input);
+    const mentionedAgentIds = await this.groupMembersService.resolveMentionedAgentIds({
+      conversationId: parsed.conversationId,
+      mentionedAgentIds: parsed.mentionedAgentIds,
+      workspaceId: parsed.workspaceId
+    });
 
     return this.createStored({
       content: parsed.content,
       conversationId: parsed.conversationId,
       id: randomUUID(),
+      mentionedAgentIds,
       role: parsed.role,
       sourceAgentId: null,
       workspaceId: parsed.workspaceId
@@ -72,6 +84,7 @@ export class MessagesService {
       content: input.content,
       conversationId: input.conversationId,
       id: input.id,
+      mentionedAgentIds: [],
       role: "assistant",
       sourceAgentId: input.sourceAgentId,
       workspaceId: input.workspaceId
@@ -92,6 +105,7 @@ export class MessagesService {
         content: input.content,
         conversationId: input.conversationId,
         id: input.id,
+        mentionedAgentIds: input.mentionedAgentIds,
         role: input.role,
         sourceAgentId: input.sourceAgentId,
         workspaceId: input.workspaceId
@@ -108,16 +122,18 @@ export class MessagesService {
               conversation_id,
               role,
               content,
+              mentioned_agent_ids,
               source_agent_id,
               is_pinned,
               workspace_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
             RETURNING
               id,
               conversation_id,
               role,
               content,
+              mentioned_agent_ids,
               created_at,
               is_pinned,
               source_agent_id,
@@ -128,6 +144,7 @@ export class MessagesService {
             parsed.conversationId,
             parsed.role,
             parsed.content,
+            JSON.stringify(parsed.mentionedAgentIds),
             parsed.sourceAgentId,
             false,
             parsed.workspaceId
@@ -153,6 +170,7 @@ export class MessagesService {
           conversation_id,
           role,
           content,
+          mentioned_agent_ids,
           created_at,
           is_pinned,
           source_agent_id,
@@ -185,6 +203,7 @@ export class MessagesService {
               conversation_id,
               role,
               content,
+              mentioned_agent_ids,
               created_at,
               is_pinned,
               source_agent_id,
@@ -258,6 +277,7 @@ function mapMessageRow(row: MessageRow | undefined): Message {
     createdAt: row.created_at,
     id: row.id,
     isPinned: row.is_pinned,
+    mentionedAgentIds: row.mentioned_agent_ids ?? [],
     role: row.role,
     sourceAgentId: row.source_agent_id,
     workspaceId: row.workspace_id

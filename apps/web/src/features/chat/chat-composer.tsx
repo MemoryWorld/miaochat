@@ -2,13 +2,28 @@
 
 import { useState } from "react";
 
-type ChatComposerProps = {
-  disabled?: boolean;
-  onSend: (content: string) => Promise<void>;
+import type { ConversationAgentMember } from "@agenthub/contracts";
+
+import { AgentMentionInput } from "./agent-mention-input";
+
+type ChatSendInput = {
+  content: string;
+  mentionedAgentIds: string[];
 };
 
-export function ChatComposer({ disabled = false, onSend }: ChatComposerProps) {
+type ChatComposerProps = {
+  disabled?: boolean;
+  onSend: (input: ChatSendInput) => Promise<void>;
+  participants?: ConversationAgentMember[];
+};
+
+export function ChatComposer({
+  disabled = false,
+  onSend,
+  participants = []
+}: ChatComposerProps) {
   const [content, setContent] = useState("");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   return (
     <form
@@ -21,8 +36,12 @@ export function ChatComposer({ disabled = false, onSend }: ChatComposerProps) {
           return;
         }
 
-        await onSend(trimmed);
+        await onSend({
+          content: trimmed,
+          mentionedAgentIds: selectedAgentId ? [selectedAgentId] : []
+        });
         setContent("");
+        setSelectedAgentId(null);
       }}
       style={{
         borderTop: "1px solid rgba(15, 23, 42, 0.08)",
@@ -32,6 +51,15 @@ export function ChatComposer({ disabled = false, onSend }: ChatComposerProps) {
         paddingTop: "1rem"
       }}
     >
+      <AgentMentionInput
+        disabled={disabled}
+        onSelectAgent={({ agentId, mentionLabel }) => {
+          setSelectedAgentId(agentId);
+          setContent((current) => replaceLeadingMention(current, mentionLabel));
+        }}
+        participants={participants}
+        selectedAgentId={selectedAgentId}
+      />
       <label
         htmlFor="chat-composer-input"
         style={{
@@ -84,3 +112,10 @@ const buttonStyle = {
   fontWeight: 600,
   padding: "0.75rem 1.1rem"
 } as const;
+
+function replaceLeadingMention(content: string, mentionLabel: string): string {
+  const trimmedStart = content.trimStart();
+  const withoutExistingMention = trimmedStart.replace(/^@\S+\s*/, "");
+
+  return `${mentionLabel} ${withoutExistingMention}`.trimEnd();
+}

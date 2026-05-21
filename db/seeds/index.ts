@@ -59,8 +59,17 @@ async function seed(): Promise<void> {
     for (const message of messages) {
       await client.query(
         `
-          INSERT INTO messages (id, conversation_id, role, content, source_agent_id, is_pinned, workspace_id)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          INSERT INTO messages (
+            id,
+            conversation_id,
+            role,
+            content,
+            mentioned_agent_ids,
+            source_agent_id,
+            is_pinned,
+            workspace_id
+          )
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
           ON CONFLICT (id) DO NOTHING
         `,
         [
@@ -68,6 +77,7 @@ async function seed(): Promise<void> {
           message.conversationId,
           message.role,
           message.content,
+          JSON.stringify(message.mentionedAgentIds),
           message.sourceAgentId,
           message.isPinned,
           message.workspaceId

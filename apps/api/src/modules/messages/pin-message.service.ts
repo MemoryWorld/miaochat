@@ -11,6 +11,7 @@ type PinnedMessageRow = {
   created_at: Date;
   id: string;
   is_pinned: boolean;
+  mentioned_agent_ids: string[];
   role: Message["role"];
   source_agent_id: string | null;
   workspace_id: string;
@@ -31,6 +32,7 @@ export class PinMessageService {
           conversation_id,
           role,
           content,
+          mentioned_agent_ids,
           created_at,
           is_pinned,
           source_agent_id,
@@ -53,6 +55,7 @@ function mapPinnedMessageRow(row: PinnedMessageRow): Message {
     createdAt: row.created_at,
     id: row.id,
     isPinned: row.is_pinned,
+    mentionedAgentIds: row.mentioned_agent_ids ?? [],
     role: row.role,
     sourceAgentId: row.source_agent_id,
     workspaceId: row.workspace_id

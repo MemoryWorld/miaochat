@@ -27,6 +27,22 @@ export const createConversationInputSchema = z.object({
   mode: conversationModeSchema,
   agentIds: z.array(z.string().min(1)).min(1),
   workspaceId: workspaceIdSchema.optional()
+}).superRefine((value, context) => {
+  if (value.mode === "direct" && value.agentIds.length !== 1) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Direct conversations must bind exactly one agent.",
+      path: ["agentIds"]
+    });
+  }
+
+  if (value.mode === "group" && value.agentIds.length < 2) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Group conversations must include at least two agents.",
+      path: ["agentIds"]
+    });
+  }
 });
 
 export type Conversation = z.infer<typeof conversationSchema>;

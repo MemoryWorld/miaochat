@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   conversationSchema,
+  createConversationInputSchema,
   createCustomAgentInputSchema,
   createProviderCredentialInputSchema,
   streamEventSchema
@@ -62,5 +63,14 @@ describe("@agenthub/contracts", () => {
     });
 
     expect(parsed.kind).toBe("conversation.message.delta");
+  });
+
+  it("requires group conversations to include at least two agents", () => {
+    const parsed = createConversationInputSchema.safeParse({
+      agentIds: ["agent_1"],
+      mode: "group"
+    });
+
+    expect(parsed.success).toBe(false);
   });
 });

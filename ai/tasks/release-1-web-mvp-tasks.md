@@ -113,7 +113,7 @@ Tasks are ordered by dependency. Execution should start at the top and move down
 
 ## Phase 5: Group Chat And Orchestration
 
-- [ ] Task 20: Implement group-conversation membership and `@agent` targeting
+- [x] Task 20: Implement group-conversation membership and `@agent` targeting
   - Acceptance: A conversation can include multiple agents, and user messages can target a specific agent by explicit mention.
   - Verify: `pnpm test:integration`; `pnpm --filter web test`
   - Files: `db/migrations/0002_group-conversation.sql`, `apps/api/src/modules/conversations/group-members.service.ts`, `apps/web/src/features/chat/agent-mention-input.tsx`, `packages/contracts/src/conversation.ts`, `tests/integration/group-membership.spec.ts`

@@ -11,6 +11,7 @@ export const messageSchema = z.object({
   content: z.string().min(1),
   createdAt: z.coerce.date(),
   isPinned: z.boolean().default(false),
+  mentionedAgentIds: z.array(z.string().min(1)).default([]),
   sourceAgentId: z.string().min(1).nullable().default(null),
   workspaceId: z.string().min(1).default("default-workspace")
 });

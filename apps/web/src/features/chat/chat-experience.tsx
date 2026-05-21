@@ -144,7 +144,10 @@ export function ChatExperience() {
     }
   }
 
-  async function handleSend(content: string): Promise<void> {
+  async function handleSend(input: {
+    content: string;
+    mentionedAgentIds: string[];
+  }): Promise<void> {
     if (!selectedConversationId) {
       return;
     }
@@ -155,8 +158,9 @@ export function ChatExperience() {
     try {
       const response = await fetch(`${apiBaseUrl}/messages/send`, {
         body: JSON.stringify({
-          content,
+          content: input.content,
           conversationId: selectedConversationId,
+          mentionedAgentIds: input.mentionedAgentIds,
           role: "user",
           workspaceId
         }),
@@ -328,6 +332,7 @@ export function ChatExperience() {
         <ChatComposer
           disabled={!selectedConversationId || isSending}
           onSend={handleSend}
+          participants={selectedConversation?.participants ?? []}
         />
       </section>
     </AppShell>
