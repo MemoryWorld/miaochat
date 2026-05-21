@@ -4,11 +4,13 @@ import { startTransition, useEffect, useRef, useState } from "react";
 
 import type {
   Conversation,
+  CustomAgent,
   Message,
   OrchestratorStatusEventPayload
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
+import { NewConversationDialog } from "../conversations/new-conversation-dialog";
 import { ChatComposer } from "./chat-composer";
 import { ChatThread } from "./chat-thread";
 import { useConversationStream } from "./use-conversation-stream";
@@ -23,8 +25,11 @@ type LiveAssistantMessage = {
 
 export function ChatExperience() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [customAgents, setCustomAgents] = useState<CustomAgent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isLoadingCustomAgents, setIsLoadingCustomAgents] = useState(false);
+  const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [isPinningMessageId, setIsPinningMessageId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [liveAssistantMessage, setLiveAssistantMessage] =
@@ -136,31 +141,77 @@ export function ChatExperience() {
     });
   }
 
+  async function loadCustomAgents(): Promise<void> {
+    setIsLoadingCustomAgents(true);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/custom-agents?workspaceId=${workspaceId}`
+      );
+      const payload = (await response.json()) as CustomAgent[];
+
+      startTransition(() => {
+        setCustomAgents(payload);
+      });
+    } finally {
+      setIsLoadingCustomAgents(false);
+    }
+  }
+
+  async function createConversation(agentIds: string[]): Promise<void> {
+    const response = await fetch(`${apiBaseUrl}/conversations`, {
+      body: JSON.stringify({
+        agentIds,
+        mode: "direct",
+        workspaceId
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json()) as { message?: string };
+      throw new Error(payload.message ?? "Failed to create the conversation.");
+    }
+
+    const payload = (await response.json()) as Conversation;
+
+    startTransition(() => {
+      setConversations((current) => [payload, ...current]);
+      setSelectedConversationId(payload.id);
+    });
+  }
+
   async function handleCreateConversation(): Promise<void> {
     setErrorMessage(null);
     setIsCreating(true);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/conversations`, {
-        body: JSON.stringify({
-          agentIds: ["agent_mock"],
-          mode: "direct",
-          workspaceId
-        }),
-        headers: {
-          "Content-Type": "application/json"
-        },
-        method: "POST"
-      });
-      const payload = (await response.json()) as Conversation;
-
-      startTransition(() => {
-        setConversations((current) => [payload, ...current]);
-        setSelectedConversationId(payload.id);
-      });
+      await createConversation(["agent_mock"]);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to create the mock conversation."
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  async function handleCreateCustomConversation(agentId: string): Promise<void> {
+    setErrorMessage(null);
+    setIsCreating(true);
+
+    try {
+      await createConversation([agentId]);
+
+      startTransition(() => {
+        setIsNewConversationOpen(false);
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to create the custom conversation."
       );
     } finally {
       setIsCreating(false);
@@ -260,9 +311,12 @@ export function ChatExperience() {
         <>
           <h1 style={{ marginTop: 0 }}>AgentHub</h1>
           <p style={{ color: "#475467", lineHeight: 1.6 }}>
-            Release 1 mock slice: start one seeded mock conversation and verify the
-            browser-to-worker loop before group orchestration lands.
+            Release 1 keeps the mock direct path for smoke checks, while custom agents
+            can now be created separately and selected for new sessions.
           </p>
+          <a href="/agents" style={linkStyle}>
+            Open agents workspace
+          </a>
           <button
             disabled={isCreating}
             onClick={() => {
@@ -273,6 +327,19 @@ export function ChatExperience() {
           >
             Start mock conversation
           </button>
+          <NewConversationDialog
+            agents={customAgents}
+            busy={isCreating}
+            isLoading={isLoadingCustomAgents}
+            isOpen={isNewConversationOpen}
+            onCreate={handleCreateCustomConversation}
+            onOpen={async () => {
+              if (customAgents.length === 0) {
+                await loadCustomAgents();
+              }
+            }}
+            onToggleOpen={setIsNewConversationOpen}
+          />
           <div
             style={{
               display: "grid",
@@ -384,6 +451,14 @@ const conversationButtonStyle = {
   gap: "0.35rem",
   padding: "0.8rem 0.9rem",
   textAlign: "left"
+} as const;
+
+const linkStyle = {
+  color: "#0b6eff",
+  display: "inline-block",
+  fontWeight: 600,
+  marginTop: "0.1rem",
+  textDecoration: "none"
 } as const;
 
 function mergeMessages(

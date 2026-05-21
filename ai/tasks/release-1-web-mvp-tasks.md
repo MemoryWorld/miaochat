@@ -140,10 +140,10 @@ Tasks are ordered by dependency. Execution should start at the top and move down
   - Verify: `pnpm --filter @agenthub/tool-runtime test`; `pnpm test:integration`
   - Files: `packages/tool-runtime/package.json`, `packages/tool-runtime/src/tool-registry.ts`, `packages/tool-runtime/src/tool-loader.ts`, `apps/api/src/modules/tools/tool-registration.service.ts`, `tests/integration/tool-registry.spec.ts`
 
-- [ ] Task 25: Add the web flows for custom-agent creation and selection
+- [x] Task 25: Add the web flows for custom-agent creation and selection
   - Acceptance: Users can create a light custom agent in the UI and select it in a conversation create flow.
   - Verify: `pnpm --filter web test`; `pnpm test:e2e`
-  - Files: `apps/web/src/app/agents/page.tsx`, `apps/web/src/features/agents/agent-form.tsx`, `apps/web/src/features/agents/agent-list.tsx`, `apps/web/src/features/conversations/new-conversation-dialog.tsx`, `tests/e2e/custom-agent-ui.spec.ts`
+  - Files: `apps/web/src/app/agents/page.tsx`, `apps/web/src/features/agents/agent-form.tsx`, `apps/web/src/features/agents/agent-list.tsx`, `apps/web/src/features/conversations/new-conversation-dialog.tsx`, `tests/e2e/custom-agent-ui.spec.tsx`
 
 ## Phase 7: Artifact Layer
 
