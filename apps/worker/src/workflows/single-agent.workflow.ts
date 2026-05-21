@@ -1,4 +1,4 @@
-import type { AgentExecutionResult } from "@agenthub/agent-sdk";
+import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
 import { MockDirectAdapter } from "@agenthub/agent-adapters";
 
 const adapter = new MockDirectAdapter();
@@ -6,6 +6,7 @@ const adapter = new MockDirectAdapter();
 export type SingleAgentWorkflowInput = {
   agentId: string;
   conversationId: string;
+  context?: AgentExecutionContext;
   message: string;
   workspaceId: string;
 };

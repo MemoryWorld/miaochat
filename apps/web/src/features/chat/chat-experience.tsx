@@ -21,6 +21,7 @@ export function ChatExperience() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isPinningMessageId, setIsPinningMessageId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [liveAssistantMessage, setLiveAssistantMessage] =
     useState<LiveAssistantMessage | null>(null);
@@ -105,7 +106,7 @@ export function ChatExperience() {
     const payload = (await response.json()) as Message[];
 
     startTransition(() => {
-      setMessages(payload);
+      setMessages((current) => mergeMessages(current, payload, conversationId));
       setLiveAssistantMessage((current) =>
         current && payload.some((message) => message.id === current.id) ? null : current
       );
@@ -175,6 +176,54 @@ export function ChatExperience() {
       );
     } finally {
       setIsSending(false);
+    }
+  }
+
+  async function handlePinMessage(messageId: string): Promise<void> {
+    if (!selectedConversationId) {
+      return;
+    }
+
+    const conversationId = selectedConversationId;
+
+    setErrorMessage(null);
+    setIsPinningMessageId(messageId);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/messages/${messageId}/pin?workspaceId=${workspaceId}`,
+        {
+          method: "POST"
+        }
+      );
+      const payload = (await response.json()) as {
+        message: Message;
+        pinnedMessageIds: string[];
+      };
+
+      startTransition(() => {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === payload.message.id ? payload.message : message
+          )
+        );
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  pinnedMessageIds: payload.pinnedMessageIds
+                }
+              : conversation
+          )
+        );
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to pin the selected message."
+      );
+    } finally {
+      setIsPinningMessageId(null);
     }
   }
 
@@ -271,8 +320,10 @@ export function ChatExperience() {
         ) : null}
         <ChatThread
           connectionState={stream.connectionState}
+          isPinningMessageId={isPinningMessageId}
           liveAssistantMessage={liveAssistantMessage}
           messages={messages}
+          onPinMessage={handlePinMessage}
         />
         <ChatComposer
           disabled={!selectedConversationId || isSending}
@@ -305,3 +356,24 @@ const conversationButtonStyle = {
   padding: "0.8rem 0.9rem",
   textAlign: "left"
 } as const;
+
+function mergeMessages(
+  currentMessages: Message[],
+  nextMessages: Message[],
+  conversationId: string
+): Message[] {
+  const merged = new Map(
+    currentMessages
+      .filter((message) => message.conversationId === conversationId)
+      .map((message) => [message.id, message])
+  );
+
+  for (const message of nextMessages) {
+    merged.set(message.id, message);
+  }
+
+  return [...merged.values()].sort(
+    (left, right) =>
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+  );
+}

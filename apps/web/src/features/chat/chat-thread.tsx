@@ -1,18 +1,24 @@
 import type { Message } from "@agenthub/contracts";
 
+import { PinMessageAction } from "./pin-message-action";
+
 type ChatThreadProps = {
   connectionState: "connecting" | "error" | "idle" | "open";
+  isPinningMessageId: string | null;
   liveAssistantMessage: {
     content: string;
     id: string;
   } | null;
   messages: Message[];
+  onPinMessage: (messageId: string) => Promise<void>;
 };
 
 export function ChatThread({
   connectionState,
+  isPinningMessageId,
   liveAssistantMessage,
-  messages
+  messages,
+  onPinMessage
 }: ChatThreadProps) {
   const hasPersistedLiveMessage =
     liveAssistantMessage &&
@@ -72,6 +78,15 @@ export function ChatThread({
             {message.role}
           </div>
           <div style={{ lineHeight: 1.7 }}>{message.content}</div>
+          <PinMessageAction
+            disabled={isPinningMessageId !== null && isPinningMessageId !== message.id}
+            isPending={isPinningMessageId === message.id}
+            isPinned={message.isPinned}
+            onPin={() => {
+              void onPinMessage(message.id);
+            }}
+            tone={message.role === "user" ? "dark" : "light"}
+          />
         </article>
       ))}
       {liveAssistantMessage && !hasPersistedLiveMessage ? (

@@ -1,11 +1,19 @@
 import type {
+  Message,
   ProviderId,
   StreamEvent
 } from "@agenthub/contracts";
 
+export type AgentPinnedMessage = Pick<Message, "content" | "id" | "role">;
+
+export type AgentExecutionContext = {
+  pinnedMessages: AgentPinnedMessage[];
+};
+
 export type AgentExecutionRequest = {
   agentId: string;
   conversationId: string;
+  context?: AgentExecutionContext;
   credentialId?: string;
   message: string;
   provider: ProviderId;

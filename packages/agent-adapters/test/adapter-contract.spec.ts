@@ -32,4 +32,26 @@ describe("@agenthub/agent-adapters", () => {
 
     expect(result.finalContent).toContain("[mock-group:agent_2]");
   });
+
+  it("includes pinned context in the mock direct adapter replay payload", async () => {
+    const adapter = new MockDirectAdapter();
+    const result = await adapter.execute({
+      agentId: "agent_1",
+      context: {
+        pinnedMessages: [
+          {
+            content: "remember this note",
+            id: "msg_pinned_1",
+            role: "user"
+          }
+        ]
+      },
+      conversationId: "conv_1",
+      message: "apply it",
+      provider: "mock",
+      workspaceId: "workspace_1"
+    });
+
+    expect(result.finalContent).toContain("[pinned] remember this note");
+  });
 });

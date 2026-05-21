@@ -106,7 +106,7 @@ Tasks are ordered by dependency. Execution should start at the top and move down
   - Verify: `pnpm test:e2e`; `pnpm test:integration`
   - Files: `apps/api/src/modules/messages/message-dispatch.service.ts`, `apps/worker/src/workflows/single-agent.workflow.ts`, `apps/web/src/features/chat/chat-thread.tsx`, `apps/web/src/features/chat/chat-composer.tsx`, `tests/e2e/single-agent-mock.spec.ts`
 
-- [ ] Task 19: Add pinned-context retrieval and replay behavior
+- [x] Task 19: Add pinned-context retrieval and replay behavior
   - Acceptance: Pinned messages are persisted, reloaded, and included in the assembled context passed to the provider execution path.
   - Verify: `pnpm test:integration`; `pnpm test:e2e`
   - Files: `packages/domain/src/context/context-assembler.ts`, `apps/api/src/modules/messages/pin-message.service.ts`, `apps/web/src/features/chat/pin-message-action.tsx`, `tests/integration/pinned-context.spec.ts`, `tests/e2e/pinned-context.spec.ts`

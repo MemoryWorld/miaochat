@@ -5,10 +5,11 @@ import { StreamsModule } from "../streams/streams.module.js";
 import { MessageDispatchService } from "./message-dispatch.service.js";
 import { MessagesController } from "./messages.controller.js";
 import { MessagesService } from "./messages.service.js";
+import { PinMessageService } from "./pin-message.service.js";
 
 @Module({
   controllers: [MessagesController],
   imports: [DatabaseModule, StreamsModule],
-  providers: [MessagesService, MessageDispatchService]
+  providers: [MessagesService, PinMessageService, MessageDispatchService]
 })
 export class MessagesModule {}

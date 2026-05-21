@@ -19,6 +19,7 @@ import { z } from "zod";
 import { DatabaseService } from "../database/database.service.js";
 import { StreamBrokerService } from "../streams/stream-broker.service.js";
 import { MessagesService } from "./messages.service.js";
+import { PinMessageService } from "./pin-message.service.js";
 
 const resolvedConversationAgentSchema = z.object({
   agentId: z.string().min(1),
@@ -34,6 +35,7 @@ export class MessageDispatchService implements OnModuleDestroy {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(MessagesService) private readonly messagesService: MessagesService,
+    @Inject(PinMessageService) private readonly pinMessageService: PinMessageService,
     @Inject(StreamBrokerService) private readonly streamBroker: StreamBrokerService
   ) {}
 
@@ -81,9 +83,18 @@ export class MessageDispatchService implements OnModuleDestroy {
     message: string;
     workspaceId: string;
   }): Promise<void> {
+    const context = await this.pinMessageService.loadConversationContext(
+      input.conversationId,
+      input.workspaceId
+    );
     const client = await this.getTemporalClient();
     const execution = (await client.workflow.execute("singleAgentWorkflow", {
-      args: [input],
+      args: [
+        {
+          ...input,
+          context
+        }
+      ],
       taskQueue: process.env.WORKER_TASK_QUEUE ?? "agenthub-default",
       workflowId: `single-agent:${input.conversationId}:${randomUUID()}`
     })) as {
