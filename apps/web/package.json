@@ -1,0 +1,26 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "clean": "rm -rf .next",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@agenthub/contracts": "workspace:*",
+    "next": "^15.0.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "jsdom": "^25.0.1"
+  }
+}
