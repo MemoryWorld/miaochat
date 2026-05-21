@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { streamEventKindSchema } from "./database-enums.js";
+import { orchestratorStatusEventPayloadSchema } from "./orchestrator-event.js";
 
 const startedPayloadSchema = z.object({
   messageId: z.string().min(1)
@@ -14,11 +15,6 @@ const deltaPayloadSchema = z.object({
 const completedPayloadSchema = z.object({
   finalContent: z.string(),
   messageId: z.string().min(1)
-});
-
-const statusPayloadSchema = z.object({
-  label: z.string().min(1),
-  state: z.enum(["failed", "running", "succeeded"])
 });
 
 export const streamEventSchema = z.discriminatedUnion("kind", [
@@ -36,7 +32,7 @@ export const streamEventSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal(streamEventKindSchema.enum["conversation.status"]),
-    payload: statusPayloadSchema
+    payload: orchestratorStatusEventPayloadSchema
   })
 ]);
 

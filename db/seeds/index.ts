@@ -90,7 +90,7 @@ async function seed(): Promise<void> {
         `
           INSERT INTO custom_agents (id, avatar_url, capability_tags, name, provider, system_prompt, tool_bindings, workspace_id)
           VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8)
-          ON CONFLICT (id) DO NOTHING
+          ON CONFLICT DO NOTHING
         `,
         [
           agent.id,

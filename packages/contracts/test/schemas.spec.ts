@@ -65,6 +65,31 @@ describe("@agenthub/contracts", () => {
     expect(parsed.kind).toBe("conversation.message.delta");
   });
 
+  it("supports structured orchestrator status events", () => {
+    const parsed = streamEventSchema.parse({
+      kind: "conversation.status",
+      payload: {
+        failures: [
+          {
+            agentId: "agent_failure",
+            agentName: "Failure Scout",
+            code: "error",
+            detail: "Mock dispatch failed before completion.",
+            provider: "mock"
+          }
+        ],
+        label: "orchestrator.partial_failure",
+        state: "failed",
+        successfulAgentCount: 1,
+        summary: "1 of 2 agents failed or timed out. Aggregated the remaining result.",
+        totalAgentCount: 2
+      }
+    });
+
+    expect(parsed.payload.failures).toHaveLength(1);
+    expect(parsed.payload.label).toBe("orchestrator.partial_failure");
+  });
+
   it("requires group conversations to include at least two agents", () => {
     const parsed = createConversationInputSchema.safeParse({
       agentIds: ["agent_1"],

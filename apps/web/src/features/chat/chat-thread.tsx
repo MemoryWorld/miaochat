@@ -1,6 +1,7 @@
-import type { Message } from "@agenthub/contracts";
+import type { Message, OrchestratorStatusEventPayload } from "@agenthub/contracts";
 
 import { PinMessageAction } from "./pin-message-action";
+import { SystemStatusCard } from "./system-status-card";
 
 type ChatThreadProps = {
   connectionState: "connecting" | "error" | "idle" | "open";
@@ -11,6 +12,7 @@ type ChatThreadProps = {
   } | null;
   messages: Message[];
   onPinMessage: (messageId: string) => Promise<void>;
+  statusEvents: OrchestratorStatusEventPayload[];
 };
 
 export function ChatThread({
@@ -18,7 +20,8 @@ export function ChatThread({
   isPinningMessageId,
   liveAssistantMessage,
   messages,
-  onPinMessage
+  onPinMessage,
+  statusEvents
 }: ChatThreadProps) {
   const hasPersistedLiveMessage =
     liveAssistantMessage &&
@@ -39,6 +42,12 @@ export function ChatThread({
       >
         Stream state: {connectionState}
       </div>
+      {statusEvents.map((event, index) => (
+        <SystemStatusCard
+          event={event}
+          key={`${event.label}:${event.successfulAgentCount}:${event.failures.length}:${index}`}
+        />
+      ))}
       {messages.length === 0 && !liveAssistantMessage ? (
         <div
           style={{

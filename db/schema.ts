@@ -1,6 +1,7 @@
 import {
   boolean,
   jsonb,
+  primaryKey,
   pgEnum,
   pgTable,
   text,
@@ -88,23 +89,32 @@ export const providerCredentials = pgTable("provider_credentials", {
   ...timestampColumns
 });
 
-export const customAgents = pgTable("custom_agents", {
-  avatarUrl: text("avatar_url"),
-  capabilityTags: jsonb("capability_tags").$type<string[]>().notNull().default([]),
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  provider: providerId("provider").notNull(),
-  systemPrompt: text("system_prompt").notNull(),
-  toolBindings: jsonb("tool_bindings").$type<
-    Array<{
-      configPath: string | null;
-      name: string;
-      runtime: "config_file" | "server_registration";
-    }>
-  >().notNull().default([]),
-  workspaceId: text("workspace_id").notNull(),
-  ...timestampColumns
-});
+export const customAgents = pgTable(
+  "custom_agents",
+  {
+    avatarUrl: text("avatar_url"),
+    capabilityTags: jsonb("capability_tags").$type<string[]>().notNull().default([]),
+    id: text("id").notNull(),
+    name: text("name").notNull(),
+    provider: providerId("provider").notNull(),
+    systemPrompt: text("system_prompt").notNull(),
+    toolBindings: jsonb("tool_bindings").$type<
+      Array<{
+        configPath: string | null;
+        name: string;
+        runtime: "config_file" | "server_registration";
+      }>
+    >().notNull().default([]),
+    workspaceId: text("workspace_id").notNull(),
+    ...timestampColumns
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.workspaceId, table.id],
+      name: "custom_agents_pkey"
+    })
+  })
+);
 
 export const artifacts = pgTable("artifacts", {
   id: text("id").primaryKey(),

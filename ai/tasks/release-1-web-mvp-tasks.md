@@ -123,14 +123,14 @@ Tasks are ordered by dependency. Execution should start at the top and move down
   - Verify: `pnpm --filter worker test`; `pnpm test:integration`
   - Files: `apps/worker/src/workflows/group-orchestrator.workflow.ts`, `apps/worker/src/activities/dispatch-agent.activity.ts`, `apps/worker/src/activities/aggregate-results.activity.ts`, `packages/domain/src/orchestration/orchestrator-state.ts`, `tests/integration/group-orchestrator.spec.ts`
 
-- [ ] Task 22: Add partial-failure, timeout, and downgrade surfaces to group chat
+- [x] Task 22: Add partial-failure, timeout, and downgrade surfaces to group chat
   - Acceptance: If one sub-agent fails or times out, the conversation timeline still receives structured partial-failure output and the orchestrator completes deterministically.
   - Verify: `pnpm --filter worker test`; `pnpm test:e2e`
   - Files: `apps/worker/src/activities/failure-handling.activity.ts`, `packages/contracts/src/orchestrator-event.ts`, `apps/web/src/features/chat/system-status-card.tsx`, `tests/integration/group-failure.spec.ts`, `tests/e2e/group-failure.spec.ts`
 
 ## Phase 6: Custom Agents And Tool Runtime
 
-- [ ] Task 23: Implement the custom-agent registry and persistence layer
+- [x] Task 23: Implement the custom-agent registry and persistence layer
   - Acceptance: The platform can persist light custom-agent definitions with prompts, tags, provider bindings, and tool references.
   - Verify: `pnpm --filter api test`; `pnpm test:integration`
   - Files: `apps/api/src/modules/custom-agents/custom-agents.controller.ts`, `apps/api/src/modules/custom-agents/custom-agents.service.ts`, `db/migrations/0003_custom-agents.sql`, `packages/contracts/src/custom-agent.ts`, `tests/integration/custom-agent-api.spec.ts`

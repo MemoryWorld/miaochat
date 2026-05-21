@@ -1,0 +1,88 @@
+"use client";
+
+import type { OrchestratorStatusEventPayload } from "@agenthub/contracts";
+
+type SystemStatusCardProps = {
+  event: OrchestratorStatusEventPayload;
+};
+
+export function SystemStatusCard({ event }: SystemStatusCardProps) {
+  const accentColor =
+    event.state === "failed"
+      ? "#b42318"
+      : event.state === "succeeded"
+        ? "#175cd3"
+        : "#475467";
+  const backgroundColor =
+    event.state === "failed"
+      ? "rgba(254, 228, 226, 0.72)"
+      : event.state === "succeeded"
+        ? "rgba(217, 239, 255, 0.76)"
+        : "rgba(243, 244, 246, 0.92)";
+
+  return (
+    <article
+      style={{
+        background: backgroundColor,
+        border: `1px solid ${accentColor}22`,
+        borderRadius: "18px",
+        justifySelf: "start",
+        maxWidth: "80%",
+        padding: "0.85rem 1rem"
+      }}
+    >
+      <div
+        style={{
+          color: accentColor,
+          fontSize: "0.8rem",
+          fontWeight: 700,
+          letterSpacing: "0.02em",
+          marginBottom: "0.35rem",
+          textTransform: "uppercase"
+        }}
+      >
+        {formatStatusHeading(event.label)}
+      </div>
+      <div
+        style={{
+          color: "#101828",
+          lineHeight: 1.6
+        }}
+      >
+        {event.summary ?? buildFallbackSummary(event)}
+      </div>
+      {event.failures.length > 0 ? (
+        <ul
+          style={{
+            color: "#344054",
+            lineHeight: 1.5,
+            margin: "0.7rem 0 0",
+            paddingLeft: "1.2rem"
+          }}
+        >
+          {event.failures.map((failure) => (
+            <li key={`${event.label}:${failure.agentId}`}>
+              {failure.agentName} · {failure.code}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  );
+}
+
+function buildFallbackSummary(event: OrchestratorStatusEventPayload): string {
+  if (event.state === "failed") {
+    return `${event.failures.length} failures reported while processing ${event.totalAgentCount} agents.`;
+  }
+
+  if (event.state === "succeeded") {
+    return `Completed ${event.successfulAgentCount} of ${event.totalAgentCount} agent results.`;
+  }
+
+  return `Processing ${event.totalAgentCount} agent tasks.`;
+}
+
+function formatStatusHeading(label: OrchestratorStatusEventPayload["label"]): string {
+  return label.replace("orchestrator.", "Orchestrator ").replace(/_/g, " ");
+}

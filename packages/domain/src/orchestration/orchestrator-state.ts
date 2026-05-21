@@ -1,4 +1,9 @@
-import type { ProviderId, StreamEvent } from "@agenthub/contracts";
+import type {
+  OrchestratorFailure,
+  OrchestratorStatusEventPayload,
+  ProviderId,
+  StreamEvent
+} from "@agenthub/contracts";
 
 export type OrchestratorStatus =
   | "aggregated"
@@ -19,6 +24,7 @@ export type OrchestratorResult = OrchestratorTarget & {
 
 export type OrchestratorState = {
   conversationId: string;
+  failures: OrchestratorFailure[];
   message: string;
   results: OrchestratorResult[];
   status: OrchestratorStatus;
@@ -35,6 +41,7 @@ export function createOrchestratorState(input: {
 }): OrchestratorState {
   return {
     conversationId: input.conversationId,
+    failures: [],
     message: input.message,
     results: [],
     status: "received",
@@ -69,19 +76,71 @@ export function recordOrchestratorResults(
   };
 }
 
+export function recordOrchestratorFailures(
+  state: OrchestratorState,
+  failures: OrchestratorFailure[]
+): OrchestratorState {
+  return {
+    ...state,
+    failures: [...failures]
+  };
+}
+
 export function toOrchestratorStatusEvent(
-  status: OrchestratorStatus
+  state: OrchestratorState
 ): StreamEvent {
+  const payload: OrchestratorStatusEventPayload = {
+    failures: [...state.failures],
+    label: `orchestrator.${state.status}`,
+    state: resolveStreamState(state.status),
+    successfulAgentCount: state.results.length,
+    summary: resolveStatusSummary(state),
+    totalAgentCount: state.targets.length
+  };
+
   return {
     kind: "conversation.status",
-    payload: {
-      label: `orchestrator.${status}`,
-      state:
-        status === "aggregated"
-          ? "succeeded"
-          : status === "partial_failure"
-            ? "failed"
-            : "running"
-    }
+    payload
   };
+}
+
+function resolveStreamState(
+  status: OrchestratorStatus
+): OrchestratorStatusEventPayload["state"] {
+  if (status === "aggregated") {
+    return "succeeded";
+  }
+
+  if (status === "partial_failure") {
+    return "failed";
+  }
+
+  return "running";
+}
+
+function resolveStatusSummary(state: OrchestratorState): string {
+  const totalAgentCount = state.targets.length;
+  const successfulAgentCount = state.results.length;
+  const failedAgentCount = state.failures.length;
+
+  switch (state.status) {
+    case "received":
+      return `Accepted the group request for ${totalAgentCount} agents.`;
+    case "dispatched":
+      return `Dispatching ${totalAgentCount} agent tasks.`;
+    case "running":
+      return `Waiting for ${totalAgentCount} agent results.`;
+    case "partial_failure":
+      return failedAgentCount === totalAgentCount
+        ? `${failedAgentCount} of ${totalAgentCount} agents failed or timed out. No successful results remain.`
+        : `${failedAgentCount} of ${totalAgentCount} agents failed or timed out. Aggregated the remaining ${pluralize("result", successfulAgentCount)}.`;
+    case "aggregated":
+      return failedAgentCount > 0
+        ? `Completed with degraded output from ${successfulAgentCount} of ${totalAgentCount} agents.`
+        : `Aggregated ${successfulAgentCount} of ${totalAgentCount} agent results.`;
+  }
+}
+
+function pluralize(noun: string, count: number): string {
+  return count === 1 ? noun : `${noun}s`;
 }

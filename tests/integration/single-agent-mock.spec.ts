@@ -136,7 +136,7 @@ async function seedMockAgent(client: Client): Promise<void> {
         workspace_id
       )
       VALUES ($1, null, '[]'::jsonb, 'Mock Builder', 'mock', 'Test mock agent', '[]'::jsonb, $2)
-      ON CONFLICT (id) DO NOTHING
+      ON CONFLICT DO NOTHING
     `,
     [mockAgentId, workspaceId]
   );

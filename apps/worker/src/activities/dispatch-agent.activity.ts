@@ -5,6 +5,8 @@ import type {
   OrchestratorTarget
 } from "@agenthub/domain/orchestration";
 
+import { maybeThrowMockDispatchFailure } from "./failure-handling.activity.js";
+
 const adapter = new MockGroupAdapter();
 
 export type DispatchAgentActivityInput = OrchestratorTarget & {
@@ -17,6 +19,8 @@ export type DispatchAgentActivityInput = OrchestratorTarget & {
 export async function dispatchAgentActivity(
   input: DispatchAgentActivityInput
 ): Promise<OrchestratorResult> {
+  maybeThrowMockDispatchFailure(input);
+
   const execution = await adapter.execute({
     agentId: input.agentId,
     context: input.context,

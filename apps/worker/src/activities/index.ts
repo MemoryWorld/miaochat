@@ -4,3 +4,4 @@ export async function placeholderActivity(input: string): Promise<string> {
 
 export * from "./aggregate-results.activity.js";
 export * from "./dispatch-agent.activity.js";
+export * from "./failure-handling.activity.js";

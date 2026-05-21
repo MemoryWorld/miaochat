@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   advanceOrchestratorState,
   createOrchestratorState,
+  recordOrchestratorFailures,
   recordOrchestratorResults,
   toOrchestratorStatusEvent
 } from "../src/orchestration/orchestrator-state.js";
@@ -37,18 +38,61 @@ describe("orchestratorState", () => {
       "dispatched",
       "running"
     ]);
-    expect(toOrchestratorStatusEvent("running")).toEqual({
+    expect(toOrchestratorStatusEvent(runningState)).toEqual({
       kind: "conversation.status",
       payload: {
+        failures: [],
         label: "orchestrator.running",
-        state: "running"
+        state: "running",
+        successfulAgentCount: 0,
+        summary: "Waiting for 1 agent results.",
+        totalAgentCount: 1
       }
     });
-    expect(toOrchestratorStatusEvent("aggregated")).toEqual({
+    const partialFailureState = advanceOrchestratorState(
+      recordOrchestratorFailures(runningState, [
+        {
+          agentId: "agent_timeout",
+          agentName: "Timeout Watcher",
+          code: "timeout",
+          detail: "Mock dispatch timed out before completion.",
+          provider: "mock"
+        }
+      ]),
+      "partial_failure"
+    );
+
+    expect(toOrchestratorStatusEvent(partialFailureState)).toEqual({
       kind: "conversation.status",
       payload: {
+        failures: [
+          {
+            agentId: "agent_timeout",
+            agentName: "Timeout Watcher",
+            code: "timeout",
+            detail: "Mock dispatch timed out before completion.",
+            provider: "mock"
+          }
+        ],
+        label: "orchestrator.partial_failure",
+        state: "failed",
+        successfulAgentCount: 0,
+        summary: "1 of 1 agents failed or timed out. No successful results remain.",
+        totalAgentCount: 1
+      }
+    });
+
+    const aggregatedState = advanceOrchestratorState(completedState, "aggregated");
+
+    expect(toOrchestratorStatusEvent(aggregatedState)).toEqual({
+      kind: "conversation.status",
+      payload: {
+        failures: [],
         label: "orchestrator.aggregated",
-        state: "succeeded"
+        state: "succeeded",
+        successfulAgentCount: 1,
+        summary: "Aggregated 1 of 1 agent results.",
+        totalAgentCount: 1
       }
     });
     expect(completedState.results).toEqual([

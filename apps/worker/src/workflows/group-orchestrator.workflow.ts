@@ -4,6 +4,7 @@ import type { StreamEvent } from "@agenthub/contracts";
 import {
   advanceOrchestratorState,
   createOrchestratorState,
+  recordOrchestratorFailures,
   recordOrchestratorResults,
   toOrchestratorStatusEvent,
   type OrchestratorState,
@@ -12,6 +13,10 @@ import {
 
 import { aggregateResultsActivity } from "../activities/aggregate-results.activity.js";
 import { dispatchAgentActivity } from "../activities/dispatch-agent.activity.js";
+import {
+  buildPartialFailureNotice,
+  normalizeDispatchFailure
+} from "../activities/failure-handling.activity.js";
 
 export type GroupOrchestratorWorkflowInput = {
   context?: AgentExecutionContext;
@@ -40,15 +45,15 @@ export async function groupOrchestratorWorkflow(
     targets: input.targets,
     workspaceId: input.workspaceId
   });
-  const streamEvents: StreamEvent[] = [toOrchestratorStatusEvent(state.status)];
+  const streamEvents: StreamEvent[] = [toOrchestratorStatusEvent(state)];
 
   state = advanceOrchestratorState(state, "dispatched");
-  streamEvents.push(toOrchestratorStatusEvent(state.status));
+  streamEvents.push(toOrchestratorStatusEvent(state));
 
   state = advanceOrchestratorState(state, "running");
-  streamEvents.push(toOrchestratorStatusEvent(state.status));
+  streamEvents.push(toOrchestratorStatusEvent(state));
 
-  const results = await Promise.all(
+  const settledResults = await Promise.all(
     input.targets.map((target) =>
       dispatchAgentActivity({
         ...target,
@@ -57,14 +62,56 @@ export async function groupOrchestratorWorkflow(
         message: input.message,
         workspaceId: input.workspaceId
       })
+        .then((result) => ({
+          result,
+          target
+        }))
+        .catch((error: unknown) => ({
+          error,
+          target
+        }))
     )
+  );
+
+  const results = settledResults.flatMap((entry) =>
+    "result" in entry ? [entry.result] : []
+  );
+  const failures = settledResults.flatMap((entry) =>
+    "error" in entry
+      ? [
+          normalizeDispatchFailure({
+            error: entry.error,
+            target: entry.target
+          })
+        ]
+      : []
   );
 
   state = recordOrchestratorResults(state, results);
 
-  const finalContent = await aggregateResultsActivity({
-    results: state.results
-  });
+  if (failures.length > 0) {
+    state = recordOrchestratorFailures(state, failures);
+    state = advanceOrchestratorState(state, "partial_failure");
+    streamEvents.push(toOrchestratorStatusEvent(state));
+  }
+
+  const aggregatedContent =
+    state.results.length > 0
+      ? await aggregateResultsActivity({
+          results: state.results
+        })
+      : "";
+  const partialFailureNotice =
+    failures.length > 0
+      ? await buildPartialFailureNotice({
+          failures: state.failures,
+          results: state.results,
+          totalAgentCount: state.targets.length
+        })
+      : "";
+  const finalContent = [aggregatedContent, partialFailureNotice]
+    .filter((section) => section.length > 0)
+    .join("\n\n");
 
   streamEvents.push(
     ...createMessageLifecycleEvents({
@@ -74,7 +121,7 @@ export async function groupOrchestratorWorkflow(
   );
 
   state = advanceOrchestratorState(state, "aggregated");
-  streamEvents.push(toOrchestratorStatusEvent(state.status));
+  streamEvents.push(toOrchestratorStatusEvent(state));
 
   return {
     finalContent,

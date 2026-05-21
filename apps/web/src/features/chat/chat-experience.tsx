@@ -1,8 +1,12 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 
-import type { Conversation, Message } from "@agenthub/contracts";
+import type {
+  Conversation,
+  Message,
+  OrchestratorStatusEventPayload
+} from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
 import { ChatComposer } from "./chat-composer";
@@ -27,6 +31,7 @@ export function ChatExperience() {
     useState<LiveAssistantMessage | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const processedStreamEventCountRef = useRef(0);
 
   const stream = useConversationStream({
     conversationId: selectedConversationId,
@@ -41,51 +46,69 @@ export function ChatExperience() {
     if (!selectedConversationId) {
       setMessages([]);
       setLiveAssistantMessage(null);
+      processedStreamEventCountRef.current = 0;
       return;
     }
 
+    processedStreamEventCountRef.current = 0;
     void loadMessages(selectedConversationId);
   }, [selectedConversationId]);
 
   useEffect(() => {
-    if (!selectedConversationId || !stream.lastEvent) {
+    if (!selectedConversationId) {
+      processedStreamEventCountRef.current = 0;
       return;
     }
 
-    const event = stream.lastEvent;
+    if (stream.events.length < processedStreamEventCountRef.current) {
+      processedStreamEventCountRef.current = 0;
+    }
 
-    startTransition(() => {
-      if (event.kind === "conversation.message.started") {
-        setLiveAssistantMessage({
-          content: "",
-          id: event.payload.messageId
-        });
-        return;
-      }
+    const nextEvents = stream.events.slice(processedStreamEventCountRef.current);
 
-      if (event.kind === "conversation.message.delta") {
-        setLiveAssistantMessage((current) => ({
-          content:
-            current?.id === event.payload.messageId
-              ? `${current.content}${event.payload.delta}`
-              : event.payload.delta,
-          id: event.payload.messageId
-        }));
-        return;
-      }
+    if (nextEvents.length === 0) {
+      return;
+    }
 
-      if (event.kind === "conversation.message.completed") {
-        setLiveAssistantMessage({
-          content: event.payload.finalContent,
-          id: event.payload.messageId
-        });
-        void loadMessages(selectedConversationId);
-      }
-    });
-  }, [selectedConversationId, stream.lastEvent]);
+    processedStreamEventCountRef.current = stream.events.length;
+
+    for (const event of nextEvents) {
+      startTransition(() => {
+        if (event.kind === "conversation.message.started") {
+          setLiveAssistantMessage({
+            content: "",
+            id: event.payload.messageId
+          });
+          return;
+        }
+
+        if (event.kind === "conversation.message.delta") {
+          setLiveAssistantMessage((current) => ({
+            content:
+              current?.id === event.payload.messageId
+                ? `${current.content}${event.payload.delta}`
+                : event.payload.delta,
+            id: event.payload.messageId
+          }));
+          return;
+        }
+
+        if (event.kind === "conversation.message.completed") {
+          setLiveAssistantMessage({
+            content: event.payload.finalContent,
+            id: event.payload.messageId
+          });
+          void loadMessages(selectedConversationId);
+        }
+      });
+    }
+  }, [selectedConversationId, stream.events]);
 
   const selectedConversation =
     conversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+  const statusEvents = stream.events.flatMap((event) =>
+    event.kind === "conversation.status" ? [event.payload as OrchestratorStatusEventPayload] : []
+  );
 
   async function loadConversations(): Promise<void> {
     const response = await fetch(
@@ -328,6 +351,7 @@ export function ChatExperience() {
           liveAssistantMessage={liveAssistantMessage}
           messages={messages}
           onPinMessage={handlePinMessage}
+          statusEvents={statusEvents}
         />
         <ChatComposer
           disabled={!selectedConversationId || isSending}

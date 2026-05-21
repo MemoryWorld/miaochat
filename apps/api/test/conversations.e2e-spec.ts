@@ -27,7 +27,7 @@ async function seedAgents(client: Client): Promise<void> {
       VALUES
         ($1, null, '[]'::jsonb, 'Conversation Codex', 'codex', 'Build', '[]'::jsonb, $3),
         ($2, null, '[]'::jsonb, 'Conversation Hermes', 'hermes', 'Plan', '[]'::jsonb, $3)
-      ON CONFLICT (id) DO NOTHING
+      ON CONFLICT DO NOTHING
     `,
     [agentIds.codex, agentIds.hermes, workspaceId]
   );

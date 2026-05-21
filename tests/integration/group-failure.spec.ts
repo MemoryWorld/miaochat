@@ -9,13 +9,14 @@ import { createApp } from "../../apps/api/src/main.js";
 import { bootstrapWorker } from "../../apps/worker/src/main.js";
 
 const decoder = new TextDecoder();
-const workspaceId = "workspace_group_orchestrator";
+const workspaceId = "workspace_group_failure";
 const agentIds = {
-  codex: "agent_group_mock_codex",
-  hermes: "agent_group_orchestrator_mock_hermes"
+  failure: "agent_group_mock_failure",
+  hermes: "agent_group_partial_mock_hermes",
+  timeout: "agent_group_mock_timeout"
 };
 
-describe("group orchestrator integration", () => {
+describe("group failure integration", () => {
   let app: NestFastifyApplication;
   let baseUrl: string;
   let client: Client;
@@ -39,19 +40,19 @@ describe("group orchestrator integration", () => {
     baseUrl = await app.getUrl();
 
     worker = await bootstrapWorker();
-  });
+  }, 20_000);
 
   afterAll(async () => {
     await app.close();
     await clearWorkspace(client);
     await clearAgents(client);
     await client.end();
-  });
+  }, 20_000);
 
-  it("aggregates untargeted group replies and narrows dispatch when the user mentions one member", async () => {
+  it("publishes structured partial-failure events and persists a degraded assistant reply", async () => {
     const conversationResponse = await fetch(`${baseUrl}/conversations`, {
       body: JSON.stringify({
-        agentIds: [agentIds.hermes, agentIds.codex],
+        agentIds: [agentIds.hermes, agentIds.failure, agentIds.timeout],
         mode: "group",
         workspaceId
       }),
@@ -80,9 +81,9 @@ describe("group orchestrator integration", () => {
 
     await worker.runUntil(async () => {
       try {
-        const untargetedSendResponse = await fetch(`${baseUrl}/messages/send`, {
+        const sendResponse = await fetch(`${baseUrl}/messages/send`, {
           body: JSON.stringify({
-            content: "Plan the release slice",
+            content: "Plan the rollback path",
             conversationId,
             role: "user",
             workspaceId
@@ -93,107 +94,66 @@ describe("group orchestrator integration", () => {
           method: "POST"
         });
 
-        expect(untargetedSendResponse.status).toBe(202);
+        expect(sendResponse.status).toBe(202);
 
-        const untargetedEvents = await readEvents(streamReader!, 7);
+        const events = await readEvents(streamReader!, 8);
 
-        expect(untargetedEvents.map((event) => event.kind)).toEqual([
-          "conversation.status",
-          "conversation.status",
-          "conversation.status",
-          "conversation.message.started",
-          "conversation.message.delta",
-          "conversation.message.completed",
-          "conversation.status"
-        ]);
         expect(
-          untargetedEvents
+          events
             .filter((event) => event.kind === "conversation.status")
             .map((event) => event.payload.label)
         ).toEqual([
           "orchestrator.received",
           "orchestrator.dispatched",
           "orchestrator.running",
+          "orchestrator.partial_failure",
           "orchestrator.aggregated"
         ]);
 
-        const untargetedMessages = await waitForMessages(
-          baseUrl,
-          conversationId,
-          2
+        const partialFailureEvent = events.find(
+          (event) =>
+            event.kind === "conversation.status" &&
+            event.payload.label === "orchestrator.partial_failure"
         );
 
-        expect(untargetedMessages.map((message) => message.role)).toEqual([
-          "user",
-          "assistant"
-        ]);
-        expect(untargetedMessages[1]?.content).toContain("[Hermes Planner]");
-        expect(untargetedMessages[1]?.content).toContain("[Codex Builder]");
-        expect(untargetedMessages[1]?.content).toContain(
-          "[mock-group:agent_group_orchestrator_mock_hermes]"
-        );
-        expect(untargetedMessages[1]?.content).toContain(
-          "[mock-group:agent_group_mock_codex]"
-        );
-        expect(untargetedMessages[1]?.sourceAgentId).toBeNull();
-
-        const targetedSendResponse = await fetch(`${baseUrl}/messages/send`, {
-          body: JSON.stringify({
-            content: "@codex write the implementation notes",
-            conversationId,
-            mentionedAgentIds: [agentIds.codex],
-            role: "user",
-            workspaceId
-          }),
-          headers: {
-            "Content-Type": "application/json"
-          },
-          method: "POST"
+        expect(partialFailureEvent).toMatchObject({
+          kind: "conversation.status",
+          payload: {
+            failures: [
+              expect.objectContaining({
+                agentId: agentIds.failure,
+                code: "error"
+              }),
+              expect.objectContaining({
+                agentId: agentIds.timeout,
+                code: "timeout"
+              })
+            ],
+            state: "failed",
+            successfulAgentCount: 1,
+            summary: expect.stringContaining("2 of 3"),
+            totalAgentCount: 3
+          }
         });
 
-        expect(targetedSendResponse.status).toBe(202);
-        expect((await targetedSendResponse.json()).mentionedAgentIds).toEqual([
-          agentIds.codex
-        ]);
+        const messages = await waitForMessages(baseUrl, conversationId, 2);
+        const assistantMessage = messages[1];
 
-        const targetedEvents = await readEvents(streamReader!, 7);
-
-        expect(
-          targetedEvents
-            .filter((event) => event.kind === "conversation.status")
-            .map((event) => event.payload.label)
-        ).toEqual([
-          "orchestrator.received",
-          "orchestrator.dispatched",
-          "orchestrator.running",
-          "orchestrator.aggregated"
-        ]);
-
-        const targetedMessages = await waitForMessages(
-          baseUrl,
-          conversationId,
-          4
-        );
-        const latestAssistantMessage = targetedMessages[3];
-
-        expect(targetedMessages.map((message) => message.role)).toEqual([
-          "user",
-          "assistant",
+        expect(messages.map((message) => message.role)).toEqual([
           "user",
           "assistant"
         ]);
-        expect(latestAssistantMessage?.content).toContain("[Codex Builder]");
-        expect(latestAssistantMessage?.content).toContain(
-          "[mock-group:agent_group_mock_codex]"
-        );
-        expect(latestAssistantMessage?.content).not.toContain("[Hermes Planner]");
-        expect(latestAssistantMessage?.sourceAgentId).toBeNull();
+        expect(assistantMessage?.content).toContain("[Hermes Planner]");
+        expect(assistantMessage?.content).toContain("Partial failure");
+        expect(assistantMessage?.content).toContain("Failure Scout");
+        expect(assistantMessage?.content).toContain("Timeout Watcher");
+        expect(assistantMessage?.sourceAgentId).toBeNull();
       } finally {
         worker.shutdown();
         await streamReader?.cancel();
       }
     });
-  });
+  }, 20_000);
 });
 
 async function seedMockAgents(client: Client): Promise<void> {
@@ -210,11 +170,12 @@ async function seedMockAgents(client: Client): Promise<void> {
         workspace_id
       )
       VALUES
-        ($1, null, '[]'::jsonb, 'Hermes Planner', 'mock', 'Plan', '[]'::jsonb, $3),
-        ($2, null, '[]'::jsonb, 'Codex Builder', 'mock', 'Build', '[]'::jsonb, $3)
+        ($1, null, '[]'::jsonb, 'Hermes Planner', 'mock', 'Plan', '[]'::jsonb, $4),
+        ($2, null, '[]'::jsonb, 'Failure Scout', 'mock', 'Break', '[]'::jsonb, $4),
+        ($3, null, '[]'::jsonb, 'Timeout Watcher', 'mock', 'Wait', '[]'::jsonb, $4)
       ON CONFLICT DO NOTHING
     `,
-    [agentIds.hermes, agentIds.codex, workspaceId]
+    [agentIds.hermes, agentIds.failure, agentIds.timeout, workspaceId]
   );
 }
 
@@ -262,19 +223,25 @@ async function waitForMessages(
   baseUrl: string,
   conversationId: string,
   expectedCount: number
-): Promise<Array<{ content: string; role: string; sourceAgentId: string | null }>> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+): Promise<
+  Array<{
+    content: string;
+    role: string;
+    sourceAgentId: string | null;
+  }>
+> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     const response = await fetch(
       `${baseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`
     );
-    const messages = (await response.json()) as Array<{
+    const payload = (await response.json()) as Array<{
       content: string;
       role: string;
       sourceAgentId: string | null;
     }>;
 
-    if (messages.length >= expectedCount) {
-      return messages;
+    if (payload.length >= expectedCount) {
+      return payload;
     }
 
     await new Promise((resolve) => {
@@ -282,5 +249,5 @@ async function waitForMessages(
     });
   }
 
-  throw new Error(`Timed out waiting for ${expectedCount} persisted messages.`);
+  throw new Error(`Timed out waiting for ${expectedCount} messages.`);
 }
