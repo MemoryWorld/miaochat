@@ -13,6 +13,8 @@
   "dependencies": {
     "@agenthub/agent-adapters": "workspace:*",
     "@agenthub/agent-sdk": "workspace:*",
+    "@agenthub/contracts": "workspace:*",
+    "@agenthub/domain": "workspace:*",
     "@temporalio/client": "^1.11.7",
     "@temporalio/worker": "^1.11.7",
     "@temporalio/workflow": "^1.11.7"

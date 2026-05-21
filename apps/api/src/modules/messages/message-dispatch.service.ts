@@ -23,8 +23,13 @@ import { PinMessageService } from "./pin-message.service.js";
 
 const resolvedConversationAgentSchema = z.object({
   agentId: z.string().min(1),
-  mode: z.enum(["direct", "group"]),
+  agentName: z.string().min(1),
   provider: z.custom<ProviderId>((value) => typeof value === "string" && value.length > 0)
+});
+
+const resolvedConversationSchema = z.object({
+  agents: z.array(resolvedConversationAgentSchema).min(1),
+  mode: z.enum(["direct", "group"])
 });
 
 @Injectable()
@@ -50,16 +55,15 @@ export class MessageDispatchService implements OnModuleDestroy {
       throw new BadRequestException("Only user-authored messages can be dispatched.");
     }
 
-    const resolvedAgent = await this.resolveConversationAgent(
+    const resolvedConversation = await this.resolveConversation(
       parsed.conversationId,
       parsed.workspaceId
     );
 
-    if (resolvedAgent.mode !== "direct") {
-      throw new BadRequestException("The single-agent mock slice only supports direct conversations.");
-    }
-
-    if (resolvedAgent.provider !== "mock") {
+    if (
+      resolvedConversation.mode === "direct" &&
+      resolvedConversation.agents[0]?.provider !== "mock"
+    ) {
       throw new BadRequestException(
         "The single-agent mock slice requires a direct conversation backed by a mock agent."
       );
@@ -67,17 +71,37 @@ export class MessageDispatchService implements OnModuleDestroy {
 
     const userMessage = await this.messagesService.create(parsed);
 
-    void this.dispatchAssistantReply({
-      agentId: resolvedAgent.agentId,
-      conversationId: parsed.conversationId,
-      message: parsed.content,
-      workspaceId: parsed.workspaceId
-    });
+    if (resolvedConversation.mode === "direct") {
+      const directAgent = resolvedConversation.agents[0];
+
+      if (!directAgent) {
+        throw new NotFoundException(
+          `No agent binding found for conversation ${parsed.conversationId} in workspace ${parsed.workspaceId}`
+        );
+      }
+
+      void this.dispatchDirectAssistantReply({
+        agentId: directAgent.agentId,
+        conversationId: parsed.conversationId,
+        message: parsed.content,
+        workspaceId: parsed.workspaceId
+      });
+    } else {
+      void this.dispatchGroupAssistantReply({
+        conversationId: parsed.conversationId,
+        message: parsed.content,
+        targets: resolveTargetAgents(
+          resolvedConversation.agents,
+          userMessage.mentionedAgentIds
+        ),
+        workspaceId: parsed.workspaceId
+      });
+    }
 
     return userMessage;
   }
 
-  private async dispatchAssistantReply(input: {
+  private async dispatchDirectAssistantReply(input: {
     agentId: string;
     conversationId: string;
     message: string;
@@ -121,6 +145,53 @@ export class MessageDispatchService implements OnModuleDestroy {
     });
   }
 
+  private async dispatchGroupAssistantReply(input: {
+    conversationId: string;
+    message: string;
+    targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
+    workspaceId: string;
+  }): Promise<void> {
+    const context = await this.pinMessageService.loadConversationContext(
+      input.conversationId,
+      input.workspaceId
+    );
+    const client = await this.getTemporalClient();
+    const execution = (await client.workflow.execute("groupOrchestratorWorkflow", {
+      args: [
+        {
+          context,
+          conversationId: input.conversationId,
+          message: input.message,
+          targets: input.targets,
+          workspaceId: input.workspaceId
+        }
+      ],
+      taskQueue: process.env.WORKER_TASK_QUEUE ?? "agenthub-default",
+      workflowId: `group-orchestrator:${input.conversationId}:${randomUUID()}`
+    })) as {
+      finalContent: string;
+      streamEvents: StreamEvent[];
+    };
+    const assistantMessageId = randomUUID();
+    const streamEvents = remapStreamEventMessageIds(execution.streamEvents, assistantMessageId);
+
+    for (const event of streamEvents) {
+      this.streamBroker.publish({
+        conversationId: input.conversationId,
+        event,
+        workspaceId: input.workspaceId
+      });
+    }
+
+    await this.messagesService.createAssistantMessage({
+      content: execution.finalContent,
+      conversationId: input.conversationId,
+      id: assistantMessageId,
+      sourceAgentId: null,
+      workspaceId: input.workspaceId
+    });
+  }
+
   private async getTemporalClient(): Promise<Client> {
     if (this.temporalClient) {
       return this.temporalClient;
@@ -136,18 +207,20 @@ export class MessageDispatchService implements OnModuleDestroy {
     return this.temporalClient;
   }
 
-  private async resolveConversationAgent(
+  private async resolveConversation(
     conversationId: string,
     workspaceId: string
-  ): Promise<z.infer<typeof resolvedConversationAgentSchema>> {
+  ): Promise<z.infer<typeof resolvedConversationSchema>> {
     const result = await this.database.query<{
       agent_id: string;
+      agent_name: string;
       mode: "direct" | "group";
       provider: ProviderId;
     }>(
       `
         SELECT
           conversation_agents.agent_id,
+          conversation_agents.agent_name,
           conversations.mode,
           custom_agents.provider
         FROM conversations
@@ -159,25 +232,41 @@ export class MessageDispatchService implements OnModuleDestroy {
           AND custom_agents.workspace_id = conversation_agents.workspace_id
         WHERE conversations.id = $1 AND conversations.workspace_id = $2
         ORDER BY conversation_agents.agent_id ASC
-        LIMIT 1
       `,
       [conversationId, workspaceId]
     );
 
-    const row = result.rows[0];
-
-    if (!row) {
+    if (result.rows.length === 0) {
       throw new NotFoundException(
         `No agent binding found for conversation ${conversationId} in workspace ${workspaceId}`
       );
     }
 
-    return resolvedConversationAgentSchema.parse({
-      agentId: row.agent_id,
-      mode: row.mode,
-      provider: row.provider
+    return resolvedConversationSchema.parse({
+      agents: result.rows.map((row) => ({
+        agentId: row.agent_id,
+        agentName: row.agent_name,
+        provider: row.provider
+      })),
+      mode: result.rows[0]?.mode
     });
   }
+}
+
+function resolveTargetAgents(
+  agents: Array<z.infer<typeof resolvedConversationAgentSchema>>,
+  mentionedAgentIds: string[]
+): Array<z.infer<typeof resolvedConversationAgentSchema>> {
+  if (mentionedAgentIds.length === 0) {
+    return agents;
+  }
+
+  const agentMap = new Map(agents.map((agent) => [agent.agentId, agent]));
+
+  return mentionedAgentIds.flatMap((agentId) => {
+    const agent = agentMap.get(agentId);
+    return agent ? [agent] : [];
+  });
 }
 
 function remapStreamEventMessageIds(

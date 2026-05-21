@@ -17,6 +17,14 @@ export function createWorkerOptions(): WorkerOptions {
 }
 
 const awaitableActivities = {
+  aggregateResultsActivity: async (input: unknown) => {
+    const { aggregateResultsActivity } = await import("./activities/index.js");
+    return aggregateResultsActivity(input as never);
+  },
+  dispatchAgentActivity: async (input: unknown) => {
+    const { dispatchAgentActivity } = await import("./activities/index.js");
+    return dispatchAgentActivity(input as never);
+  },
   placeholderActivity: async (input: string) => {
     const { placeholderActivity } = await import("./activities/index.js");
     return placeholderActivity(input);

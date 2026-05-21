@@ -13,6 +13,9 @@ export default defineConfig({
       ),
       "@agenthub/contracts": fileURLToPath(
         new URL("../../packages/contracts/src/index.ts", import.meta.url)
+      ),
+      "@agenthub/domain/orchestration": fileURLToPath(
+        new URL("../../packages/domain/src/orchestration/index.ts", import.meta.url)
       )
     }
   },

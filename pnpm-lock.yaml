@@ -148,6 +148,12 @@ importers:
       '@agenthub/agent-sdk':
         specifier: workspace:*
         version: link:../../packages/agent-sdk
+      '@agenthub/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@agenthub/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@temporalio/client':
         specifier: ^1.11.7
         version: 1.16.2

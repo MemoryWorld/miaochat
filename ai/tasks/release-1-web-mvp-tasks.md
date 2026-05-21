@@ -118,7 +118,7 @@ Tasks are ordered by dependency. Execution should start at the top and move down
   - Verify: `pnpm test:integration`; `pnpm --filter web test`
   - Files: `db/migrations/0002_group-conversation.sql`, `apps/api/src/modules/conversations/group-members.service.ts`, `apps/web/src/features/chat/agent-mention-input.tsx`, `packages/contracts/src/conversation.ts`, `tests/integration/group-membership.spec.ts`
 
-- [ ] Task 21: Implement the orchestrator workflow for multi-agent dispatch
+- [x] Task 21: Implement the orchestrator workflow for multi-agent dispatch
   - Acceptance: The worker can decompose a group-chat request, dispatch to multiple agents, track state transitions, and aggregate responses into one conversation timeline.
   - Verify: `pnpm --filter worker test`; `pnpm test:integration`
   - Files: `apps/worker/src/workflows/group-orchestrator.workflow.ts`, `apps/worker/src/activities/dispatch-agent.activity.ts`, `apps/worker/src/activities/aggregate-results.activity.ts`, `packages/domain/src/orchestration/orchestrator-state.ts`, `tests/integration/group-orchestrator.spec.ts`

@@ -77,7 +77,7 @@ export class MessagesService {
     content: string;
     conversationId: string;
     id: string;
-    sourceAgentId: string;
+    sourceAgentId: string | null;
     workspaceId: string;
   }): Promise<Message> {
     return this.createStored({
