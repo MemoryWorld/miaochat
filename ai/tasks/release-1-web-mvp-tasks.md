@@ -135,7 +135,7 @@ Tasks are ordered by dependency. Execution should start at the top and move down
   - Verify: `pnpm --filter api test`; `pnpm test:integration`
   - Files: `apps/api/src/modules/custom-agents/custom-agents.controller.ts`, `apps/api/src/modules/custom-agents/custom-agents.service.ts`, `db/migrations/0003_custom-agents.sql`, `packages/contracts/src/custom-agent.ts`, `tests/integration/custom-agent-api.spec.ts`
 
-- [ ] Task 24: Implement the tool registry and server-side extension loading path
+- [x] Task 24: Implement the tool registry and server-side extension loading path
   - Acceptance: Heavy custom agents can register tool extensions through developer config files or server-side registration without changing provider adapters.
   - Verify: `pnpm --filter @agenthub/tool-runtime test`; `pnpm test:integration`
   - Files: `packages/tool-runtime/package.json`, `packages/tool-runtime/src/tool-registry.ts`, `packages/tool-runtime/src/tool-loader.ts`, `apps/api/src/modules/tools/tool-registration.service.ts`, `tests/integration/tool-registry.spec.ts`

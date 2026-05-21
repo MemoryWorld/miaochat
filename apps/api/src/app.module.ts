@@ -6,6 +6,7 @@ import { CredentialsModule } from "./modules/credentials/credentials.module.js";
 import { CustomAgentsModule } from "./modules/custom-agents/custom-agents.module.js";
 import { MessagesModule } from "./modules/messages/messages.module.js";
 import { StreamsModule } from "./modules/streams/streams.module.js";
+import { ToolsModule } from "./modules/tools/tools.module.js";
 
 @Module({
   imports: [
@@ -14,7 +15,8 @@ import { StreamsModule } from "./modules/streams/streams.module.js";
     CustomAgentsModule,
     ConversationsModule,
     MessagesModule,
-    StreamsModule
+    StreamsModule,
+    ToolsModule
   ]
 })
 export class AppModule {}
