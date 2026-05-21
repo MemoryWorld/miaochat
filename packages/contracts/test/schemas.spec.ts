@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  artifactUploadTargetSchema,
   conversationSchema,
+  createArtifactInputSchema,
   createConversationInputSchema,
   createCustomAgentInputSchema,
   createProviderCredentialInputSchema,
+  prepareArtifactUploadInputSchema,
   streamEventSchema
 } from "../src";
 
@@ -97,5 +100,40 @@ describe("@agenthub/contracts", () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it("supports artifact upload-target and metadata persistence contracts", () => {
+    const uploadInput = prepareArtifactUploadInputSchema.parse({
+      fileName: "release-checklist.md",
+      kind: "attachment",
+      messageId: "msg_1",
+      mimeType: "text/markdown",
+      title: "Release checklist",
+      workspaceId: "workspace_1"
+    });
+    const artifactInput = createArtifactInputSchema.parse({
+      id: "artifact_1",
+      kind: "attachment",
+      messageId: "msg_1",
+      mimeType: "text/markdown",
+      storageKey: "artifacts/workspace_1/msg_1/artifact_1/release-checklist.md",
+      title: "Release checklist",
+      workspaceId: "workspace_1"
+    });
+    const uploadTarget = artifactUploadTargetSchema.parse({
+      artifactId: "artifact_1",
+      previewUrl: null,
+      storageKey: artifactInput.storageKey,
+      uploadHeaders: {
+        "content-type": uploadInput.mimeType
+      },
+      uploadMethod: "PUT",
+      uploadUrl:
+        "http://localhost:9000/agenthub-dev/artifacts/workspace_1/msg_1/artifact_1/release-checklist.md",
+      workspaceId: "workspace_1"
+    });
+
+    expect(uploadTarget.uploadMethod).toBe("PUT");
+    expect(artifactInput.workspaceId).toBe("workspace_1");
   });
 });

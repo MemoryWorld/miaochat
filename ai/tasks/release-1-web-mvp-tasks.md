@@ -147,7 +147,7 @@ Tasks are ordered by dependency. Execution should start at the top and move down
 
 ## Phase 7: Artifact Layer
 
-- [ ] Task 26: Add artifact metadata persistence and attachment storage hooks
+- [x] Task 26: Add artifact metadata persistence and attachment storage hooks
   - Acceptance: The platform can persist artifact metadata, link artifacts to messages, and prepare uploads to S3-compatible storage without exposing storage credentials to the client.
   - Verify: `pnpm test:integration`
   - Files: `apps/api/src/modules/artifacts/artifacts.service.ts`, `apps/api/src/modules/artifacts/storage.service.ts`, `db/migrations/0004_artifacts.sql`, `packages/contracts/src/artifact.ts`, `tests/integration/artifacts-api.spec.ts`
