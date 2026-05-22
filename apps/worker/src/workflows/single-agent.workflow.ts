@@ -1,7 +1,14 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
-import { MockDirectAdapter } from "@agenthub/agent-adapters";
+import { proxyActivities } from "@temporalio/workflow";
+import type {
+  executeDirectAgentActivity as executeDirectAgentActivityFn
+} from "../activities/direct-agent.activity.js";
 
-const adapter = new MockDirectAdapter();
+const { executeDirectAgentActivity } = proxyActivities<{
+  executeDirectAgentActivity: typeof executeDirectAgentActivityFn;
+}>({
+  startToCloseTimeout: "1 minute"
+});
 
 export type SingleAgentWorkflowInput = {
   agentId: string;
@@ -14,8 +21,5 @@ export type SingleAgentWorkflowInput = {
 export async function singleAgentWorkflow(
   input: SingleAgentWorkflowInput
 ): Promise<AgentExecutionResult> {
-  return adapter.execute({
-    ...input,
-    provider: "mock"
-  });
+  return executeDirectAgentActivity(input);
 }

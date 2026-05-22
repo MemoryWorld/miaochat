@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
+import { signupSessionViaInject } from "../support/auth-session.js";
 
 const workspaceId = "workspace_custom_agents_integration";
 
@@ -14,6 +15,7 @@ async function clearWorkspace(client: Client): Promise<void> {
 describe("custom agents integration", () => {
   let app: NestFastifyApplication;
   let client: Client;
+  let authCookie: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -26,6 +28,12 @@ describe("custom agents integration", () => {
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Custom Agents Integration",
+      email: `custom-agents-integration-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
   });
 
   afterEach(async () => {
@@ -39,6 +47,9 @@ describe("custom agents integration", () => {
 
   it("persists workspace-scoped custom agents and returns newest-first listings", async () => {
     const firstResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         capabilityTags: ["planning"],
@@ -54,6 +65,9 @@ describe("custom agents integration", () => {
     expect(firstResponse.statusCode).toBe(201);
 
     const secondResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         capabilityTags: ["handoff", "ops"],
@@ -78,6 +92,9 @@ describe("custom agents integration", () => {
     };
 
     const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/custom-agents?workspaceId=${workspaceId}`
     });

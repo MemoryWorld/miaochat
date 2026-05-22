@@ -5,6 +5,8 @@ export default defineConfig({
     jsx: "automatic"
   },
   test: {
-    environmentMatchGlobs: [["tests/e2e/**/*.spec.tsx", "jsdom"]]
+    environmentMatchGlobs: [["tests/e2e/**/*.spec.tsx", "jsdom"]],
+    maxWorkers: 4,
+    minWorkers: 1
   }
 });

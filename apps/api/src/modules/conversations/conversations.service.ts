@@ -14,7 +14,9 @@ import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service.js";
 
 type ConversationRow = {
+  archived_at: Date | null;
   id: string;
+  is_pinned: boolean;
   mode: Conversation["mode"];
   owner_user_id: string;
   pinned_message_ids: string[];
@@ -38,7 +40,7 @@ type CustomAgentRow = {
 export class ConversationsService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
-  async create(input: unknown): Promise<Conversation> {
+  async create(input: unknown, ownerUserId: string): Promise<Conversation> {
     const parsed = createConversationInputSchema.parse(input);
     const workspaceId = workspaceIdSchema.parse(parsed.workspaceId);
 
@@ -48,6 +50,7 @@ export class ConversationsService {
       try {
         const participants = await this.resolveParticipants(
           client,
+          ownerUserId,
           workspaceId,
           parsed.agentIds
         );
@@ -67,7 +70,9 @@ export class ConversationsService {
             )
             VALUES ($1, $2, $3, $4::jsonb, $5, $6)
             RETURNING
+              archived_at,
               id,
+              is_pinned,
               mode,
               owner_user_id,
               pinned_message_ids,
@@ -78,7 +83,7 @@ export class ConversationsService {
           [
             conversationId,
             parsed.mode,
-            "system-user",
+            ownerUserId,
             JSON.stringify([]),
             title,
             workspaceId
@@ -109,8 +114,16 @@ export class ConversationsService {
     });
   }
 
-  async list(workspaceId: string): Promise<Conversation[]> {
+  async list(
+    workspaceId: string,
+    ownerUserId: string,
+    options: { includeArchived?: boolean; search?: string } = {}
+  ): Promise<Conversation[]> {
     const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
+    const trimmedSearch = options.search?.trim() ?? "";
+    const search = trimmedSearch.length > 0 ? `%${trimmedSearch.toLowerCase()}%` : null;
+    const includeArchived = Boolean(options.includeArchived);
+
     const conversations = await this.database.query<ConversationRow>(
       `
         SELECT
@@ -120,23 +133,37 @@ export class ConversationsService {
           pinned_message_ids,
           title,
           updated_at,
-          workspace_id
+          workspace_id,
+          is_pinned,
+          archived_at
         FROM conversations
         WHERE workspace_id = $1
-        ORDER BY updated_at DESC
+          AND owner_user_id = $2
+          AND ($3 OR archived_at IS NULL)
+          AND ($4::text IS NULL OR lower(title) LIKE $4)
+        ORDER BY is_pinned DESC, updated_at DESC
       `,
-      [parsedWorkspaceId]
+      [parsedWorkspaceId, ownerUserId, includeArchived, search]
     );
+
+    if (conversations.rows.length === 0) {
+      return [];
+    }
+
     const participants = await this.database.query<ConversationAgentRow>(
       `
         SELECT
-          conversation_id,
-          agent_id,
-          agent_name
+          conversation_agents.conversation_id,
+          conversation_agents.agent_id,
+          conversation_agents.agent_name
         FROM conversation_agents
-        WHERE workspace_id = $1
+        INNER JOIN conversations
+          ON conversations.id = conversation_agents.conversation_id
+          AND conversations.workspace_id = conversation_agents.workspace_id
+        WHERE conversation_agents.workspace_id = $1
+          AND conversations.owner_user_id = $2
       `,
-      [parsedWorkspaceId]
+      [parsedWorkspaceId, ownerUserId]
     );
 
     const participantMap = new Map<string, ConversationAgentMember[]>();
@@ -154,8 +181,106 @@ export class ConversationsService {
     );
   }
 
+  async setPinned(
+    workspaceId: string,
+    ownerUserId: string,
+    conversationId: string,
+    isPinned: boolean
+  ): Promise<Conversation> {
+    return this.applyMutation(workspaceId, ownerUserId, conversationId, {
+      isPinned
+    });
+  }
+
+  async archive(
+    workspaceId: string,
+    ownerUserId: string,
+    conversationId: string
+  ): Promise<Conversation> {
+    return this.applyMutation(workspaceId, ownerUserId, conversationId, {
+      archived: true
+    });
+  }
+
+  async restore(
+    workspaceId: string,
+    ownerUserId: string,
+    conversationId: string
+  ): Promise<Conversation> {
+    return this.applyMutation(workspaceId, ownerUserId, conversationId, {
+      archived: false
+    });
+  }
+
+  private async applyMutation(
+    workspaceId: string,
+    ownerUserId: string,
+    conversationId: string,
+    change: { archived?: boolean; isPinned?: boolean }
+  ): Promise<Conversation> {
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
+
+    const setClauses: string[] = ["updated_at = now()"];
+    const values: unknown[] = [conversationId, parsedWorkspaceId, ownerUserId];
+
+    if (change.isPinned !== undefined) {
+      values.push(change.isPinned);
+      setClauses.push(`is_pinned = $${values.length}`);
+    }
+    if (change.archived !== undefined) {
+      if (change.archived) {
+        setClauses.push("archived_at = now()");
+      } else {
+        setClauses.push("archived_at = NULL");
+      }
+    }
+
+    const result = await this.database.query<ConversationRow>(
+      `
+        UPDATE conversations
+        SET ${setClauses.join(", ")}
+        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
+        RETURNING
+          archived_at,
+          id,
+          is_pinned,
+          mode,
+          owner_user_id,
+          pinned_message_ids,
+          title,
+          updated_at,
+          workspace_id
+      `,
+      values
+    );
+
+    if (!result.rows[0]) {
+      throw new Error(
+        `Conversation ${conversationId} was not found in workspace ${workspaceId}.`
+      );
+    }
+
+    const participants = await this.database.query<ConversationAgentRow>(
+      `
+        SELECT conversation_id, agent_id, agent_name
+        FROM conversation_agents
+        WHERE conversation_id = $1 AND workspace_id = $2
+      `,
+      [conversationId, parsedWorkspaceId]
+    );
+
+    return mapConversationRow(
+      result.rows[0],
+      participants.rows.map((row) => ({
+        agentId: row.agent_id,
+        agentName: row.agent_name
+      }))
+    );
+  }
+
   private async resolveParticipants(
     client: PoolClient,
+    ownerUserId: string,
     workspaceId: string,
     agentIds: string[]
   ): Promise<ConversationAgentMember[]> {
@@ -163,9 +288,9 @@ export class ConversationsService {
       `
         SELECT id, name
         FROM custom_agents
-        WHERE workspace_id = $1 AND id = ANY($2::text[])
+        WHERE workspace_id = $1 AND owner_user_id = $2 AND id = ANY($3::text[])
       `,
-      [workspaceId, agentIds]
+      [workspaceId, ownerUserId, agentIds]
     );
 
     const namesById = new Map(result.rows.map((row) => [row.id, row.name]));
@@ -202,7 +327,9 @@ function mapConversationRow(
   }
 
   return conversationSchema.parse({
+    archivedAt: row.archived_at,
     id: row.id,
+    isPinned: row.is_pinned ?? false,
     mode: row.mode,
     ownerUserId: row.owner_user_id,
     participants,

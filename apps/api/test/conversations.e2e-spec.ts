@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Client } from "pg";
 
 import { createApp } from "../src/main.js";
+import { signupSessionViaInject } from "../../../tests/support/auth-session.js";
 
 const workspaceId = "workspace_conversations_e2e";
 const agentIds = {
@@ -11,7 +12,7 @@ const agentIds = {
   hermes: "agent_conv_hermes_e2e"
 };
 
-async function seedAgents(client: Client): Promise<void> {
+async function seedAgents(client: Client, ownerUserId: string): Promise<void> {
   await client.query(
     `
       INSERT INTO custom_agents (
@@ -19,17 +20,18 @@ async function seedAgents(client: Client): Promise<void> {
         avatar_url,
         capability_tags,
         name,
+        owner_user_id,
         provider,
         system_prompt,
         tool_bindings,
         workspace_id
       )
       VALUES
-        ($1, null, '[]'::jsonb, 'Conversation Codex', 'codex', 'Build', '[]'::jsonb, $3),
-        ($2, null, '[]'::jsonb, 'Conversation Hermes', 'hermes', 'Plan', '[]'::jsonb, $3)
+        ($1, null, '[]'::jsonb, 'Conversation Codex', $3, 'codex', 'Build', '[]'::jsonb, $4),
+        ($2, null, '[]'::jsonb, 'Conversation Hermes', $3, 'hermes', 'Plan', '[]'::jsonb, $4)
       ON CONFLICT DO NOTHING
     `,
-    [agentIds.codex, agentIds.hermes, workspaceId]
+    [agentIds.codex, agentIds.hermes, ownerUserId, workspaceId]
   );
 }
 
@@ -44,6 +46,8 @@ async function clearAgents(client: Client): Promise<void> {
 describe("conversations and messages api", () => {
   let app: NestFastifyApplication;
   let client: Client;
+  let authCookie: string;
+  let ownerUserId: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -53,11 +57,19 @@ describe("conversations and messages api", () => {
     await client.connect();
     await clearWorkspace(client);
     await clearAgents(client);
-    await seedAgents(client);
 
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Conversations E2E",
+      email: `conversations-e2e-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
+    ownerUserId = session.user.id;
+
+    await seedAgents(client, ownerUserId);
   });
 
   afterEach(async () => {
@@ -73,6 +85,9 @@ describe("conversations and messages api", () => {
 
   it("creates a conversation, stores message history, and pins context", async () => {
     const conversationResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         agentIds: [agentIds.hermes, agentIds.codex],
@@ -103,6 +118,9 @@ describe("conversations and messages api", () => {
     const conversationId = conversationResponse.json().id as string;
 
     const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/conversations?workspaceId=${workspaceId}`
     });
@@ -114,6 +132,9 @@ describe("conversations and messages api", () => {
     });
 
     const messageResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         content: "Pin this context for the next run.",
@@ -128,6 +149,9 @@ describe("conversations and messages api", () => {
     const messageId = messageResponse.json().id as string;
 
     const historyResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`
     });
@@ -142,6 +166,9 @@ describe("conversations and messages api", () => {
     ]);
 
     const pinResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       url: `/messages/${messageId}/pin?workspaceId=${workspaceId}`
     });

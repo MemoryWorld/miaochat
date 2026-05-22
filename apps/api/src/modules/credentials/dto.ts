@@ -56,6 +56,7 @@ export function toCredentialMetadata(
     credentialSource: credential.credentialSource,
     id: credential.id,
     label: credential.label,
+    ownerUserId: credential.ownerUserId,
     provider: credential.provider,
     providerAccountId: credential.providerAccountId,
     validationState: credential.validationState,

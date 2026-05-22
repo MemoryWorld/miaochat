@@ -1,9 +1,10 @@
-import type { Message, OrchestratorStatusEventPayload } from "@agenthub/contracts";
+import type { Artifact, Message, OrchestratorStatusEventPayload } from "@agenthub/contracts";
 
-import { PinMessageAction } from "./pin-message-action";
+import { ChatMessage } from "./chat-message";
 import { SystemStatusCard } from "./system-status-card";
 
 type ChatThreadProps = {
+  artifactsByMessageId: Record<string, Artifact[]>;
   connectionState: "connecting" | "error" | "idle" | "open";
   isPinningMessageId: string | null;
   liveAssistantMessage: {
@@ -16,6 +17,7 @@ type ChatThreadProps = {
 };
 
 export function ChatThread({
+  artifactsByMessageId,
   connectionState,
   isPinningMessageId,
   liveAssistantMessage,
@@ -61,42 +63,16 @@ export function ChatThread({
         </div>
       ) : null}
       {messages.map((message) => (
-        <article
+        <ChatMessage
+          artifacts={artifactsByMessageId[message.id] ?? []}
+          isPinDisabled={isPinningMessageId !== null && isPinningMessageId !== message.id}
+          isPinPending={isPinningMessageId === message.id}
           key={message.id}
-          style={{
-            background:
-              message.role === "user"
-                ? "rgba(16, 24, 40, 0.92)"
-                : "rgba(243, 244, 246, 0.95)",
-            borderRadius: "20px",
-            color: message.role === "user" ? "#fff" : "#101828",
-            justifySelf: message.role === "user" ? "end" : "start",
-            maxWidth: "80%",
-            padding: "0.95rem 1rem"
+          message={message}
+          onPin={() => {
+            void onPinMessage(message.id);
           }}
-        >
-          <div
-            style={{
-              fontSize: "0.78rem",
-              fontWeight: 700,
-              marginBottom: "0.35rem",
-              opacity: 0.8,
-              textTransform: "uppercase"
-            }}
-          >
-            {message.role}
-          </div>
-          <div style={{ lineHeight: 1.7 }}>{message.content}</div>
-          <PinMessageAction
-            disabled={isPinningMessageId !== null && isPinningMessageId !== message.id}
-            isPending={isPinningMessageId === message.id}
-            isPinned={message.isPinned}
-            onPin={() => {
-              void onPinMessage(message.id);
-            }}
-            tone={message.role === "user" ? "dark" : "light"}
-          />
-        </article>
+        />
       ))}
       {liveAssistantMessage && !hasPersistedLiveMessage ? (
         <article

@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Client } from "pg";
 
 import { createApp } from "../src/main.js";
+import { signupSessionViaInject } from "../../../tests/support/auth-session.js";
 
 const workspaceId = "workspace_custom_agents_e2e";
 
@@ -14,6 +15,7 @@ async function clearWorkspace(client: Client): Promise<void> {
 describe("custom agents api", () => {
   let app: NestFastifyApplication;
   let client: Client;
+  let authCookie: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -26,6 +28,12 @@ describe("custom agents api", () => {
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Custom Agents E2E",
+      email: `custom-agents-e2e-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
   });
 
   afterEach(async () => {
@@ -39,6 +47,9 @@ describe("custom agents api", () => {
 
   it("creates and lists custom agents with prompts, tags, providers, and tool bindings", async () => {
     const createResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         avatarUrl: "https://example.com/reviewer.png",
@@ -116,6 +127,9 @@ describe("custom agents api", () => {
     });
 
     const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/custom-agents?workspaceId=${workspaceId}`
     });

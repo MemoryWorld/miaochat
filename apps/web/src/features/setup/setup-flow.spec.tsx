@@ -35,6 +35,14 @@ describe("SetupFlow", () => {
         })
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             message: "Codex credential passed local format validation.",
@@ -121,14 +129,14 @@ describe("SetupFlow", () => {
     });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+      3,
       "http://localhost:3001/credentials/validate",
       expect.objectContaining({
         method: "POST"
       })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       "http://localhost:3001/credentials",
       expect.objectContaining({
         method: "POST"
@@ -137,7 +145,7 @@ describe("SetupFlow", () => {
   });
 
   it("switches provider guidance when a different provider is selected", async () => {
-    fetchMock.mockResolvedValue(
+    fetchMock.mockImplementation(async () =>
       new Response(JSON.stringify([]), {
         headers: {
           "Content-Type": "application/json"

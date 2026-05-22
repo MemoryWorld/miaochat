@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Client } from "pg";
 
 import { createApp } from "../src/main.js";
+import { signupSessionViaInject } from "../../../tests/support/auth-session.js";
 
 const testWorkspaceId = "workspace_credentials_e2e";
 
@@ -16,6 +17,7 @@ async function clearWorkspace(client: Client): Promise<void> {
 describe("credentials api", () => {
   let app: NestFastifyApplication;
   let client: Client;
+  let authCookie: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -28,6 +30,12 @@ describe("credentials api", () => {
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Credentials E2E",
+      email: `credentials-e2e-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
   });
 
   afterEach(async () => {
@@ -41,6 +49,9 @@ describe("credentials api", () => {
 
   it("validates credentials without persisting them", async () => {
     const response = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         label: "Hermes dev",
@@ -69,6 +80,9 @@ describe("credentials api", () => {
 
   it("creates, lists, and revokes credentials without returning raw or encrypted secrets", async () => {
     const createResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         label: "Claude prod",
@@ -105,6 +119,9 @@ describe("credentials api", () => {
     expect(stored.rows[0]?.encrypted_secret).not.toContain("sk-ant-demo-secret");
 
     const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/credentials?workspaceId=${testWorkspaceId}`
     });
@@ -119,6 +136,9 @@ describe("credentials api", () => {
     ]);
 
     const revokeResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "DELETE",
       url: `/credentials/${credentialId}?workspaceId=${testWorkspaceId}`
     });
@@ -140,6 +160,9 @@ describe("credentials api", () => {
 
   it("rejects invalid provider secrets on create", async () => {
     const response = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         label: "OpenClaw invalid",

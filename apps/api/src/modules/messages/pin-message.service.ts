@@ -12,6 +12,7 @@ type PinnedMessageRow = {
   id: string;
   is_pinned: boolean;
   mentioned_agent_ids: string[];
+  owner_user_id: string;
   role: Message["role"];
   source_agent_id: string | null;
   workspace_id: string;
@@ -23,7 +24,8 @@ export class PinMessageService {
 
   async loadConversationContext(
     conversationId: string,
-    workspaceId: string
+    workspaceId: string,
+    ownerUserId: string
   ): Promise<ConversationContext> {
     const result = await this.database.query<PinnedMessageRow>(
       `
@@ -35,13 +37,17 @@ export class PinMessageService {
           mentioned_agent_ids,
           created_at,
           is_pinned,
+          owner_user_id,
           source_agent_id,
           workspace_id
         FROM messages
-        WHERE conversation_id = $1 AND workspace_id = $2 AND is_pinned = true
+        WHERE conversation_id = $1
+          AND workspace_id = $2
+          AND owner_user_id = $3
+          AND is_pinned = true
         ORDER BY created_at ASC
       `,
-      [conversationId, workspaceId]
+      [conversationId, workspaceId, ownerUserId]
     );
 
     return assemblePinnedContext(result.rows.map(mapPinnedMessageRow));
@@ -56,6 +62,7 @@ function mapPinnedMessageRow(row: PinnedMessageRow): Message {
     id: row.id,
     isPinned: row.is_pinned,
     mentionedAgentIds: row.mentioned_agent_ids ?? [],
+    ownerUserId: row.owner_user_id,
     role: row.role,
     sourceAgentId: row.source_agent_id,
     workspaceId: row.workspace_id

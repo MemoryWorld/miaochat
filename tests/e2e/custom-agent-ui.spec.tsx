@@ -69,6 +69,12 @@ describe("custom agent UI flow", () => {
     };
 
     fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+        })
+      )
       .mockResolvedValueOnce(jsonResponse([], 200))
       .mockResolvedValueOnce(jsonResponse([customAgent], 200))
       .mockResolvedValueOnce(jsonResponse(createdConversation, 201))

@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
+import { signupSessionViaInject } from "../support/auth-session.js";
 
 const workspaceId = "workspace_group_membership";
 const agentIds = {
@@ -15,6 +16,8 @@ const agentIds = {
 describe("group membership integration", () => {
   let app: NestFastifyApplication;
   let client: Client;
+  let authCookie: string;
+  let ownerUserId: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -24,11 +27,19 @@ describe("group membership integration", () => {
     await client.connect();
     await clearWorkspace(client);
     await clearAgents(client);
-    await seedAgents(client);
 
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Group Membership Integration",
+      email: `group-membership-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
+    ownerUserId = session.user.id;
+
+    await seedAgents(client, ownerUserId);
   });
 
   afterEach(async () => {
@@ -44,6 +55,9 @@ describe("group membership integration", () => {
 
   it("persists explicit group targets and rejects mentioned agents that are not members", async () => {
     const conversationResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         agentIds: [agentIds.hermes, agentIds.codex],
@@ -58,6 +72,9 @@ describe("group membership integration", () => {
     const conversationId = conversationResponse.json().id as string;
 
     const targetedMessageResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         content: "@hermes plan the release next step",
@@ -76,6 +93,9 @@ describe("group membership integration", () => {
     });
 
     const historyResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`
     });
@@ -89,6 +109,9 @@ describe("group membership integration", () => {
     ]);
 
     const invalidTargetResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         content: "@outsider jump in",
@@ -127,7 +150,7 @@ describe("group membership integration", () => {
   });
 });
 
-async function seedAgents(client: Client): Promise<void> {
+async function seedAgents(client: Client, ownerUserId: string): Promise<void> {
   await client.query(
     `
       INSERT INTO custom_agents (
@@ -135,18 +158,19 @@ async function seedAgents(client: Client): Promise<void> {
         avatar_url,
         capability_tags,
         name,
+        owner_user_id,
         provider,
         system_prompt,
         tool_bindings,
         workspace_id
       )
       VALUES
-        ($1, null, '[]'::jsonb, 'Hermes Planner', 'hermes', 'Plan', '[]'::jsonb, $4),
-        ($2, null, '[]'::jsonb, 'Codex Builder', 'codex', 'Build', '[]'::jsonb, $4),
-        ($3, null, '[]'::jsonb, 'Claude Outsider', 'claude-code', 'Observe', '[]'::jsonb, $4)
+        ($1, null, '[]'::jsonb, 'Hermes Planner', $4, 'hermes', 'Plan', '[]'::jsonb, $5),
+        ($2, null, '[]'::jsonb, 'Codex Builder', $4, 'codex', 'Build', '[]'::jsonb, $5),
+        ($3, null, '[]'::jsonb, 'Claude Outsider', $4, 'claude-code', 'Observe', '[]'::jsonb, $5)
       ON CONFLICT DO NOTHING
     `,
-    [agentIds.hermes, agentIds.codex, agentIds.outsider, workspaceId]
+    [agentIds.hermes, agentIds.codex, agentIds.outsider, ownerUserId, workspaceId]
   );
 }
 

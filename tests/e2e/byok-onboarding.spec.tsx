@@ -28,6 +28,12 @@ describe("byok onboarding flow", () => {
     fetchMock
       .mockResolvedValueOnce(
         new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
           headers: {
             "Content-Type": "application/json"
           },

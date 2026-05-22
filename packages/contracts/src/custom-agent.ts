@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { userIdSchema } from "./conversation.js";
 import { providerIdSchema } from "./database-enums.js";
 import { toolBindingSchema } from "./tool-binding.js";
 
@@ -8,6 +9,7 @@ export const customAgentSchema = z.object({
   avatarUrl: z.string().url().nullable().default(null),
   capabilityTags: z.array(z.string().min(1)).default([]),
   name: z.string().min(1).max(80),
+  ownerUserId: userIdSchema,
   provider: providerIdSchema,
   systemPrompt: z.string().min(1),
   toolBindings: z.array(toolBindingSchema).default([]),

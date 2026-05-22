@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 
 import type {
+  Artifact,
   Conversation,
   CustomAgent,
   Message,
@@ -10,13 +11,14 @@ import type {
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
+import { useActiveWorkspace } from "../workspaces/use-active-workspace";
+import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
 import { NewConversationDialog } from "../conversations/new-conversation-dialog";
 import { ChatComposer } from "./chat-composer";
 import { ChatThread } from "./chat-thread";
 import { useConversationStream } from "./use-conversation-stream";
 
 const apiBaseUrl = "http://localhost:3001";
-const workspaceId = "default-workspace";
 
 type LiveAssistantMessage = {
   content: string;
@@ -24,6 +26,12 @@ type LiveAssistantMessage = {
 };
 
 export function ChatExperience() {
+  const {
+    activeWorkspaceId: workspaceId,
+    isLoading: isLoadingWorkspaces,
+    selectWorkspace,
+    workspaces
+  } = useActiveWorkspace();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [customAgents, setCustomAgents] = useState<CustomAgent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -35,6 +43,9 @@ export function ChatExperience() {
   const [liveAssistantMessage, setLiveAssistantMessage] =
     useState<LiveAssistantMessage | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [artifactsByMessageId, setArtifactsByMessageId] = useState<
+    Record<string, Artifact[]>
+  >({});
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const processedStreamEventCountRef = useRef(0);
 
@@ -45,11 +56,22 @@ export function ChatExperience() {
 
   useEffect(() => {
     void loadConversations();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  useEffect(() => {
+    setSelectedConversationId(null);
+    setMessages([]);
+    setArtifactsByMessageId({});
+    setLiveAssistantMessage(null);
+    setCustomAgents([]);
+    processedStreamEventCountRef.current = 0;
+  }, [workspaceId]);
 
   useEffect(() => {
     if (!selectedConversationId) {
       setMessages([]);
+      setArtifactsByMessageId({});
       setLiveAssistantMessage(null);
       processedStreamEventCountRef.current = 0;
       return;
@@ -139,6 +161,31 @@ export function ChatExperience() {
         current && payload.some((message) => message.id === current.id) ? null : current
       );
     });
+
+    await Promise.all(payload.map((message) => loadArtifactsForMessage(message.id)));
+  }
+
+  async function loadArtifactsForMessage(messageId: string): Promise<void> {
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/artifacts?messageId=${messageId}&workspaceId=${workspaceId}`
+      );
+
+      if (!response?.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as Artifact[];
+
+      startTransition(() => {
+        setArtifactsByMessageId((current) => ({
+          ...current,
+          [messageId]: payload
+        }));
+      });
+    } catch {
+      // Ignore artifact fetch failures so the chat timeline still renders.
+    }
   }
 
   async function loadCustomAgents(): Promise<void> {
@@ -310,6 +357,12 @@ export function ChatExperience() {
       sidebar={
         <>
           <h1 style={{ marginTop: 0 }}>AgentHub</h1>
+          <WorkspaceSwitcher
+            activeWorkspaceId={workspaceId}
+            isLoading={isLoadingWorkspaces}
+            onSelect={selectWorkspace}
+            workspaces={workspaces}
+          />
           <p style={{ color: "#475467", lineHeight: 1.6 }}>
             Release 1 keeps the mock direct path for smoke checks, while custom agents
             can now be created separately and selected for new sessions.
@@ -413,6 +466,7 @@ export function ChatExperience() {
           <p style={{ color: "#b42318", marginTop: 0 }}>{errorMessage}</p>
         ) : null}
         <ChatThread
+          artifactsByMessageId={artifactsByMessageId}
           connectionState={stream.connectionState}
           isPinningMessageId={isPinningMessageId}
           liveAssistantMessage={liveAssistantMessage}

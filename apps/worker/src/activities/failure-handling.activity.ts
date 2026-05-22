@@ -1,5 +1,5 @@
+import type { OrchestratorFailure } from "@agenthub/contracts";
 import type {
-  OrchestratorFailure,
   OrchestratorResult,
   OrchestratorTarget
 } from "@agenthub/domain/orchestration";

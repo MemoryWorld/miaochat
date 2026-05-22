@@ -10,13 +10,41 @@ import {
   type OrchestratorState,
   type OrchestratorTarget
 } from "@agenthub/domain/orchestration";
+import { proxyActivities } from "@temporalio/workflow";
 
-import { aggregateResultsActivity } from "../activities/aggregate-results.activity.js";
-import { dispatchAgentActivity } from "../activities/dispatch-agent.activity.js";
+import type {
+  aggregateResultsActivity as aggregateResultsActivityFn
+} from "../activities/aggregate-results.activity.js";
+import type {
+  dispatchAgentActivity as dispatchAgentActivityFn
+} from "../activities/dispatch-agent.activity.js";
 import {
   buildPartialFailureNotice,
   normalizeDispatchFailure
-} from "../activities/failure-handling.activity.js";
+} from "./group-orchestrator-failure.js";
+
+const { aggregateResultsActivity } = proxyActivities<{
+  aggregateResultsActivity: typeof aggregateResultsActivityFn;
+}>({
+  startToCloseTimeout: "1 minute"
+});
+
+const { dispatchAgentActivity } = proxyActivities<{
+  dispatchAgentActivity: typeof dispatchAgentActivityFn;
+}>({
+  retry: {
+    backoffCoefficient: 2,
+    initialInterval: "500ms",
+    maximumAttempts: 5,
+    maximumInterval: "15s",
+    nonRetryableErrorTypes: [
+      "BadRequestException",
+      "MockDispatchExecutionError",
+      "ZodError"
+    ]
+  },
+  startToCloseTimeout: "1 minute"
+});
 
 export type GroupOrchestratorWorkflowInput = {
   context?: AgentExecutionContext;
@@ -103,7 +131,7 @@ export async function groupOrchestratorWorkflow(
       : "";
   const partialFailureNotice =
     failures.length > 0
-      ? await buildPartialFailureNotice({
+      ? buildPartialFailureNotice({
           failures: state.failures,
           results: state.results,
           totalAgentCount: state.targets.length

@@ -1,0 +1,31 @@
+# Prometheus scrape configuration for AgentHub Release 1.
+#
+# Both the API service and the worker service expose Prometheus-formatted
+# metrics. The API exposes `/metrics` directly. The worker emits its metrics
+# through the collector pipeline configured in `otel-config.yaml`.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: agenthub-api
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - api:3001
+        labels:
+          service: api
+          tier: release-1
+
+  - job_name: agenthub-otel-collector
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - otel-collector:8889
+        labels:
+          service: collector
+          tier: release-1

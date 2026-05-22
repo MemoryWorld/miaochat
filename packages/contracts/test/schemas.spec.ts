@@ -56,6 +56,36 @@ describe("@agenthub/contracts", () => {
     expect(parsed.toolBindings).toHaveLength(1);
   });
 
+  it("requires owner user ids on persisted user-scoped resources", () => {
+    const customAgent = createCustomAgentInputSchema.parse({
+      capabilityTags: ["code"],
+      name: "Builder",
+      provider: "mock",
+      systemPrompt: "Build",
+      toolBindings: []
+    });
+    const credential = createProviderCredentialInputSchema.parse({
+      label: "Main Codex",
+      provider: "codex",
+      providerAccountId: "acct_1",
+      rawSecret: "secret_123"
+    });
+
+    expect(customAgent.name).toBe("Builder");
+    expect(credential.provider).toBe("codex");
+    expect(
+      conversationSchema.safeParse({
+        id: "conv_missing_owner",
+        mode: "direct",
+        participants: [],
+        pinnedMessageIds: [],
+        title: "Missing owner",
+        updatedAt: new Date().toISOString(),
+        workspaceId: "workspace_1"
+      }).success
+    ).toBe(false);
+  });
+
   it("validates normalized stream events", () => {
     const parsed = streamEventSchema.parse({
       kind: "conversation.message.delta",

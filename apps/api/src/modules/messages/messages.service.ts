@@ -22,6 +22,7 @@ type MessageRow = {
   id: string;
   is_pinned: boolean;
   mentioned_agent_ids: string[];
+  owner_user_id: string;
   role: Message["role"];
   source_agent_id: string | null;
   workspace_id: string;
@@ -32,6 +33,7 @@ type CreateStoredMessageInput = {
   conversationId: string;
   id: string;
   mentionedAgentIds: string[];
+  ownerUserId: string;
   role: Message["role"];
   sourceAgentId: string | null;
   workspaceId: string;
@@ -39,6 +41,7 @@ type CreateStoredMessageInput = {
 
 const messageHistoryQuerySchema = z.object({
   conversationId: z.string().min(1),
+  ownerUserId: z.string().min(1),
   workspaceId: workspaceIdSchema.default("default-workspace")
 });
 
@@ -54,11 +57,13 @@ export class MessagesService {
     @Inject(GroupMembersService) private readonly groupMembersService: GroupMembersService
   ) {}
 
-  async create(input: unknown): Promise<Message> {
+  async create(input: unknown, ownerUserId: string): Promise<Message> {
     const parsed = createMessageInputSchema.parse(input);
+    await this.assertConversationOwnership(parsed.conversationId, parsed.workspaceId, ownerUserId);
     const mentionedAgentIds = await this.groupMembersService.resolveMentionedAgentIds({
       conversationId: parsed.conversationId,
       mentionedAgentIds: parsed.mentionedAgentIds,
+      ownerUserId,
       workspaceId: parsed.workspaceId
     });
 
@@ -67,6 +72,7 @@ export class MessagesService {
       conversationId: parsed.conversationId,
       id: randomUUID(),
       mentionedAgentIds,
+      ownerUserId,
       role: parsed.role,
       sourceAgentId: null,
       workspaceId: parsed.workspaceId
@@ -77,6 +83,7 @@ export class MessagesService {
     content: string;
     conversationId: string;
     id: string;
+    ownerUserId: string;
     sourceAgentId: string | null;
     workspaceId: string;
   }): Promise<Message> {
@@ -85,6 +92,7 @@ export class MessagesService {
       conversationId: input.conversationId,
       id: input.id,
       mentionedAgentIds: [],
+      ownerUserId: input.ownerUserId,
       role: "assistant",
       sourceAgentId: input.sourceAgentId,
       workspaceId: input.workspaceId
@@ -106,6 +114,7 @@ export class MessagesService {
         conversationId: input.conversationId,
         id: input.id,
         mentionedAgentIds: input.mentionedAgentIds,
+        ownerUserId: input.ownerUserId,
         role: input.role,
         sourceAgentId: input.sourceAgentId,
         workspaceId: input.workspaceId
@@ -123,11 +132,12 @@ export class MessagesService {
               role,
               content,
               mentioned_agent_ids,
+              owner_user_id,
               source_agent_id,
               is_pinned,
               workspace_id
             )
-            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
             RETURNING
               id,
               conversation_id,
@@ -136,6 +146,7 @@ export class MessagesService {
               mentioned_agent_ids,
               created_at,
               is_pinned,
+              owner_user_id,
               source_agent_id,
               workspace_id
           `,
@@ -145,13 +156,19 @@ export class MessagesService {
             parsed.role,
             parsed.content,
             JSON.stringify(parsed.mentionedAgentIds),
+            parsed.ownerUserId,
             parsed.sourceAgentId,
             false,
             parsed.workspaceId
           ]
         );
 
-        await this.touchConversation(client, parsed.conversationId, parsed.workspaceId);
+        await this.touchConversation(
+          client,
+          parsed.conversationId,
+          parsed.workspaceId,
+          parsed.ownerUserId
+        );
         await client.query("COMMIT");
         return mapMessageRow(inserted.rows[0]);
       } catch (error) {
@@ -173,19 +190,32 @@ export class MessagesService {
           mentioned_agent_ids,
           created_at,
           is_pinned,
+          owner_user_id,
           source_agent_id,
           workspace_id
         FROM messages
-        WHERE conversation_id = $1 AND workspace_id = $2
+        WHERE conversation_id = $1 AND workspace_id = $2 AND owner_user_id = $3
         ORDER BY created_at ASC
       `,
-      [parsed.conversationId, parsed.workspaceId]
+      [parsed.conversationId, parsed.workspaceId, parsed.ownerUserId]
     );
+
+    if (result.rows.length === 0) {
+      await this.assertConversationOwnership(
+        parsed.conversationId,
+        parsed.workspaceId,
+        parsed.ownerUserId
+      );
+    }
 
     return result.rows.map(mapMessageRow);
   }
 
-  async pin(messageId: string, workspaceId: string): Promise<PinMessageResponse> {
+  async pin(
+    messageId: string,
+    workspaceId: string,
+    ownerUserId: string
+  ): Promise<PinMessageResponse> {
     const parsedMessageId = messageIdSchema.parse(messageId);
     const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
 
@@ -197,7 +227,7 @@ export class MessagesService {
           `
             UPDATE messages
             SET is_pinned = true, updated_at = now()
-            WHERE id = $1 AND workspace_id = $2
+            WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
             RETURNING
               id,
               conversation_id,
@@ -206,10 +236,11 @@ export class MessagesService {
               mentioned_agent_ids,
               created_at,
               is_pinned,
+              owner_user_id,
               source_agent_id,
               workspace_id
           `,
-          [parsedMessageId, parsedWorkspaceId]
+          [parsedMessageId, parsedWorkspaceId, ownerUserId]
         );
 
         if (!messageResult.rows[0]) {
@@ -231,10 +262,10 @@ export class MessagesService {
                 ELSE pinned_message_ids || to_jsonb(ARRAY[$2]::text[])
               END,
               updated_at = now()
-            WHERE id = $1 AND workspace_id = $3
+            WHERE id = $1 AND workspace_id = $3 AND owner_user_id = $4
             RETURNING pinned_message_ids
           `,
-          [message.conversationId, message.id, parsedWorkspaceId]
+          [message.conversationId, message.id, parsedWorkspaceId, ownerUserId]
         );
 
         await client.query("COMMIT");
@@ -253,16 +284,44 @@ export class MessagesService {
   private async touchConversation(
     client: PoolClient,
     conversationId: string,
-    workspaceId: string
+    workspaceId: string,
+    ownerUserId: string
   ): Promise<void> {
-    await client.query(
+    const result = await client.query(
       `
         UPDATE conversations
         SET updated_at = now()
-        WHERE id = $1 AND workspace_id = $2
+        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
       `,
-      [conversationId, workspaceId]
+      [conversationId, workspaceId, ownerUserId]
     );
+
+    if ((result.rowCount ?? 0) === 0) {
+      throw new NotFoundException(
+        `Conversation ${conversationId} was not found in workspace ${workspaceId}`
+      );
+    }
+  }
+
+  private async assertConversationOwnership(
+    conversationId: string,
+    workspaceId: string,
+    ownerUserId: string
+  ): Promise<void> {
+    const result = await this.database.query<{ id: string }>(
+      `
+        SELECT id
+        FROM conversations
+        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
+      `,
+      [conversationId, workspaceId, ownerUserId]
+    );
+
+    if (!result.rows[0]) {
+      throw new NotFoundException(
+        `Conversation ${conversationId} was not found in workspace ${workspaceId}`
+      );
+    }
   }
 }
 
@@ -278,6 +337,7 @@ function mapMessageRow(row: MessageRow | undefined): Message {
     id: row.id,
     isPinned: row.is_pinned,
     mentionedAgentIds: row.mentioned_agent_ids ?? [],
+    ownerUserId: row.owner_user_id,
     role: row.role,
     sourceAgentId: row.source_agent_id,
     workspaceId: row.workspace_id

@@ -1,0 +1,122 @@
+"use client";
+
+import { useState } from "react";
+
+import { ToolBindingPicker, type ToolBindingDraft } from "./tool-binding-picker";
+
+const apiBaseUrl = "http://localhost:3001";
+
+const availableTools = ["github", "shell", "browser", "filesystem"] as const;
+
+const supportedProviders = [
+  "claude-code",
+  "codex",
+  "hermes",
+  "openclaw"
+] as const;
+
+type HeavyAgentFormProps = {
+  onCreated?: (agentId: string) => void;
+  workspaceId: string;
+};
+
+export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) {
+  const [name, setName] = useState("");
+  const [provider, setProvider] = useState<(typeof supportedProviders)[number]>("codex");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [bindings, setBindings] = useState<ToolBindingDraft[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(): Promise<void> {
+    if (!name.trim() || !systemPrompt.trim()) {
+      setError("Name and system prompt are required.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/custom-agents`, {
+        body: JSON.stringify({
+          capabilityTags: [],
+          name: name.trim(),
+          provider,
+          systemPrompt: systemPrompt.trim(),
+          toolBindings: bindings,
+          workspaceId
+        }),
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        throw new Error(payload.message ?? `Failed (${response.status}).`);
+      }
+      const created = (await response.json()) as { id: string };
+      onCreated?.(created.id);
+      setName("");
+      setSystemPrompt("");
+      setBindings([]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to register heavy agent.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      data-testid="heavy-agent-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleSubmit();
+      }}
+    >
+      <label>
+        Name
+        <input
+          aria-label="Heavy agent name"
+          type="text"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <label>
+        Provider
+        <select
+          aria-label="Heavy agent provider"
+          value={provider}
+          onChange={(event) =>
+            setProvider(event.target.value as (typeof supportedProviders)[number])
+          }
+        >
+          {supportedProviders.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        System prompt
+        <textarea
+          aria-label="Heavy agent system prompt"
+          value={systemPrompt}
+          onChange={(event) => setSystemPrompt(event.target.value)}
+        />
+      </label>
+      <ToolBindingPicker
+        availableTools={[...availableTools]}
+        bindings={bindings}
+        onChange={setBindings}
+      />
+      {error ? <p role="alert">{error}</p> : null}
+      <button type="submit" disabled={busy}>
+        {busy ? "Registering…" : "Register heavy agent"}
+      </button>
+    </form>
+  );
+}

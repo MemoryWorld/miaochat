@@ -4,7 +4,7 @@ import { conversationModeSchema } from "./database-enums.js";
 
 export const conversationIdSchema = z.string().min(1);
 export const workspaceIdSchema = z.string().min(1).default("default-workspace");
-export const userIdSchema = z.string().min(1).default("system-user");
+export const userIdSchema = z.string().min(1);
 
 export const conversationAgentMemberSchema = z.object({
   agentId: z.string().min(1),
@@ -17,6 +17,8 @@ export const conversationSchema = z.object({
   mode: conversationModeSchema,
   ownerUserId: userIdSchema,
   pinnedMessageIds: z.array(z.string().min(1)).default([]),
+  isPinned: z.boolean().default(false),
+  archivedAt: z.coerce.date().nullable().default(null),
   updatedAt: z.coerce.date(),
   workspaceId: workspaceIdSchema,
   participants: z.array(conversationAgentMemberSchema).default([])

@@ -10,7 +10,8 @@ import {
 export class DatabaseService implements OnModuleDestroy {
   private readonly pool = new Pool({
     connectionString:
-      process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub"
+      process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub",
+    max: resolvePoolMax()
   });
 
   query<Row extends QueryResultRow = QueryResultRow>(
@@ -33,4 +34,14 @@ export class DatabaseService implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     await this.pool.end();
   }
+}
+
+function resolvePoolMax(): number {
+  const configured = Number(process.env.PG_POOL_MAX);
+
+  if (Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
+
+  return process.env.NODE_ENV === "test" ? 1 : 10;
 }

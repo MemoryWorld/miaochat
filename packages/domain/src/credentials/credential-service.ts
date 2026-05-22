@@ -22,7 +22,10 @@ export class CredentialService {
     private readonly encryptionKey: string
   ) {}
 
-  async create(input: CreateProviderCredentialInput): Promise<ProviderCredential> {
+  async create(
+    input: CreateProviderCredentialInput,
+    ownerUserId: string
+  ): Promise<ProviderCredential> {
     const parsed = createProviderCredentialInputSchema.parse(input);
     const validation = await this.validate(parsed);
 
@@ -31,6 +34,7 @@ export class CredentialService {
       encryptedSecret: encryptCredentialSecret(parsed.rawSecret, this.encryptionKey),
       id: randomUUID(),
       label: parsed.label,
+      ownerUserId,
       provider: parsed.provider,
       providerAccountId: validation.providerAccountId,
       validationState: validation.valid ? "valid" : "invalid",
@@ -47,16 +51,16 @@ export class CredentialService {
     return this.validator(parsed);
   }
 
-  async list(workspaceId: string): Promise<ProviderCredential[]> {
-    return this.repository.listByWorkspace(workspaceId);
+  async list(workspaceId: string, ownerUserId: string): Promise<ProviderCredential[]> {
+    return this.repository.listByWorkspace(workspaceId, ownerUserId);
   }
 
-  async revoke(id: string, workspaceId: string): Promise<boolean> {
-    return this.repository.revoke(id, workspaceId);
+  async revoke(id: string, workspaceId: string, ownerUserId: string): Promise<boolean> {
+    return this.repository.revoke(id, workspaceId, ownerUserId);
   }
 
-  async revealSecret(id: string): Promise<string | null> {
-    const credential = await this.repository.findById(id);
+  async revealSecret(id: string, ownerUserId: string): Promise<string | null> {
+    const credential = await this.repository.findById(id, ownerUserId);
     if (!credential) {
       return null;
     }

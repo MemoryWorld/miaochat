@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
+import { signupSessionViaInject } from "../support/auth-session.js";
 
 const testWorkspaceId = "workspace_credentials_integration";
 
@@ -16,6 +17,7 @@ async function clearWorkspace(client: Client): Promise<void> {
 describe("credentials integration", () => {
   let app: NestFastifyApplication;
   let client: Client;
+  let authCookie: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -28,6 +30,12 @@ describe("credentials integration", () => {
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Credentials Integration",
+      email: `credentials-integration-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
   });
 
   afterEach(async () => {
@@ -41,6 +49,9 @@ describe("credentials integration", () => {
 
   it("persists encrypted credentials and keeps list responses secret-free", async () => {
     const createResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         label: "Codex primary",
@@ -73,6 +84,9 @@ describe("credentials integration", () => {
     expect(row.rows[0]?.encrypted_secret).not.toContain("sk-codex-primary");
 
     const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/credentials?workspaceId=${testWorkspaceId}`
     });

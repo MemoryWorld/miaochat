@@ -12,19 +12,32 @@ class InMemoryCredentialRepository {
     return credential;
   }
 
-  async findById(id: string): Promise<ProviderCredential | null> {
-    return this.items.get(id) ?? null;
+  async findById(id: string, ownerUserId: string): Promise<ProviderCredential | null> {
+    const credential = this.items.get(id);
+    if (!credential || credential.ownerUserId !== ownerUserId) {
+      return null;
+    }
+
+    return credential;
   }
 
-  async listByWorkspace(workspaceId: string): Promise<ProviderCredential[]> {
+  async listByWorkspace(
+    workspaceId: string,
+    ownerUserId: string
+  ): Promise<ProviderCredential[]> {
     return [...this.items.values()].filter(
-      (credential) => credential.workspaceId === workspaceId
+      (credential) =>
+        credential.workspaceId === workspaceId && credential.ownerUserId === ownerUserId
     );
   }
 
-  async revoke(id: string, workspaceId: string): Promise<boolean> {
+  async revoke(id: string, workspaceId: string, ownerUserId: string): Promise<boolean> {
     const credential = this.items.get(id);
-    if (!credential || credential.workspaceId !== workspaceId) {
+    if (
+      !credential ||
+      credential.workspaceId !== workspaceId ||
+      credential.ownerUserId !== ownerUserId
+    ) {
       return false;
     }
 
@@ -51,11 +64,12 @@ describe("@agenthub/domain credential service", () => {
       providerAccountId: "acct_1",
       rawSecret: "secret_123",
       workspaceId: "workspace_1"
-    });
+    }, "user_1");
 
     expect(credential.encryptedSecret).not.toContain("secret_123");
-    await expect(service.revealSecret(credential.id)).resolves.toBe("secret_123");
+    await expect(service.revealSecret(credential.id, "user_1")).resolves.toBe("secret_123");
     expect(credential.credentialSource).toBe("user_provided");
+    expect(credential.ownerUserId).toBe("user_1");
   });
 
   it("lists and revokes credentials within a workspace", async () => {
@@ -75,17 +89,17 @@ describe("@agenthub/domain credential service", () => {
       providerAccountId: "acct_codex",
       rawSecret: "sk-codex-123",
       workspaceId: "workspace_1"
-    });
+    }, "user_1");
     await service.create({
       label: "Claude",
       provider: "claude-code",
       providerAccountId: "acct_claude",
       rawSecret: "sk-ant-123",
       workspaceId: "workspace_2"
-    });
+    }, "user_2");
 
-    await expect(service.list("workspace_1")).resolves.toEqual([first]);
-    await expect(service.revoke(first.id, "workspace_1")).resolves.toBe(true);
-    await expect(service.list("workspace_1")).resolves.toEqual([]);
+    await expect(service.list("workspace_1", "user_1")).resolves.toEqual([first]);
+    await expect(service.revoke(first.id, "workspace_1", "user_1")).resolves.toBe(true);
+    await expect(service.list("workspace_1", "user_1")).resolves.toEqual([]);
   });
 });

@@ -16,6 +16,7 @@ type CustomAgentRow = {
   capability_tags: string[];
   id: string;
   name: string;
+  owner_user_id: string;
   provider: CustomAgent["provider"];
   system_prompt: string;
   tool_bindings: CustomAgent["toolBindings"];
@@ -26,7 +27,7 @@ type CustomAgentRow = {
 export class CustomAgentsService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
-  async create(input: unknown): Promise<CustomAgent> {
+  async create(input: unknown, ownerUserId: string): Promise<CustomAgent> {
     const parsed = createCustomAgentInputSchema.parse(input);
 
     try {
@@ -37,17 +38,19 @@ export class CustomAgentsService {
             avatar_url,
             capability_tags,
             name,
+            owner_user_id,
             provider,
             system_prompt,
             tool_bindings,
             workspace_id
           )
-          VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8)
+          VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb, $9)
           RETURNING
             avatar_url,
             capability_tags,
             id,
             name,
+            owner_user_id,
             provider,
             system_prompt,
             tool_bindings,
@@ -58,6 +61,7 @@ export class CustomAgentsService {
           parsed.avatarUrl ?? null,
           JSON.stringify(parsed.capabilityTags),
           parsed.name,
+          ownerUserId,
           parsed.provider,
           parsed.systemPrompt,
           JSON.stringify(parsed.toolBindings),
@@ -70,7 +74,7 @@ export class CustomAgentsService {
       if (
         error instanceof DatabaseError &&
         error.code === "23505" &&
-        error.constraint === "custom_agents_workspace_name_key"
+        error.constraint === "custom_agents_owner_workspace_name_key"
       ) {
         throw new ConflictException(
           `Custom agent name "${parsed.name}" already exists in workspace ${parsed.workspaceId}`
@@ -81,7 +85,7 @@ export class CustomAgentsService {
     }
   }
 
-  async list(workspaceId: string): Promise<CustomAgent[]> {
+  async list(workspaceId: string, ownerUserId: string): Promise<CustomAgent[]> {
     const result = await this.database.query<CustomAgentRow>(
       `
         SELECT
@@ -89,15 +93,16 @@ export class CustomAgentsService {
           capability_tags,
           id,
           name,
+          owner_user_id,
           provider,
           system_prompt,
           tool_bindings,
           workspace_id
         FROM custom_agents
-        WHERE workspace_id = $1
+        WHERE workspace_id = $1 AND owner_user_id = $2
         ORDER BY created_at DESC, id DESC
       `,
-      [workspaceId]
+      [workspaceId, ownerUserId]
     );
 
     return result.rows.map(mapCustomAgentRow);
@@ -114,6 +119,7 @@ function mapCustomAgentRow(row: CustomAgentRow | undefined): CustomAgent {
     capabilityTags: row.capability_tags ?? [],
     id: row.id,
     name: row.name,
+    ownerUserId: row.owner_user_id,
     provider: row.provider,
     systemPrompt: row.system_prompt,
     toolBindings: row.tool_bindings ?? [],

@@ -7,25 +7,32 @@ import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
 import { bootstrapWorker } from "../../apps/worker/src/main.js";
+import { signupSessionViaFetch } from "../support/auth-session.js";
 
 const decoder = new TextDecoder();
 const workspaceId = "workspace_single_agent_mock";
 const mockAgentId = "agent_mock_single_agent";
+const workerTaskQueue = "worker-task-single-agent-mock";
 
 describe("single-agent mock integration", () => {
   let app: NestFastifyApplication;
+  let authCookie: string;
   let baseUrl: string;
   let client: Client;
+  let ownerUserId: string;
+  let previousWorkerTaskQueue: string | undefined;
   let worker: Worker;
 
   beforeAll(async () => {
+    previousWorkerTaskQueue = process.env.WORKER_TASK_QUEUE;
+    process.env.WORKER_TASK_QUEUE = workerTaskQueue;
+
     client = new Client({
       connectionString:
         process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub"
     });
     await client.connect();
     await clearWorkspace(client);
-    await seedMockAgent(client);
 
     app = await createApp();
     await app.listen({
@@ -33,15 +40,27 @@ describe("single-agent mock integration", () => {
       port: 0
     });
     baseUrl = await app.getUrl();
+    const session = await signupSessionViaFetch(baseUrl, {
+      displayName: "Single Agent Mock Integration",
+      email: `single-agent-mock-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
+    ownerUserId = session.user.id;
+    await seedMockAgent(client, ownerUserId);
 
     worker = await bootstrapWorker();
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
+
     await clearWorkspace(client);
     await clearAgents(client);
     await client.end();
+
+    process.env.WORKER_TASK_QUEUE = previousWorkerTaskQueue;
   });
 
   it("persists a user message, runs the mock worker flow, streams events, and reloads the assistant reply", async () => {
@@ -52,7 +71,8 @@ describe("single-agent mock integration", () => {
         workspaceId
       }),
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        cookie: authCookie
       },
       method: "POST"
     });
@@ -64,7 +84,8 @@ describe("single-agent mock integration", () => {
       `${baseUrl}/streams/${conversationId}?workspaceId=${workspaceId}`,
       {
         headers: {
-          Accept: "text/event-stream"
+          Accept: "text/event-stream",
+          cookie: authCookie
         }
       }
     );
@@ -84,7 +105,8 @@ describe("single-agent mock integration", () => {
             workspaceId
           }),
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            cookie: authCookie
           },
           method: "POST"
         });
@@ -100,7 +122,12 @@ describe("single-agent mock integration", () => {
         ]);
 
         const messagesResponse = await fetch(
-          `${baseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`
+          `${baseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`,
+          {
+            headers: {
+              cookie: authCookie
+            }
+          }
         );
         const messages = (await messagesResponse.json()) as Array<{
           content: string;
@@ -122,7 +149,7 @@ describe("single-agent mock integration", () => {
   });
 });
 
-async function seedMockAgent(client: Client): Promise<void> {
+async function seedMockAgent(client: Client, ownerUserId: string): Promise<void> {
   await client.query(
     `
       INSERT INTO custom_agents (
@@ -130,15 +157,16 @@ async function seedMockAgent(client: Client): Promise<void> {
         avatar_url,
         capability_tags,
         name,
+        owner_user_id,
         provider,
         system_prompt,
         tool_bindings,
         workspace_id
       )
-      VALUES ($1, null, '[]'::jsonb, 'Mock Builder', 'mock', 'Test mock agent', '[]'::jsonb, $2)
+      VALUES ($1, null, '[]'::jsonb, 'Mock Builder', $2, 'mock', 'Test mock agent', '[]'::jsonb, $3)
       ON CONFLICT DO NOTHING
     `,
-    [mockAgentId, workspaceId]
+    [mockAgentId, ownerUserId, workspaceId]
   );
 }
 

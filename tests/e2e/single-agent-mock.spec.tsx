@@ -94,6 +94,12 @@ describe("single-agent mock flow", () => {
     ];
 
     fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+        })
+      )
       .mockResolvedValueOnce(jsonResponse([], 200))
       .mockResolvedValueOnce(jsonResponse(createdConversation, 201))
       .mockResolvedValueOnce(jsonResponse([], 200))
@@ -151,7 +157,7 @@ describe("single-agent mock flow", () => {
     });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       "http://localhost:3001/messages/send",
       expect.objectContaining({
         method: "POST"

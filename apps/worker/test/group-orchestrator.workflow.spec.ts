@@ -1,9 +1,46 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { groupOrchestratorWorkflow } from "../src/workflows/group-orchestrator.workflow.js";
+const { proxyActivitiesMock } = vi.hoisted(() => ({
+  proxyActivitiesMock: vi.fn()
+}));
+
+vi.mock("@temporalio/workflow", () => ({
+  proxyActivities: proxyActivitiesMock
+}));
 
 describe("groupOrchestratorWorkflow", () => {
+  beforeEach(() => {
+    proxyActivitiesMock.mockReset();
+    vi.resetModules();
+  });
+
   it("dispatches the selected agents, tracks orchestrator states, and aggregates one reply", async () => {
+    proxyActivitiesMock
+      .mockReturnValueOnce({
+        aggregateResultsActivity: async (input: {
+          results: Array<{ agentName: string; finalContent: string }>;
+        }) =>
+          input.results
+            .map((result) => `[${result.agentName}]\n${result.finalContent}`)
+            .join("\n\n")
+      })
+      .mockReturnValueOnce({
+        dispatchAgentActivity: async (input: {
+          agentId: string;
+          agentName: string;
+          message: string;
+          provider: "mock";
+        }) => ({
+          agentId: input.agentId,
+          agentName: input.agentName,
+          finalContent: `[mock-group:${input.agentId}] ${input.message}`,
+          provider: input.provider
+        })
+      });
+
+    const { groupOrchestratorWorkflow } = await import(
+      "../src/workflows/group-orchestrator.workflow.js"
+    );
     const result = await groupOrchestratorWorkflow({
       conversationId: "conv_group_1",
       message: "Plan the next release slice",
@@ -64,6 +101,42 @@ describe("groupOrchestratorWorkflow", () => {
   });
 
   it("downgrades to partial failure when one target fails and another times out", async () => {
+    proxyActivitiesMock
+      .mockReturnValueOnce({
+        aggregateResultsActivity: async (input: {
+          results: Array<{ agentName: string; finalContent: string }>;
+        }) =>
+          input.results
+            .map((result) => `[${result.agentName}]\n${result.finalContent}`)
+            .join("\n\n")
+      })
+      .mockReturnValueOnce({
+        dispatchAgentActivity: async (input: {
+          agentId: string;
+          agentName: string;
+          message: string;
+          provider: "mock";
+        }) => {
+          if (input.agentId === "agent_failure") {
+            throw new Error("Mock dispatch failed before completion for Failure Scout.");
+          }
+
+          if (input.agentId === "agent_timeout") {
+            throw new Error("Mock dispatch timed out before completion for Timeout Watcher.");
+          }
+
+          return {
+            agentId: input.agentId,
+            agentName: input.agentName,
+            finalContent: `[mock-group:${input.agentId}] ${input.message}`,
+            provider: input.provider
+          };
+        }
+      });
+
+    const { groupOrchestratorWorkflow } = await import(
+      "../src/workflows/group-orchestrator.workflow.js"
+    );
     const result = await groupOrchestratorWorkflow({
       conversationId: "conv_group_failure",
       message: "Plan the rollback path",

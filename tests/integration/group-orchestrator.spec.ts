@@ -7,9 +7,11 @@ import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
 import { bootstrapWorker } from "../../apps/worker/src/main.js";
+import { signupSessionViaFetch } from "../support/auth-session.js";
 
 const decoder = new TextDecoder();
 const workspaceId = "workspace_group_orchestrator";
+const workerTaskQueue = "worker-task-group-orchestrator";
 const agentIds = {
   codex: "agent_group_mock_codex",
   hermes: "agent_group_orchestrator_mock_hermes"
@@ -17,11 +19,17 @@ const agentIds = {
 
 describe("group orchestrator integration", () => {
   let app: NestFastifyApplication;
+  let authCookie: string;
   let baseUrl: string;
   let client: Client;
+  let ownerUserId: string;
+  let previousWorkerTaskQueue: string | undefined;
   let worker: Worker;
 
   beforeAll(async () => {
+    previousWorkerTaskQueue = process.env.WORKER_TASK_QUEUE;
+    process.env.WORKER_TASK_QUEUE = workerTaskQueue;
+
     client = new Client({
       connectionString:
         process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub"
@@ -29,7 +37,6 @@ describe("group orchestrator integration", () => {
     await client.connect();
     await clearWorkspace(client);
     await clearAgents(client);
-    await seedMockAgents(client);
 
     app = await createApp();
     await app.listen({
@@ -37,15 +44,27 @@ describe("group orchestrator integration", () => {
       port: 0
     });
     baseUrl = await app.getUrl();
+    const session = await signupSessionViaFetch(baseUrl, {
+      displayName: "Group Orchestrator Integration",
+      email: `group-orchestrator-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
+    ownerUserId = session.user.id;
+    await seedMockAgents(client, ownerUserId);
 
     worker = await bootstrapWorker();
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
+
     await clearWorkspace(client);
     await clearAgents(client);
     await client.end();
+
+    process.env.WORKER_TASK_QUEUE = previousWorkerTaskQueue;
   });
 
   it("aggregates untargeted group replies and narrows dispatch when the user mentions one member", async () => {
@@ -56,7 +75,8 @@ describe("group orchestrator integration", () => {
         workspaceId
       }),
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        cookie: authCookie
       },
       method: "POST"
     });
@@ -68,7 +88,8 @@ describe("group orchestrator integration", () => {
       `${baseUrl}/streams/${conversationId}?workspaceId=${workspaceId}`,
       {
         headers: {
-          Accept: "text/event-stream"
+          Accept: "text/event-stream",
+          cookie: authCookie
         }
       }
     );
@@ -88,7 +109,8 @@ describe("group orchestrator integration", () => {
             workspaceId
           }),
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            cookie: authCookie
           },
           method: "POST"
         });
@@ -117,11 +139,7 @@ describe("group orchestrator integration", () => {
           "orchestrator.aggregated"
         ]);
 
-        const untargetedMessages = await waitForMessages(
-          baseUrl,
-          conversationId,
-          2
-        );
+        const untargetedMessages = await waitForMessages(baseUrl, conversationId, 2, authCookie);
 
         expect(untargetedMessages.map((message) => message.role)).toEqual([
           "user",
@@ -146,7 +164,8 @@ describe("group orchestrator integration", () => {
             workspaceId
           }),
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            cookie: authCookie
           },
           method: "POST"
         });
@@ -169,11 +188,7 @@ describe("group orchestrator integration", () => {
           "orchestrator.aggregated"
         ]);
 
-        const targetedMessages = await waitForMessages(
-          baseUrl,
-          conversationId,
-          4
-        );
+        const targetedMessages = await waitForMessages(baseUrl, conversationId, 4, authCookie);
         const latestAssistantMessage = targetedMessages[3];
 
         expect(targetedMessages.map((message) => message.role)).toEqual([
@@ -196,7 +211,7 @@ describe("group orchestrator integration", () => {
   });
 });
 
-async function seedMockAgents(client: Client): Promise<void> {
+async function seedMockAgents(client: Client, ownerUserId: string): Promise<void> {
   await client.query(
     `
       INSERT INTO custom_agents (
@@ -204,17 +219,18 @@ async function seedMockAgents(client: Client): Promise<void> {
         avatar_url,
         capability_tags,
         name,
+        owner_user_id,
         provider,
         system_prompt,
         tool_bindings,
         workspace_id
       )
       VALUES
-        ($1, null, '[]'::jsonb, 'Hermes Planner', 'mock', 'Plan', '[]'::jsonb, $3),
-        ($2, null, '[]'::jsonb, 'Codex Builder', 'mock', 'Build', '[]'::jsonb, $3)
+        ($1, null, '[]'::jsonb, 'Hermes Planner', $3, 'mock', 'Plan', '[]'::jsonb, $4),
+        ($2, null, '[]'::jsonb, 'Codex Builder', $3, 'mock', 'Build', '[]'::jsonb, $4)
       ON CONFLICT DO NOTHING
     `,
-    [agentIds.hermes, agentIds.codex, workspaceId]
+    [agentIds.hermes, agentIds.codex, ownerUserId, workspaceId]
   );
 }
 
@@ -261,11 +277,17 @@ async function readEvents(
 async function waitForMessages(
   baseUrl: string,
   conversationId: string,
-  expectedCount: number
+  expectedCount: number,
+  authCookie: string
 ): Promise<Array<{ content: string; role: string; sourceAgentId: string | null }>> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const response = await fetch(
-      `${baseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`
+      `${baseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`,
+      {
+        headers: {
+          cookie: authCookie
+        }
+      }
     );
     const messages = (await response.json()) as Array<{
       content: string;

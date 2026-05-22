@@ -102,6 +102,12 @@ describe("group failure flow", () => {
     };
 
     fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+        })
+      )
       .mockResolvedValueOnce(jsonResponse([conversation], 200))
       .mockResolvedValueOnce(jsonResponse([], 200))
       .mockResolvedValueOnce(jsonResponse(userMessage, 202))

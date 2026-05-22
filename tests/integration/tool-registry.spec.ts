@@ -9,6 +9,7 @@ import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
 import { ToolRegistrationService } from "../../apps/api/src/modules/tools/tool-registration.service.js";
+import { signupSessionViaInject } from "../support/auth-session.js";
 
 const workspaceId = "workspace_tool_registry";
 
@@ -20,6 +21,7 @@ describe("tool registry integration", () => {
   let app: NestFastifyApplication;
   let client: Client;
   let configDirectory: string;
+  let authCookie: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -45,6 +47,12 @@ describe("tool registry integration", () => {
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Tool Registry Integration",
+      email: `tool-registry-integration-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
   });
 
   afterAll(async () => {
@@ -67,6 +75,9 @@ describe("tool registry integration", () => {
     });
 
     const createResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         capabilityTags: ["ops", "release"],

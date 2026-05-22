@@ -1,0 +1,44 @@
+# OpenTelemetry Collector configuration for AgentHub Release 1.
+#
+# This config is the operational target the API and worker emit toward when
+# `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the deployed environment. The default
+# Release 1 build emits structured JSON logs and Prometheus metrics directly,
+# and treats this collector as an optional fan-out hop.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    send_batch_size: 512
+    timeout: 5s
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: agenthub
+  logging:
+    loglevel: info
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [logging]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, logging]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [logging]

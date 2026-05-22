@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 
+import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { CredentialForm, type CredentialDraft } from "./credential-form";
 import {
-  defaultWorkspaceId,
+  defaultWorkspaceId as fallbackWorkspaceId,
   getProviderById,
   providerCatalog,
   type SetupProvider
@@ -37,6 +38,7 @@ const initialDraft: CredentialDraft = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 export function SetupFlow() {
+  const { activeWorkspaceId } = useActiveWorkspace();
   const [selectedProvider, setSelectedProvider] = useState<SetupProvider>("codex");
   const [draft, setDraft] = useState<CredentialDraft>(initialDraft);
   const [savedCredentials, setSavedCredentials] = useState<CredentialMetadata[]>([]);
@@ -54,7 +56,8 @@ export function SetupFlow() {
 
   useEffect(() => {
     void loadCredentials();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId]);
 
   function updateDraft(field: keyof CredentialDraft, value: string) {
     setDraft((current) => ({
@@ -75,7 +78,7 @@ export function SetupFlow() {
 
   async function loadCredentials() {
     const response = await fetch(
-      `${apiBaseUrl}/credentials?workspaceId=${defaultWorkspaceId}`
+      `${apiBaseUrl}/credentials?workspaceId=${activeWorkspaceId}`
     );
     const payload = (await response.json()) as CredentialMetadata[];
     setSavedCredentials(payload);
@@ -91,7 +94,7 @@ export function SetupFlow() {
       body: JSON.stringify({
         ...draft,
         provider: selectedProvider,
-        workspaceId: defaultWorkspaceId
+        workspaceId: activeWorkspaceId
       }),
       headers: {
         "Content-Type": "application/json"
@@ -124,7 +127,7 @@ export function SetupFlow() {
       body: JSON.stringify({
         ...draft,
         provider: selectedProvider,
-        workspaceId: defaultWorkspaceId
+        workspaceId: activeWorkspaceId
       }),
       headers: {
         "Content-Type": "application/json"
@@ -191,7 +194,7 @@ export function SetupFlow() {
               padding: "0.6rem 0.9rem"
             }}
           >
-            Workspace: {defaultWorkspaceId}
+            Workspace: {activeWorkspaceId}
           </div>
         </div>
         <ProviderSelector

@@ -152,58 +152,58 @@ Tasks are ordered by dependency. Execution should start at the top and move down
   - Verify: `pnpm test:integration`
   - Files: `apps/api/src/modules/artifacts/artifacts.service.ts`, `apps/api/src/modules/artifacts/storage.service.ts`, `db/migrations/0004_artifacts.sql`, `packages/contracts/src/artifact.ts`, `tests/integration/artifacts-api.spec.ts`
 
-- [ ] Task 27: Add preview cards and baseline Diff cards to the chat timeline
+- [x] Task 27: Add preview cards and baseline Diff cards to the chat timeline
   - Acceptance: The web app renders artifact preview cards, attachment cards, and a baseline Diff card inside the conversation stream.
   - Verify: `pnpm --filter web test`; `pnpm test:e2e`
   - Files: `apps/web/src/features/artifacts/artifact-card.tsx`, `apps/web/src/features/artifacts/preview-card.tsx`, `apps/web/src/features/artifacts/diff-card.tsx`, `apps/web/src/features/chat/chat-message.tsx`, `tests/e2e/artifact-cards.spec.ts`
 
 ## Phase 8: Observability And Hardening
 
-- [ ] Task 28: Add structured logging, tracing, metrics, and health signals
+- [x] Task 28: Add structured logging, tracing, metrics, and health signals
   - Acceptance: API and worker emit structured logs, expose health/readiness surfaces, and publish core traces and metrics for provider calls and orchestration state changes.
   - Verify: `pnpm --filter api test`; `pnpm --filter worker test`
   - Files: `apps/api/src/observability/observability.module.ts`, `apps/worker/src/observability/observability.ts`, `infra/observability/otel-config.yaml`, `infra/observability/prometheus.yml`, `docs/operations/observability.md`
 
-- [ ] Task 29: Add rate-limit, retry, and safe-error guardrails
+- [x] Task 29: Add rate-limit, retry, and safe-error guardrails
   - Acceptance: The platform enforces rate-limit hooks, retries transient provider failures, and maps internal errors into user-safe surfaced states.
   - Verify: `pnpm test:integration`; `pnpm --filter worker test`
   - Files: `apps/api/src/modules/limits/rate-limit.service.ts`, `apps/worker/src/activities/retry-policy.ts`, `packages/domain/src/errors/public-error-mapper.ts`, `tests/integration/rate-limit.spec.ts`, `tests/integration/error-mapping.spec.ts`
 
 ## Phase 9: Real Provider Rollout
 
-- [ ] Task 30: Implement the real `Hermes` adapter
+- [x] Task 30: Implement the real `Hermes` adapter
   - Acceptance: `Hermes` supports BYOK validation, normalized request mapping, and streamed response translation into the shared adapter contract.
   - Verify: `pnpm --filter @agenthub/agent-adapters test`; `pnpm test:integration`
   - Files: `packages/agent-adapters/src/hermes/hermes-adapter.ts`, `packages/agent-adapters/src/hermes/hermes-types.ts`, `packages/agent-adapters/test/hermes-adapter.spec.ts`, `apps/api/src/modules/credentials/providers/hermes-validator.ts`
 
-- [ ] Task 31: Implement the real `OpenClaw` adapter
+- [x] Task 31: Implement the real `OpenClaw` adapter
   - Acceptance: `OpenClaw` supports BYOK validation, normalized request mapping, and streamed response translation into the shared adapter contract.
   - Verify: `pnpm --filter @agenthub/agent-adapters test`; `pnpm test:integration`
   - Files: `packages/agent-adapters/src/openclaw/openclaw-adapter.ts`, `packages/agent-adapters/src/openclaw/openclaw-types.ts`, `packages/agent-adapters/test/openclaw-adapter.spec.ts`, `apps/api/src/modules/credentials/providers/openclaw-validator.ts`
 
-- [ ] Task 32: Implement the real `Codex` adapter
+- [x] Task 32: Implement the real `Codex` adapter
   - Acceptance: `Codex` supports BYOK validation, normalized request mapping, and streamed response translation into the shared adapter contract.
   - Verify: `pnpm --filter @agenthub/agent-adapters test`; `pnpm test:integration`
   - Files: `packages/agent-adapters/src/codex/codex-adapter.ts`, `packages/agent-adapters/src/codex/codex-types.ts`, `packages/agent-adapters/test/codex-adapter.spec.ts`, `apps/api/src/modules/credentials/providers/codex-validator.ts`
 
-- [ ] Task 33: Implement the real `Claude Code` adapter
+- [x] Task 33: Implement the real `Claude Code` adapter
   - Acceptance: `Claude Code` supports BYOK validation, normalized request mapping, and streamed response translation into the shared adapter contract.
   - Verify: `pnpm --filter @agenthub/agent-adapters test`; `pnpm test:integration`
   - Files: `packages/agent-adapters/src/claude-code/claude-code-adapter.ts`, `packages/agent-adapters/src/claude-code/claude-code-types.ts`, `packages/agent-adapters/test/claude-code-adapter.spec.ts`, `apps/api/src/modules/credentials/providers/claude-code-validator.ts`
 
-- [ ] Task 34: Add real-provider acceptance coverage for all four providers
+- [x] Task 34: Add real-provider acceptance coverage for all four providers
   - Acceptance: The release test suite proves at least one real end-to-end conversation path per provider and does not depend on mocks for core acceptance.
   - Verify: `pnpm test:e2e`; `pnpm test:integration`
   - Files: `tests/e2e/hermes-real.spec.ts`, `tests/e2e/openclaw-real.spec.ts`, `tests/e2e/codex-real.spec.ts`, `tests/e2e/claude-code-real.spec.ts`, `docs/operations/provider-acceptance.md`
 
 ## Phase 10: Load And Release Readiness
 
-- [ ] Task 35: Add load-test scenarios for concurrency and stream stability
+- [x] Task 35: Add load-test scenarios for concurrency and stream stability
   - Acceptance: The repo contains `k6` scenarios for session-list reads, message submission, concurrent orchestration, and long-lived streaming connections.
   - Verify: `pnpm test:load`
   - Files: `tests/load/session-list.js`, `tests/load/send-message.js`, `tests/load/group-orchestration.js`, `tests/load/stream-stability.js`, `tests/load/README.md`
 
-- [ ] Task 36: Validate release readiness against the fixed production target
+- [x] Task 36: Validate release readiness against the fixed production target
   - Acceptance: The project has a documented release checklist covering real-provider readiness, observability readiness, load-test results, and the fixed `3000` concurrent clients / `500` concurrent agent executions target.
   - Verify: `pnpm test`; `pnpm test:e2e`; `pnpm test:load`
   - Files: `docs/operations/release-checklist.md`, `docs/operations/load-test-results.md`, `docs/architecture/runtime-readiness.md`, `ai/logs/release-readiness.md`

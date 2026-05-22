@@ -26,9 +26,14 @@ export class GroupMembersService {
 
   async listMembers(
     conversationId: string,
-    workspaceId: string
+    workspaceId: string,
+    ownerUserId: string
   ): Promise<ConversationAgentMember[]> {
-    const conversation = await this.loadConversationMembers(conversationId, workspaceId);
+    const conversation = await this.loadConversationMembers(
+      conversationId,
+      workspaceId,
+      ownerUserId
+    );
 
     return conversation.members;
   }
@@ -36,6 +41,7 @@ export class GroupMembersService {
   async resolveMentionedAgentIds(input: {
     conversationId: string;
     mentionedAgentIds: string[];
+    ownerUserId: string;
     workspaceId: string;
   }): Promise<string[]> {
     if (input.mentionedAgentIds.length === 0) {
@@ -44,7 +50,8 @@ export class GroupMembersService {
 
     const conversation = await this.loadConversationMembers(
       input.conversationId,
-      input.workspaceId
+      input.workspaceId,
+      input.ownerUserId
     );
 
     if (conversation.mode !== "group") {
@@ -66,7 +73,8 @@ export class GroupMembersService {
 
   private async loadConversationMembers(
     conversationId: string,
-    workspaceId: string
+    workspaceId: string,
+    ownerUserId: string
   ): Promise<{
     members: ConversationAgentMember[];
     mode: Conversation["mode"];
@@ -83,10 +91,12 @@ export class GroupMembersService {
         LEFT JOIN conversation_agents
           ON conversation_agents.conversation_id = conversations.id
           AND conversation_agents.workspace_id = conversations.workspace_id
-        WHERE conversations.id = $1 AND conversations.workspace_id = $2
+        WHERE conversations.id = $1
+          AND conversations.workspace_id = $2
+          AND conversations.owner_user_id = $3
         ORDER BY conversation_agents.agent_id ASC
       `,
-      [parsedConversationId, parsedWorkspaceId]
+      [parsedConversationId, parsedWorkspaceId, ownerUserId]
     );
 
     if (result.rows.length === 0) {

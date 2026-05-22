@@ -5,9 +5,9 @@ import type {
 
 export type CredentialRepository = {
   create(credential: ProviderCredential): Promise<ProviderCredential>;
-  findById(id: string): Promise<ProviderCredential | null>;
-  listByWorkspace(workspaceId: string): Promise<ProviderCredential[]>;
-  revoke(id: string, workspaceId: string): Promise<boolean>;
+  findById(id: string, ownerUserId: string): Promise<ProviderCredential | null>;
+  listByWorkspace(workspaceId: string, ownerUserId: string): Promise<ProviderCredential[]>;
+  revoke(id: string, workspaceId: string, ownerUserId: string): Promise<boolean>;
 };
 
 export type CredentialValidationResult = {

@@ -21,6 +21,10 @@ const awaitableActivities = {
     const { aggregateResultsActivity } = await import("./activities/index.js");
     return aggregateResultsActivity(input as never);
   },
+  executeDirectAgentActivity: async (input: unknown) => {
+    const { executeDirectAgentActivity } = await import("./activities/index.js");
+    return executeDirectAgentActivity(input as never);
+  },
   dispatchAgentActivity: async (input: unknown) => {
     const { dispatchAgentActivity } = await import("./activities/index.js");
     return dispatchAgentActivity(input as never);

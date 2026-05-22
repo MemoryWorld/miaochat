@@ -6,13 +6,17 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 
 import { createApp } from "../src/main.js";
 import { StreamBrokerService } from "../src/modules/streams/stream-broker.service.js";
+import { signupSessionViaFetch } from "../../../tests/support/auth-session.js";
 
 const decoder = new TextDecoder();
+const workspaceId = `workspace_streaming_task_17_${Date.now()}`;
 
 describe("streams e2e", () => {
   let app: NestFastifyApplication;
+  let authCookie: string;
   let baseUrl: string;
   let broker: StreamBrokerService;
+  let conversationId: string;
 
   beforeAll(async () => {
     app = await createApp();
@@ -22,6 +26,54 @@ describe("streams e2e", () => {
     });
     baseUrl = await app.getUrl();
     broker = app.get(StreamBrokerService);
+
+    const session = await signupSessionViaFetch(baseUrl, {
+      displayName: "Streams E2E",
+      email: `streams-e2e-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
+
+    const agentResponse = await fetch(`${baseUrl}/custom-agents`, {
+      body: JSON.stringify({
+        capabilityTags: [],
+        name: "Streams SSE Agent",
+        provider: "mock",
+        systemPrompt: "Stream events only.",
+        toolBindings: [],
+        workspaceId
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        cookie: authCookie
+      },
+      method: "POST"
+    });
+
+    if (agentResponse.status !== 201) {
+      throw new Error(`Expected agent setup to succeed, received ${agentResponse.status}.`);
+    }
+
+    const agentId = (await agentResponse.json()).id as string;
+    const conversationResponse = await fetch(`${baseUrl}/conversations`, {
+      body: JSON.stringify({
+        agentIds: [agentId],
+        mode: "direct",
+        workspaceId
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        cookie: authCookie
+      },
+      method: "POST"
+    });
+
+    if (conversationResponse.status !== 201) {
+      throw new Error(
+        `Expected conversation setup to succeed, received ${conversationResponse.status}.`
+      );
+    }
+
+    conversationId = (await conversationResponse.json()).id as string;
   });
 
   afterAll(async () => {
@@ -29,8 +81,6 @@ describe("streams e2e", () => {
   });
 
   it("streams published conversation events to browser subscribers over SSE", async () => {
-    const conversationId = "conv_streaming_task_17";
-    const workspaceId = "workspace_streaming_task_17";
     const event: StreamEvent = {
       kind: "conversation.message.delta",
       payload: {
@@ -43,7 +93,8 @@ describe("streams e2e", () => {
       `${baseUrl}/streams/${conversationId}?workspaceId=${workspaceId}`,
       {
         headers: {
-          Accept: "text/event-stream"
+          Accept: "text/event-stream",
+          cookie: authCookie
         }
       }
     );

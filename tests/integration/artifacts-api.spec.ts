@@ -4,11 +4,12 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
+import { signupSessionViaInject } from "../support/auth-session.js";
 
 const workspaceId = "workspace_artifacts_integration";
 const agentId = "agent_artifact_operator";
 
-async function seedAgent(client: Client): Promise<void> {
+async function seedAgent(client: Client, ownerUserId: string): Promise<void> {
   await client.query(
     `
       INSERT INTO custom_agents (
@@ -16,15 +17,16 @@ async function seedAgent(client: Client): Promise<void> {
         avatar_url,
         capability_tags,
         name,
+        owner_user_id,
         provider,
         system_prompt,
         tool_bindings,
         workspace_id
       )
-      VALUES ($1, null, '[]'::jsonb, 'Artifact Operator', 'mock', 'Track file outputs', '[]'::jsonb, $2)
+      VALUES ($1, null, '[]'::jsonb, 'Artifact Operator', $2, 'mock', 'Track file outputs', '[]'::jsonb, $3)
       ON CONFLICT DO NOTHING
     `,
-    [agentId, workspaceId]
+    [agentId, ownerUserId, workspaceId]
   );
 }
 
@@ -39,6 +41,8 @@ async function clearAgents(client: Client): Promise<void> {
 describe("artifacts integration", () => {
   let app: NestFastifyApplication;
   let client: Client;
+  let authCookie: string;
+  let ownerUserId: string;
 
   beforeAll(async () => {
     client = new Client({
@@ -48,11 +52,19 @@ describe("artifacts integration", () => {
     await client.connect();
     await clearWorkspace(client);
     await clearAgents(client);
-    await seedAgent(client);
 
     app = await createApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    const session = await signupSessionViaInject(app, {
+      displayName: "Artifacts Integration",
+      email: `artifacts-integration-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
+    ownerUserId = session.user.id;
+
+    await seedAgent(client, ownerUserId);
   });
 
   afterEach(async () => {
@@ -68,6 +80,9 @@ describe("artifacts integration", () => {
 
   it("prepares an attachment upload target, persists artifact metadata, and lists artifacts by message", async () => {
     const conversationResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         agentIds: [agentId],
@@ -81,6 +96,9 @@ describe("artifacts integration", () => {
     const conversationId = conversationResponse.json().id as string;
 
     const messageResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         content: "Attach the generated checklist",

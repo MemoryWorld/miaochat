@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { userIdSchema } from "./conversation.js";
 import { messageRoleSchema } from "./database-enums.js";
 
 export const messageIdSchema = z.string().min(1);
@@ -7,6 +8,7 @@ export const messageIdSchema = z.string().min(1);
 export const messageSchema = z.object({
   id: messageIdSchema,
   conversationId: z.string().min(1),
+  ownerUserId: userIdSchema,
   role: messageRoleSchema,
   content: z.string().min(1),
   createdAt: z.coerce.date(),

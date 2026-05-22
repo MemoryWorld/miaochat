@@ -7,9 +7,11 @@ import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
 import { bootstrapWorker } from "../../apps/worker/src/main.js";
+import { signupSessionViaFetch } from "../support/auth-session.js";
 
 const decoder = new TextDecoder();
 const workspaceId = "workspace_group_failure";
+const workerTaskQueue = "worker-task-group-failure";
 const agentIds = {
   failure: "agent_group_mock_failure",
   hermes: "agent_group_partial_mock_hermes",
@@ -18,11 +20,17 @@ const agentIds = {
 
 describe("group failure integration", () => {
   let app: NestFastifyApplication;
+  let authCookie: string;
   let baseUrl: string;
   let client: Client;
+  let ownerUserId: string;
+  let previousWorkerTaskQueue: string | undefined;
   let worker: Worker;
 
   beforeAll(async () => {
+    previousWorkerTaskQueue = process.env.WORKER_TASK_QUEUE;
+    process.env.WORKER_TASK_QUEUE = workerTaskQueue;
+
     client = new Client({
       connectionString:
         process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub"
@@ -30,7 +38,6 @@ describe("group failure integration", () => {
     await client.connect();
     await clearWorkspace(client);
     await clearAgents(client);
-    await seedMockAgents(client);
 
     app = await createApp();
     await app.listen({
@@ -38,15 +45,27 @@ describe("group failure integration", () => {
       port: 0
     });
     baseUrl = await app.getUrl();
+    const session = await signupSessionViaFetch(baseUrl, {
+      displayName: "Group Failure Integration",
+      email: `group-failure-${Date.now()}@example.com`
+    });
+    authCookie = session.cookie;
+    ownerUserId = session.user.id;
+    await seedMockAgents(client, ownerUserId);
 
     worker = await bootstrapWorker();
   }, 20_000);
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
+
     await clearWorkspace(client);
     await clearAgents(client);
     await client.end();
+
+    process.env.WORKER_TASK_QUEUE = previousWorkerTaskQueue;
   }, 20_000);
 
   it("publishes structured partial-failure events and persists a degraded assistant reply", async () => {
@@ -57,7 +76,8 @@ describe("group failure integration", () => {
         workspaceId
       }),
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        cookie: authCookie
       },
       method: "POST"
     });
@@ -69,7 +89,8 @@ describe("group failure integration", () => {
       `${baseUrl}/streams/${conversationId}?workspaceId=${workspaceId}`,
       {
         headers: {
-          Accept: "text/event-stream"
+          Accept: "text/event-stream",
+          cookie: authCookie
         }
       }
     );
@@ -89,7 +110,8 @@ describe("group failure integration", () => {
             workspaceId
           }),
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            cookie: authCookie
           },
           method: "POST"
         });
@@ -136,7 +158,7 @@ describe("group failure integration", () => {
           }
         });
 
-        const messages = await waitForMessages(baseUrl, conversationId, 2);
+        const messages = await waitForMessages(baseUrl, conversationId, 2, authCookie);
         const assistantMessage = messages[1];
 
         expect(messages.map((message) => message.role)).toEqual([
@@ -156,7 +178,7 @@ describe("group failure integration", () => {
   }, 20_000);
 });
 
-async function seedMockAgents(client: Client): Promise<void> {
+async function seedMockAgents(client: Client, ownerUserId: string): Promise<void> {
   await client.query(
     `
       INSERT INTO custom_agents (
@@ -164,18 +186,19 @@ async function seedMockAgents(client: Client): Promise<void> {
         avatar_url,
         capability_tags,
         name,
+        owner_user_id,
         provider,
         system_prompt,
         tool_bindings,
         workspace_id
       )
       VALUES
-        ($1, null, '[]'::jsonb, 'Hermes Planner', 'mock', 'Plan', '[]'::jsonb, $4),
-        ($2, null, '[]'::jsonb, 'Failure Scout', 'mock', 'Break', '[]'::jsonb, $4),
-        ($3, null, '[]'::jsonb, 'Timeout Watcher', 'mock', 'Wait', '[]'::jsonb, $4)
+        ($1, null, '[]'::jsonb, 'Hermes Planner', $4, 'mock', 'Plan', '[]'::jsonb, $5),
+        ($2, null, '[]'::jsonb, 'Failure Scout', $4, 'mock', 'Break', '[]'::jsonb, $5),
+        ($3, null, '[]'::jsonb, 'Timeout Watcher', $4, 'mock', 'Wait', '[]'::jsonb, $5)
       ON CONFLICT DO NOTHING
     `,
-    [agentIds.hermes, agentIds.failure, agentIds.timeout, workspaceId]
+    [agentIds.hermes, agentIds.failure, agentIds.timeout, ownerUserId, workspaceId]
   );
 }
 
@@ -222,7 +245,8 @@ async function readEvents(
 async function waitForMessages(
   baseUrl: string,
   conversationId: string,
-  expectedCount: number
+  expectedCount: number,
+  authCookie: string
 ): Promise<
   Array<{
     content: string;
@@ -232,7 +256,12 @@ async function waitForMessages(
 > {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const response = await fetch(
-      `${baseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`
+      `${baseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`,
+      {
+        headers: {
+          cookie: authCookie
+        }
+      }
     );
     const payload = (await response.json()) as Array<{
       content: string;
