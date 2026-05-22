@@ -3,6 +3,7 @@ import type {
   ProviderCredential
 } from "@agenthub/contracts";
 import {
+  credentialSourceSchema,
   createProviderCredentialInputSchema,
   providerCredentialSchema
 } from "@agenthub/contracts";
@@ -20,8 +21,29 @@ export const workspaceQuerySchema = z.object({
   workspaceId: z.string().trim().min(1).default("default-workspace")
 });
 
+const credentialModeProviderSchema = z.enum([
+  "claude-code",
+  "codex",
+  "hermes",
+  "openclaw"
+]);
+
+export const credentialModeSchema = z.object({
+  credentialSource: credentialSourceSchema,
+  provider: credentialModeProviderSchema,
+  workspaceId: z.string().trim().min(1)
+});
+
+export const credentialModeInputSchema = z.object({
+  credentialSource: credentialSourceSchema.default("user_provided"),
+  provider: credentialModeProviderSchema,
+  workspaceId: z.string().trim().min(1).default("default-workspace")
+});
+
 export type CredentialCreateInput = CreateProviderCredentialInput;
 export type CredentialIdParams = z.infer<typeof credentialIdParamsSchema>;
+export type CredentialMode = z.infer<typeof credentialModeSchema>;
+export type CredentialModeInput = z.infer<typeof credentialModeInputSchema>;
 export type CredentialMetadata = z.infer<typeof credentialMetadataSchema>;
 export type WorkspaceQuery = z.infer<typeof workspaceQuerySchema>;
 
@@ -43,6 +65,10 @@ export function parseCredentialCreateInput(input: unknown): CredentialCreateInpu
 
 export function parseCredentialIdParams(input: unknown): CredentialIdParams {
   return credentialIdParamsSchema.parse(input);
+}
+
+export function parseCredentialModeInput(input: unknown): CredentialModeInput {
+  return credentialModeInputSchema.parse(input);
 }
 
 export function parseWorkspaceQuery(input: unknown): WorkspaceQuery {

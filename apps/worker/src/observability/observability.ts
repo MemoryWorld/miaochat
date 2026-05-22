@@ -1,29 +1,61 @@
-import { randomUUID } from "node:crypto";
+import pino, { type Logger as PinoLogger } from "pino";
+import { getGlobalErrorContextStore, getGlobalErrorCaptureSink, createCapturedError, bindUnhandledErrorMonitors } from "@agenthub/observability-errors";
+import { OpenTelemetryRuntime } from "@agenthub/observability-otel";
 
 export type LogLevel = "debug" | "error" | "info" | "warn";
 export type LogFields = Record<string, unknown>;
 export type MetricLabels = Record<string, string>;
 
-const levelOrder: Record<LogLevel, number> = {
-  debug: 10,
-  info: 20,
-  warn: 30,
-  error: 40
-};
+const redactedPaths = [
+  "authorization",
+  "cookie",
+  "cookies",
+  "headers.authorization",
+  "headers.cookie",
+  "headers.set-cookie",
+  "password",
+  "providerSecret",
+  "rawSecret",
+  "secret",
+  "sessionToken",
+  "token"
+] as const;
 
 export class StructuredWorkerLogger {
-  private readonly minLevel: LogLevel;
-  private readonly serviceName: string;
-  private readonly stream: NodeJS.WritableStream;
+  private readonly logger: PinoLogger;
 
   constructor(options: {
+    logger?: PinoLogger;
     minLevel?: LogLevel;
     serviceName?: string;
     stream?: NodeJS.WritableStream;
   } = {}) {
-    this.serviceName = options.serviceName ?? process.env.SERVICE_NAME ?? "worker";
-    this.minLevel = options.minLevel ?? (process.env.LOG_LEVEL as LogLevel) ?? "info";
-    this.stream = options.stream ?? process.stdout;
+    this.logger =
+      options.logger ??
+      pino(
+        {
+          base: {
+            service: options.serviceName ?? process.env.SERVICE_NAME ?? "worker"
+          },
+          formatters: {
+            level: (label) => ({
+              level: label
+            })
+          },
+          level: options.minLevel ?? (process.env.LOG_LEVEL as LogLevel) ?? "info",
+          messageKey: "event",
+          redact: {
+            censor: "[Redacted]",
+            paths: [...redactedPaths]
+          },
+          serializers: {
+            err: pino.stdSerializers.err,
+            error: pino.stdSerializers.err
+          },
+          timestamp: () => `,"ts":"${new Date().toISOString()}"`
+        },
+        options.stream ?? process.stdout
+      );
   }
 
   info(event: string, fields: LogFields = {}): void {
@@ -42,19 +74,27 @@ export class StructuredWorkerLogger {
     this.emit("debug", event, fields);
   }
 
-  emit(level: LogLevel, event: string, fields: LogFields = {}): void {
-    if (levelOrder[level] < levelOrder[this.minLevel]) {
-      return;
-    }
+  child(extraFields: LogFields): StructuredWorkerLogger {
+    return new StructuredWorkerLogger({
+      logger: this.logger.child(extraFields)
+    });
+  }
 
-    const record = {
-      event,
-      level,
-      service: this.serviceName,
-      ts: new Date().toISOString(),
-      ...fields
-    };
-    this.stream.write(`${JSON.stringify(record)}\n`);
+  emit(level: LogLevel, event: string, fields: LogFields = {}): void {
+    switch (level) {
+      case "debug":
+        this.logger.debug(fields, event);
+        return;
+      case "info":
+        this.logger.info(fields, event);
+        return;
+      case "warn":
+        this.logger.warn(fields, event);
+        return;
+      case "error":
+        this.logger.error(fields, event);
+        return;
+    }
   }
 }
 
@@ -144,7 +184,8 @@ export type WorkerTraceSpan = {
 export class WorkerTraceRecorder {
   constructor(
     private readonly logger: StructuredWorkerLogger,
-    private readonly metrics: WorkerMetricsRegistry
+    private readonly metrics: WorkerMetricsRegistry,
+    private readonly otel: OpenTelemetryRuntime
   ) {}
 
   startSpan(
@@ -152,9 +193,17 @@ export class WorkerTraceRecorder {
     fields: LogFields = {},
     options: { parentTraceId?: string } = {}
   ): WorkerTraceSpan {
-    const traceId = options.parentTraceId ?? randomUUID();
-    const spanId = randomUUID();
+    const span = this.otel.startSpan(name, fields, options);
+    const traceId = span.traceId;
+    const spanId = span.spanId;
     const startedAt = Date.now();
+
+    getGlobalErrorContextStore().enterWith({
+      conversationId: stringOrUndefined(fields.conversationId),
+      traceId,
+      workspaceId:
+        stringOrUndefined(fields.workspaceId) ?? stringOrUndefined(fields.workspace_id)
+    });
 
     this.logger.info("trace.span.start", {
       ...fields,
@@ -173,7 +222,7 @@ export class WorkerTraceRecorder {
 
       this.metrics.incrementCounter("trace_span_total", labels);
       this.metrics.observeHistogram("trace_span_duration_ms", durationMs, labels);
-      this.logger.info("trace.span.end", {
+      const finalizedFields = {
         ...fields,
         ...extraFields,
         durationMs,
@@ -182,7 +231,15 @@ export class WorkerTraceRecorder {
         span: name,
         spanId,
         traceId
-      });
+      };
+
+      if (result === "error") {
+        span.fail(error, finalizedFields);
+      } else {
+        span.end(finalizedFields);
+      }
+
+      this.logger.info("trace.span.end", finalizedFields);
     };
 
     return {
@@ -201,6 +258,8 @@ export class WorkerTraceRecorder {
 let cachedLogger: StructuredWorkerLogger | undefined;
 let cachedMetrics: WorkerMetricsRegistry | undefined;
 let cachedTracer: WorkerTraceRecorder | undefined;
+let cachedOtel: OpenTelemetryRuntime | undefined;
+let cachedUnbindUnhandledErrors: (() => void) | undefined;
 
 export function getWorkerLogger(): StructuredWorkerLogger {
   cachedLogger ??= new StructuredWorkerLogger();
@@ -213,14 +272,47 @@ export function getWorkerMetrics(): WorkerMetricsRegistry {
 }
 
 export function getWorkerTracer(): WorkerTraceRecorder {
-  cachedTracer ??= new WorkerTraceRecorder(getWorkerLogger(), getWorkerMetrics());
+  cachedTracer ??= new WorkerTraceRecorder(
+    getWorkerLogger(),
+    getWorkerMetrics(),
+    getWorkerOtel()
+  );
   return cachedTracer;
 }
 
 export function resetWorkerObservability(): void {
+  void cachedOtel?.shutdown();
+  cachedUnbindUnhandledErrors?.();
   cachedLogger = undefined;
   cachedMetrics = undefined;
   cachedTracer = undefined;
+  cachedOtel = undefined;
+  cachedUnbindUnhandledErrors = undefined;
+}
+
+function getWorkerOtel(): OpenTelemetryRuntime {
+  cachedOtel ??= new OpenTelemetryRuntime({
+    serviceName: process.env.SERVICE_NAME ?? "worker"
+  });
+  return cachedOtel;
+}
+
+export function bindWorkerUnhandledErrors(): () => void {
+  cachedUnbindUnhandledErrors ??= bindUnhandledErrorMonitors((error, context) => {
+    void getGlobalErrorCaptureSink().capture(
+      createCapturedError(error, {
+        ...getGlobalErrorContextStore().snapshot(),
+        runtime: "worker",
+        ...context
+      })
+    );
+  });
+
+  return cachedUnbindUnhandledErrors;
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function createMetricKey(name: string, labels: MetricLabels): string {

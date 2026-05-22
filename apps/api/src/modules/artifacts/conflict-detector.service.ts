@@ -1,4 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 
 import { DatabaseService } from "../database/database.service.js";
 
@@ -23,23 +24,26 @@ export type ArtifactConflict = {
 export class ArtifactConflictDetectorService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
-  async detect(artifactId: string): Promise<ArtifactConflict> {
-    const result = await this.database.query<{
+  async detect(input: {
+    artifactId: string;
+    ownerUserId: string;
+    workspaceId: string;
+  }): Promise<ArtifactConflict> {
+    await this.assertArtifactOwnedBy(input.artifactId, input.workspaceId, input.ownerUserId);
+    const result = await this.database.execute<{
       author_user_id: string | null;
       content_digest: string;
       id: string;
       parent_revision_id: string | null;
       revision_index: number;
-    }>(
-      `
-        SELECT author_user_id, content_digest, id, parent_revision_id, revision_index
-        FROM artifact_revisions
-        WHERE artifact_id = $1
-        ORDER BY revision_index DESC
-        LIMIT 50
-      `,
-      [artifactId]
-    );
+    }>(sql`
+      SELECT author_user_id, content_digest, id, parent_revision_id, revision_index
+      FROM artifact_revisions
+      WHERE artifact_id = ${input.artifactId}
+        AND workspace_id = ${input.workspaceId}
+      ORDER BY revision_index DESC
+      LIMIT 50
+    `);
 
     const groups = new Map<
       string,
@@ -78,9 +82,32 @@ export class ArtifactConflictDetectorService {
     }
 
     return {
-      artifactId,
+      artifactId: input.artifactId,
       branches: conflicting,
       hasConflict: conflicting.length > 0
     };
+  }
+
+  private async assertArtifactOwnedBy(
+    artifactId: string,
+    workspaceId: string,
+    ownerUserId: string
+  ): Promise<void> {
+    const result = await this.database.execute<{ id: string }>(sql`
+      SELECT artifacts.id
+      FROM artifacts
+      INNER JOIN messages
+        ON messages.id = artifacts.message_id
+        AND messages.workspace_id = artifacts.workspace_id
+      WHERE artifacts.id = ${artifactId}
+        AND artifacts.workspace_id = ${workspaceId}
+        AND messages.owner_user_id = ${ownerUserId}
+    `);
+
+    if (!result.rows[0]) {
+      throw new NotFoundException(
+        `Artifact ${artifactId} was not found in workspace ${workspaceId}.`
+      );
+    }
   }
 }

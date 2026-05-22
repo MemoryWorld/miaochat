@@ -3,58 +3,30 @@ import { Inject, Injectable } from "@nestjs/common";
 import { messageSchema, type Message } from "@agenthub/contracts";
 import { assemblePinnedContext, type ConversationContext } from "@agenthub/domain";
 
-import { DatabaseService } from "../database/database.service.js";
-
-type PinnedMessageRow = {
-  content: string;
-  conversation_id: string;
-  created_at: Date;
-  id: string;
-  is_pinned: boolean;
-  mentioned_agent_ids: string[];
-  owner_user_id: string;
-  role: Message["role"];
-  source_agent_id: string | null;
-  workspace_id: string;
-};
+import { MessagesRepository, type MessageRow } from "./messages.repository.js";
 
 @Injectable()
 export class PinMessageService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(MessagesRepository) private readonly messagesRepository: MessagesRepository
+  ) {}
 
   async loadConversationContext(
     conversationId: string,
     workspaceId: string,
     ownerUserId: string
   ): Promise<ConversationContext> {
-    const result = await this.database.query<PinnedMessageRow>(
-      `
-        SELECT
-          id,
-          conversation_id,
-          role,
-          content,
-          mentioned_agent_ids,
-          created_at,
-          is_pinned,
-          owner_user_id,
-          source_agent_id,
-          workspace_id
-        FROM messages
-        WHERE conversation_id = $1
-          AND workspace_id = $2
-          AND owner_user_id = $3
-          AND is_pinned = true
-        ORDER BY created_at ASC
-      `,
-      [conversationId, workspaceId, ownerUserId]
+    const result = await this.messagesRepository.listPinnedMessages(
+      conversationId,
+      workspaceId,
+      ownerUserId
     );
 
-    return assemblePinnedContext(result.rows.map(mapPinnedMessageRow));
+    return assemblePinnedContext(result.map(mapPinnedMessageRow));
   }
 }
 
-function mapPinnedMessageRow(row: PinnedMessageRow): Message {
+function mapPinnedMessageRow(row: MessageRow): Message {
   return messageSchema.parse({
     content: row.content,
     conversationId: row.conversation_id,

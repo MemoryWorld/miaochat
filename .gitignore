@@ -9,3 +9,9 @@ coverage
 .env.*.local
 *.log
 .DS_Store
+playwright-report
+test-results
+db/schema.js
+db/schema.js.map
+db/schema.d.ts
+db/schema.d.ts.map

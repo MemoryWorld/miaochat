@@ -21,6 +21,8 @@ export type WorkspacePermission =
   | "conversation.update"
   | "message.read"
   | "message.send"
+  | "deploy_target.manage"
+  | "deploy_target.read"
   | "credential.manage"
   | "credential.read"
   | "custom_agent.manage"
@@ -34,6 +36,7 @@ const memberPermissions: ReadonlySet<WorkspacePermission> = new Set([
   "conversation.update",
   "message.read",
   "message.send",
+  "deploy_target.read",
   "credential.read",
   "custom_agent.read",
   "artifact.create",
@@ -47,6 +50,7 @@ const adminPermissions: ReadonlySet<WorkspacePermission> = new Set([
   "workspace.members.manage",
   "workspace.update",
   "conversation.share",
+  "deploy_target.manage",
   "credential.manage",
   "custom_agent.manage"
 ]);

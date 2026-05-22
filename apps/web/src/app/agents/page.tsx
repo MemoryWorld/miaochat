@@ -5,6 +5,7 @@ import { startTransition, useEffect, useState } from "react";
 import type { CustomAgent } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
+import { Badge } from "../../components/ui/badge";
 import { AgentForm, type AgentDraft } from "../../features/agents/agent-form";
 import { AgentList } from "../../features/agents/agent-list";
 
@@ -71,66 +72,44 @@ export default function AgentsPage() {
     <AppShell
       sidebar={
         <>
-          <h1 style={{ marginTop: 0 }}>AgentHub</h1>
-          <p style={{ color: "#475467", lineHeight: 1.6 }}>
+          <Badge className="mb-3" tone="primary">
+            Agent Registry
+          </Badge>
+          <h1 className="mt-0 text-3xl font-semibold tracking-tight text-slate-950">
+            AgentHub
+          </h1>
+          <p className="text-sm leading-7 text-slate-600">
             Define light custom agents with workspace-scoped prompts, then reuse them
             in new conversation flows without touching provider adapters.
           </p>
-          <a href="/" style={navLinkStyle}>
+          <a
+            className="inline-flex items-center text-sm font-semibold text-sky-700 no-underline transition hover:text-sky-600"
+            href="/"
+          >
             Back to chat workspace
           </a>
-          <div style={workspaceBadgeStyle}>Workspace: {workspaceId}</div>
+          <Badge className="mt-4" tone="default">
+            Workspace: {workspaceId}
+          </Badge>
         </>
       }
     >
-      <div
-        style={{
-          display: "grid",
-          gap: "1rem",
-          gridTemplateColumns: "minmax(0, 1.1fr) minmax(320px, 0.9fr)"
-        }}
-      >
-        <section style={panelStyle}>
-          <h2 style={{ marginTop: 0 }}>Custom agents</h2>
-          <p style={{ color: "#475467", lineHeight: 1.6 }}>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <section className="rounded-[28px] border border-white/70 bg-slate-50/80 p-5 shadow-sm">
+          <h2 className="mt-0 text-2xl font-semibold text-slate-950">Custom agents</h2>
+          <p className="text-sm leading-7 text-slate-600">
             Capture the behavior, provider target, and capability tags for light agents
             that can be selected directly in the web client.
           </p>
-          {errorMessage ? <p style={{ color: "#b42318" }}>{errorMessage}</p> : null}
+          {errorMessage ? <p className="text-sm font-medium text-red-700">{errorMessage}</p> : null}
           <AgentForm busy={isSaving} onSubmit={handleCreateAgent} />
         </section>
 
-        <section style={panelStyle}>
-          <h2 style={{ marginTop: 0 }}>Saved agents</h2>
+        <section className="rounded-[28px] border border-white/70 bg-slate-50/80 p-5 shadow-sm">
+          <h2 className="mt-0 text-2xl font-semibold text-slate-950">Saved agents</h2>
           <AgentList agents={agents} />
         </section>
       </div>
     </AppShell>
   );
 }
-
-const navLinkStyle = {
-  color: "#0b6eff",
-  display: "inline-block",
-  fontWeight: 600,
-  marginTop: "0.2rem",
-  textDecoration: "none"
-} as const;
-
-const panelStyle = {
-  background: "rgba(248, 250, 252, 0.84)",
-  border: "1px solid rgba(15, 23, 42, 0.08)",
-  borderRadius: "24px",
-  padding: "1.25rem"
-} as const;
-
-const workspaceBadgeStyle = {
-  background: "#101828",
-  borderRadius: "999px",
-  color: "#f8fafc",
-  display: "inline-block",
-  fontSize: "0.85rem",
-  fontWeight: 700,
-  marginTop: "1rem",
-  padding: "0.6rem 0.9rem"
-} as const;

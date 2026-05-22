@@ -37,7 +37,6 @@ export function AuditLogView({ workspaceId }: AuditLogViewProps) {
     setEvents([]);
     setCursor(null);
     void loadPage(null, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   async function loadPage(

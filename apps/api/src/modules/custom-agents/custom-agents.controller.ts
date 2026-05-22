@@ -20,9 +20,11 @@ export class CustomAgentsController {
   @Post()
   async create(@Body() input: unknown, @Headers("cookie") cookieHeader: string | undefined) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
-    const workspaceId =
-      (input && typeof input === "object" && (input as { workspaceId?: string }).workspaceId) ||
-      "default-workspace";
+    const workspaceId = workspaceIdSchema.parse(
+      input && typeof input === "object"
+        ? (input as { workspaceId?: string }).workspaceId ?? "default-workspace"
+        : "default-workspace"
+    );
     await this.permissionGuard.assert(user.id, workspaceId, "custom_agent.manage");
     return this.customAgentsService.create(input, user.id);
   }

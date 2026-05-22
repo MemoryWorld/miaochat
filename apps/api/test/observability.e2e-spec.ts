@@ -1,6 +1,8 @@
 import { Writable } from "node:stream";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { OpenTelemetryRuntime } from "@agenthub/observability-otel";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 
@@ -36,14 +38,19 @@ describe("api observability", () => {
       serviceName: "api-test",
       stream
     });
+    const child = logger.child({
+      workspaceId: "ws_obs_1"
+    });
 
     logger.info("provider.dispatch.started", {
       conversationId: "conv_obs_1",
       provider: "mock"
     });
-    logger.error("provider.dispatch.failed", {
+    child.error("provider.dispatch.failed", {
       conversationId: "conv_obs_1",
-      provider: "mock"
+      error: new Error("boom"),
+      provider: "mock",
+      rawSecret: "sk-live-123"
     });
 
     expect(stream.entries).toHaveLength(2);
@@ -56,7 +63,26 @@ describe("api observability", () => {
         service: "api-test"
       })
     );
-    expect(JSON.parse(stream.entries[1]!).level).toBe("error");
+    expect(JSON.parse(stream.entries[0]!)).toEqual(
+      expect.objectContaining({
+        ts: expect.any(String)
+      })
+    );
+    expect(JSON.parse(stream.entries[1]!)).toEqual(
+      expect.objectContaining({
+        conversationId: "conv_obs_1",
+        error: expect.objectContaining({
+          message: "boom",
+          type: "Error"
+        }),
+        event: "provider.dispatch.failed",
+        level: "error",
+        provider: "mock",
+        rawSecret: "[Redacted]",
+        service: "api-test",
+        workspaceId: "ws_obs_1"
+      })
+    );
   });
 
   it("records counters, histograms, and Prometheus exposition", () => {
@@ -91,7 +117,7 @@ describe("api observability", () => {
     expect(exposition).toContain("trace_span_duration_ms_sum");
   });
 
-  it("emits trace span lifecycle events and increments span metrics", () => {
+  it("emits trace span lifecycle events, exports OpenTelemetry spans, and increments span metrics", async () => {
     const stream = new CapturingStream();
     const logger = new StructuredLogger({
       minLevel: "info",
@@ -99,7 +125,13 @@ describe("api observability", () => {
       stream
     });
     const metrics = new MetricsRegistry();
-    const tracer = new TraceRecorder(logger, metrics);
+    const exporter = new InMemorySpanExporter();
+    const otel = new OpenTelemetryRuntime({
+      exporter,
+      serviceName: "api-test",
+      useSimpleProcessor: true
+    });
+    const tracer = new TraceRecorder(logger, metrics, otel);
 
     const span = tracer.startSpan("provider.dispatch.direct", {
       conversationId: "conv_obs_2"
@@ -127,6 +159,20 @@ describe("api observability", () => {
         value: 1
       })
     ]);
+
+    const finishedSpans = exporter.getFinishedSpans();
+
+    expect(finishedSpans).toHaveLength(1);
+    expect(finishedSpans[0]?.name).toBe("provider.dispatch.direct");
+    expect(finishedSpans[0]?.attributes).toEqual(
+      expect.objectContaining({
+        assistantMessageId: "msg_obs_1",
+        conversationId: "conv_obs_2",
+        result: "ok"
+      })
+    );
+
+    await otel.shutdown();
   });
 
   it("exposes /health/readiness, /health/liveness, and /metrics", async () => {

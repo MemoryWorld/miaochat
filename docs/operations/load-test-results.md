@@ -3,6 +3,16 @@
 This document records the most recent load-test runs for AgentHub Release 1.
 It is populated whenever the release checklist is exercised.
 
+## Staging Acceptance Pipeline
+
+| Field | Value |
+| --- | --- |
+| Pipeline entrypoint | `pnpm test:e2e:staging` |
+| Workflow | `.github/workflows/staging-provider-acceptance.yml` |
+| Latest committed local verification | `2026-05-23` dry-run and script wiring only |
+| Real staging execution | Pending secrets-backed runner |
+| Blocking prerequisite | Staging-only provider credentials and seeded load-test conversation ids |
+
 ## Run Metadata
 
 | Field | Value |

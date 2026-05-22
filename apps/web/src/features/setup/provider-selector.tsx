@@ -1,3 +1,5 @@
+import { cn } from "../../lib/cn";
+
 import type { ProviderCatalogEntry, SetupProvider } from "./provider-catalog";
 
 type ProviderSelectorProps = {
@@ -12,13 +14,7 @@ export function ProviderSelector({
   selectedProvider
 }: ProviderSelectorProps) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gap: "0.875rem",
-        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))"
-      }}
-    >
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {providers.map((provider) => {
         const selected = provider.id === selectedProvider;
 
@@ -27,43 +23,26 @@ export function ProviderSelector({
             aria-pressed={selected}
             key={provider.id}
             onClick={() => onSelect(provider.id)}
-            style={{
-              background: selected ? "#0f172a" : "rgba(255, 255, 255, 0.82)",
-              border: selected
-                ? "1px solid rgba(15, 23, 42, 0.9)"
-                : "1px solid rgba(15, 23, 42, 0.12)",
-              borderRadius: "20px",
-              color: selected ? "#f8fafc" : "#101828",
-              cursor: "pointer",
-              padding: "1rem",
-              textAlign: "left"
-            }}
+            className={cn(
+              "rounded-3xl border p-4 text-left transition-colors",
+              selected
+                ? "border-slate-900 bg-slate-950 text-slate-50"
+                : "border-slate-200 bg-white/85 text-slate-950 hover:bg-white"
+            )}
             type="button"
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: "0.75rem"
-              }}
-            >
+            <div className="mb-3 flex justify-between gap-3">
               <strong>{provider.name}</strong>
               <span
-                style={{
-                  color: selected ? "rgba(248, 250, 252, 0.72)" : "#667085",
-                  fontSize: "0.85rem"
-                }}
+                className={cn(
+                  "text-xs font-medium",
+                  selected ? "text-slate-300" : "text-slate-500"
+                )}
               >
                 {selected ? "Selected" : "Available"}
               </span>
             </div>
-            <p
-              style={{
-                color: selected ? "rgba(248, 250, 252, 0.82)" : "#475467",
-                lineHeight: 1.5,
-                margin: 0
-              }}
-            >
+            <p className={cn("m-0 text-sm leading-6", selected ? "text-slate-200" : "text-slate-600")}>
               {provider.description}
             </p>
           </button>

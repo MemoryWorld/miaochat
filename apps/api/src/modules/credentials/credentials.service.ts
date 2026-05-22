@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 
 import type {
   CreateProviderCredentialInput,
@@ -13,14 +14,20 @@ import { CredentialService, type CredentialRepository } from "@agenthub/domain";
 
 import { DatabaseService } from "../database/database.service.js";
 import type {
+  CredentialMode,
+  CredentialModeInput,
   CredentialMetadata,
   CredentialValidationResponse,
   RevokeCredentialResponse
 } from "./dto.js";
 import {
+  credentialModeSchema,
+  parseCredentialModeInput,
   parseCredentialCreateInput,
   toCredentialMetadata
 } from "./dto.js";
+import { QuotaService } from "../quota/quota.service.js";
+import { CredentialPoolService } from "./pool.service.js";
 import { validateClaudeCodeCredential } from "./providers/claude-code-validator.js";
 import { validateCodexCredential } from "./providers/codex-validator.js";
 import { validateHermesCredential } from "./providers/hermes-validator.js";
@@ -38,104 +45,102 @@ type CredentialRow = {
   workspace_id: string;
 };
 
+type CredentialModeRow = {
+  credential_source: CredentialMode["credentialSource"];
+  provider: CredentialMode["provider"];
+  workspace_id: string;
+};
+
 class PostgresCredentialRepository implements CredentialRepository {
   constructor(private readonly database: DatabaseService) {}
 
   async create(credential: ProviderCredential): Promise<ProviderCredential> {
-    const result = await this.database.query<CredentialRow>(
-      `
-        INSERT INTO provider_credentials (
-          id,
-          credential_source,
-          encrypted_secret,
-          label,
-          owner_user_id,
-          provider,
-          provider_account_id,
-          validation_state,
-          workspace_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING
-          id,
-          credential_source,
-          encrypted_secret,
-          label,
-          owner_user_id,
-          provider,
-          provider_account_id,
-          validation_state,
-          workspace_id
-      `,
-      [
-        credential.id,
-        credential.credentialSource,
-        credential.encryptedSecret,
-        credential.label,
-        credential.ownerUserId,
-        credential.provider,
-        credential.providerAccountId,
-        credential.validationState,
-        credential.workspaceId
-      ]
-    );
+    const result = await this.database.execute<CredentialRow>(sql`
+      INSERT INTO provider_credentials (
+        id,
+        credential_source,
+        encrypted_secret,
+        label,
+        owner_user_id,
+        provider,
+        provider_account_id,
+        validation_state,
+        workspace_id
+      )
+      VALUES (
+        ${credential.id},
+        ${credential.credentialSource},
+        ${credential.encryptedSecret},
+        ${credential.label},
+        ${credential.ownerUserId},
+        ${credential.provider},
+        ${credential.providerAccountId},
+        ${credential.validationState},
+        ${credential.workspaceId}
+      )
+      RETURNING
+        id,
+        credential_source,
+        encrypted_secret,
+        label,
+        owner_user_id,
+        provider,
+        provider_account_id,
+        validation_state,
+        workspace_id
+    `);
 
     return mapCredentialRow(result.rows[0]);
   }
 
   async findById(id: string, ownerUserId: string): Promise<ProviderCredential | null> {
-    const result = await this.database.query<CredentialRow>(
-      `
-        SELECT
-          id,
-          credential_source,
-          encrypted_secret,
-          label,
-          owner_user_id,
-          provider,
-          provider_account_id,
-          validation_state,
-          workspace_id
-        FROM provider_credentials
-        WHERE id = $1 AND owner_user_id = $2
-      `,
-      [id, ownerUserId]
-    );
+    const result = await this.database.execute<CredentialRow>(sql`
+      SELECT
+        id,
+        credential_source,
+        encrypted_secret,
+        label,
+        owner_user_id,
+        provider,
+        provider_account_id,
+        validation_state,
+        workspace_id
+      FROM provider_credentials
+      WHERE id = ${id}
+        AND owner_user_id = ${ownerUserId}
+    `);
 
     return result.rows[0] ? mapCredentialRow(result.rows[0]) : null;
   }
 
   async listByWorkspace(workspaceId: string, ownerUserId: string): Promise<ProviderCredential[]> {
-    const result = await this.database.query<CredentialRow>(
-      `
-        SELECT
-          id,
-          credential_source,
-          encrypted_secret,
-          label,
-          owner_user_id,
-          provider,
-          provider_account_id,
-          validation_state,
-          workspace_id
-        FROM provider_credentials
-        WHERE workspace_id = $1 AND owner_user_id = $2
-        ORDER BY created_at ASC
-      `,
-      [workspaceId, ownerUserId]
-    );
+    const result = await this.database.execute<CredentialRow>(sql`
+      SELECT
+        id,
+        credential_source,
+        encrypted_secret,
+        label,
+        owner_user_id,
+        provider,
+        provider_account_id,
+        validation_state,
+        workspace_id
+      FROM provider_credentials
+      WHERE workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+      ORDER BY created_at ASC
+    `);
 
     return result.rows.map(mapCredentialRow);
   }
 
   async revoke(id: string, workspaceId: string, ownerUserId: string): Promise<boolean> {
-    const result = await this.database.query(
-      `
-        DELETE FROM provider_credentials
-        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
-      `,
-      [id, workspaceId, ownerUserId]
-    );
+    const result = await this.database.execute(sql`
+      DELETE FROM provider_credentials
+      WHERE id = ${id}
+        AND workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+    `);
 
     return (result.rowCount ?? 0) > 0;
   }
@@ -163,7 +168,11 @@ function mapCredentialRow(row: CredentialRow | undefined): ProviderCredential {
 export class CredentialsService {
   private readonly domainService: CredentialService;
 
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(CredentialPoolService) private readonly credentialPool: CredentialPoolService,
+    @Inject(QuotaService) private readonly quotaService: QuotaService
+  ) {
     const repository = new PostgresCredentialRepository(database);
     this.domainService = new CredentialService(
       repository,
@@ -200,6 +209,77 @@ export class CredentialsService {
     return credentials.map(toCredentialMetadata);
   }
 
+  async listModes(workspaceId: string, ownerUserId: string): Promise<CredentialMode[]> {
+    const result = await this.database.execute<CredentialModeRow>(sql`
+      SELECT
+        credential_source,
+        provider,
+        workspace_id
+      FROM workspace_provider_credential_modes
+      WHERE owner_user_id = ${ownerUserId}
+        AND workspace_id = ${workspaceId}
+      ORDER BY provider ASC
+    `);
+
+    return result.rows.map((row) =>
+      credentialModeSchema.parse({
+        credentialSource: row.credential_source,
+        provider: row.provider,
+        workspaceId: row.workspace_id
+      })
+    );
+  }
+
+  async setMode(input: unknown, ownerUserId: string): Promise<CredentialMode> {
+    const parsed = parseCredentialModeInput(input);
+
+    if (parsed.credentialSource === "user_provided") {
+      await this.database.execute(sql`
+        DELETE FROM workspace_provider_credential_modes
+        WHERE owner_user_id = ${ownerUserId}
+          AND workspace_id = ${parsed.workspaceId}
+          AND provider = ${parsed.provider}
+      `);
+
+      return credentialModeSchema.parse({
+        credentialSource: "user_provided",
+        provider: parsed.provider,
+        workspaceId: parsed.workspaceId
+      });
+    }
+
+    await this.assertPlatformManagedModeAllowed(parsed);
+
+    const result = await this.database.execute<CredentialModeRow>(sql`
+      INSERT INTO workspace_provider_credential_modes (
+        owner_user_id,
+        workspace_id,
+        provider,
+        credential_source
+      )
+      VALUES (
+        ${ownerUserId},
+        ${parsed.workspaceId},
+        ${parsed.provider},
+        ${parsed.credentialSource}
+      )
+      ON CONFLICT (owner_user_id, workspace_id, provider)
+      DO UPDATE SET
+        credential_source = EXCLUDED.credential_source,
+        updated_at = now()
+      RETURNING
+        credential_source,
+        provider,
+        workspace_id
+    `);
+
+    return credentialModeSchema.parse({
+      credentialSource: result.rows[0]?.credential_source,
+      provider: result.rows[0]?.provider,
+      workspaceId: result.rows[0]?.workspace_id
+    });
+  }
+
   async revoke(
     id: string,
     workspaceId: string,
@@ -227,6 +307,21 @@ export class CredentialsService {
         return validateHermesCredential(input);
       case "openclaw":
         return validateOpenClawCredential(input);
+    }
+  }
+
+  private async assertPlatformManagedModeAllowed(
+    input: CredentialModeInput
+  ): Promise<void> {
+    const [hasPoolEntries, hasQuotaPolicy] = await Promise.all([
+      this.credentialPool.hasEntriesForProvider(input.provider),
+      Promise.resolve(this.quotaService.hasPolicy(input.provider))
+    ]);
+
+    if (!hasPoolEntries || !hasQuotaPolicy) {
+      throw new BadRequestException(
+        "Platform-managed mode is not available for this provider in the current policy."
+      );
     }
   }
 }

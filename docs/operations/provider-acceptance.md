@@ -36,20 +36,34 @@ streaming response bodies, and header normalization.
 ## Replacing Local Endpoints With Real SaaS
 
 To run these specs against the real provider SaaS instead of the in-process
-server, set the following environment variables before running
-`pnpm test:e2e`:
+server, set `AGENTHUB_REAL_PROVIDER_MODE=staging` and provide the following
+environment variables before running `pnpm test:e2e:providers` or
+`pnpm test:e2e:staging`:
 
 | Variable | Description |
 | --- | --- |
 | `HERMES_BASE_URL` | Real Hermes base URL |
+| `HERMES_REAL_ACCOUNT_ID` | Rotated Hermes BYOK account id for staging |
+| `HERMES_REAL_SECRET` | Rotated Hermes BYOK secret for staging |
 | `OPENCLAW_BASE_URL` | Real OpenClaw base URL |
+| `OPENCLAW_REAL_ACCOUNT_ID` | Rotated OpenClaw BYOK account id for staging |
+| `OPENCLAW_REAL_SECRET` | Rotated OpenClaw BYOK secret for staging |
 | `CODEX_BASE_URL` | Real Codex base URL |
+| `CODEX_REAL_ACCOUNT_ID` | Rotated Codex BYOK account id for staging |
+| `CODEX_REAL_SECRET` | Rotated Codex BYOK secret for staging |
 | `CLAUDE_CODE_BASE_URL` | Real Claude Code base URL |
+| `CLAUDE_CODE_REAL_ACCOUNT_ID` | Rotated Claude Code BYOK account id for staging |
+| `CLAUDE_CODE_REAL_SECRET` | Rotated Claude Code BYOK secret for staging |
 
-Each adapter uses these environment variables when no `baseUrl` is passed in
-the constructor. Operators substitute the local server with the real provider
-URL and inject real BYOK credentials through the credential vault path used by
-`MessageDispatchService`.
+The specs keep the local replay server as the default path. In staging mode
+they switch to the real SaaS endpoints, skip request-body introspection, and
+assert only the shared adapter contract:
+
+- non-empty final content
+- `conversation.message.started`
+- `conversation.message.completed`
+
+This keeps the same spec files usable in both local and staging contexts.
 
 ## Failure And Retry Acceptance
 
@@ -71,3 +85,23 @@ For the Release 1 cut to ship, all four `*-real.spec.ts` files must pass with
 the in-process HTTP server implementation. To declare a real-provider rollout
 ready, the same spec must pass against the real SaaS endpoints with valid
 BYOK credentials.
+
+## Staging Pipeline
+
+The staging-only entrypoint is:
+
+```bash
+pnpm test:e2e:staging
+```
+
+That runner:
+
+1. sets `AGENTHUB_REAL_PROVIDER_MODE=staging`
+2. executes `pnpm test:e2e:providers`
+3. executes the four `k6` scenarios under `tests/load/`
+
+For a local operator dry run, execute:
+
+```bash
+AGENTHUB_STAGING_DRY_RUN=1 pnpm test:e2e:staging
+```

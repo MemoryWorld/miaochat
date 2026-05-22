@@ -76,7 +76,7 @@ describe("auth rate-limit and audit integration", () => {
   });
 
   afterEach(async () => {
-    authRateLimitService.reset();
+    await authRateLimitService.reset();
     authRateLimitService.configure(relaxedRateLimitConfig);
     await clearAuthTestRows(client);
   });

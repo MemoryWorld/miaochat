@@ -9,24 +9,12 @@ import {
   workspaceIdSchema,
   type Message
 } from "@agenthub/contracts";
-import type { PoolClient } from "pg";
 import { z } from "zod";
 
+import { ConversationsRepository } from "../conversations/conversations.repository.js";
 import { GroupMembersService } from "../conversations/group-members.service.js";
 import { DatabaseService } from "../database/database.service.js";
-
-type MessageRow = {
-  content: string;
-  conversation_id: string;
-  created_at: Date;
-  id: string;
-  is_pinned: boolean;
-  mentioned_agent_ids: string[];
-  owner_user_id: string;
-  role: Message["role"];
-  source_agent_id: string | null;
-  workspace_id: string;
-};
+import { MessagesRepository, type MessageRow } from "./messages.repository.js";
 
 type CreateStoredMessageInput = {
   content: string;
@@ -54,7 +42,10 @@ export type PinMessageResponse = {
 export class MessagesService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(GroupMembersService) private readonly groupMembersService: GroupMembersService
+    @Inject(ConversationsRepository)
+    private readonly conversationsRepository: ConversationsRepository,
+    @Inject(GroupMembersService) private readonly groupMembersService: GroupMembersService,
+    @Inject(MessagesRepository) private readonly messagesRepository: MessagesRepository
   ) {}
 
   async create(input: unknown, ownerUserId: string): Promise<Message> {
@@ -120,87 +111,41 @@ export class MessagesService {
         workspaceId: input.workspaceId
       });
 
-    return this.database.withClient(async (client) => {
-      await client.query("BEGIN");
+    return this.database.transaction(async (tx) => {
+      const inserted = await this.messagesRepository.createMessage(
+        {
+          content: parsed.content,
+          conversationId: parsed.conversationId,
+          id: parsed.id,
+          isPinned: false,
+          mentionedAgentIds: parsed.mentionedAgentIds,
+          ownerUserId: parsed.ownerUserId,
+          role: parsed.role,
+          sourceAgentId: parsed.sourceAgentId,
+          workspaceId: parsed.workspaceId
+        },
+        tx
+      );
 
-      try {
-        const inserted = await client.query<MessageRow>(
-          `
-            INSERT INTO messages (
-              id,
-              conversation_id,
-              role,
-              content,
-              mentioned_agent_ids,
-              owner_user_id,
-              source_agent_id,
-              is_pinned,
-              workspace_id
-            )
-            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
-            RETURNING
-              id,
-              conversation_id,
-              role,
-              content,
-              mentioned_agent_ids,
-              created_at,
-              is_pinned,
-              owner_user_id,
-              source_agent_id,
-              workspace_id
-          `,
-          [
-            parsed.id,
-            parsed.conversationId,
-            parsed.role,
-            parsed.content,
-            JSON.stringify(parsed.mentionedAgentIds),
-            parsed.ownerUserId,
-            parsed.sourceAgentId,
-            false,
-            parsed.workspaceId
-          ]
-        );
-
-        await this.touchConversation(
-          client,
-          parsed.conversationId,
-          parsed.workspaceId,
-          parsed.ownerUserId
-        );
-        await client.query("COMMIT");
-        return mapMessageRow(inserted.rows[0]);
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      }
+      await this.touchConversation(
+        parsed.conversationId,
+        parsed.workspaceId,
+        parsed.ownerUserId,
+        tx
+      );
+      return mapMessageRow(inserted);
     });
   }
 
   async list(input: unknown): Promise<Message[]> {
     const parsed = messageHistoryQuerySchema.parse(input);
-    const result = await this.database.query<MessageRow>(
-      `
-        SELECT
-          id,
-          conversation_id,
-          role,
-          content,
-          mentioned_agent_ids,
-          created_at,
-          is_pinned,
-          owner_user_id,
-          source_agent_id,
-          workspace_id
-        FROM messages
-        WHERE conversation_id = $1 AND workspace_id = $2 AND owner_user_id = $3
-        ORDER BY created_at ASC
-      `,
-      [parsed.conversationId, parsed.workspaceId, parsed.ownerUserId]
+    const result = await this.messagesRepository.listMessages(
+      parsed.conversationId,
+      parsed.workspaceId,
+      parsed.ownerUserId
     );
 
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       await this.assertConversationOwnership(
         parsed.conversationId,
         parsed.workspaceId,
@@ -208,7 +153,7 @@ export class MessagesService {
       );
     }
 
-    return result.rows.map(mapMessageRow);
+    return result.map(mapMessageRow);
   }
 
   async pin(
@@ -219,84 +164,50 @@ export class MessagesService {
     const parsedMessageId = messageIdSchema.parse(messageId);
     const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
 
-    return this.database.withClient(async (client) => {
-      await client.query("BEGIN");
+    return this.database.transaction(async (tx) => {
+      const messageRow = await this.messagesRepository.pinMessage(
+        parsedMessageId,
+        parsedWorkspaceId,
+        ownerUserId,
+        tx
+      );
 
-      try {
-        const messageResult = await client.query<MessageRow>(
-          `
-            UPDATE messages
-            SET is_pinned = true, updated_at = now()
-            WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
-            RETURNING
-              id,
-              conversation_id,
-              role,
-              content,
-              mentioned_agent_ids,
-              created_at,
-              is_pinned,
-              owner_user_id,
-              source_agent_id,
-              workspace_id
-          `,
-          [parsedMessageId, parsedWorkspaceId, ownerUserId]
+      if (!messageRow) {
+        throw new NotFoundException(
+          `Message ${parsedMessageId} was not found in workspace ${parsedWorkspaceId}`
         );
-
-        if (!messageResult.rows[0]) {
-          throw new NotFoundException(
-            `Message ${parsedMessageId} was not found in workspace ${parsedWorkspaceId}`
-          );
-        }
-
-        const message = mapMessageRow(messageResult.rows[0]);
-        const conversationResult = await client.query<{
-          pinned_message_ids: string[];
-        }>(
-          `
-            UPDATE conversations
-            SET
-              pinned_message_ids = CASE
-                WHEN pinned_message_ids @> to_jsonb(ARRAY[$2]::text[])
-                  THEN pinned_message_ids
-                ELSE pinned_message_ids || to_jsonb(ARRAY[$2]::text[])
-              END,
-              updated_at = now()
-            WHERE id = $1 AND workspace_id = $3 AND owner_user_id = $4
-            RETURNING pinned_message_ids
-          `,
-          [message.conversationId, message.id, parsedWorkspaceId, ownerUserId]
-        );
-
-        await client.query("COMMIT");
-
-        return {
-          message,
-          pinnedMessageIds: conversationResult.rows[0]?.pinned_message_ids ?? []
-        };
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
       }
+
+      const message = mapMessageRow(messageRow);
+      const pinnedMessageIds = await this.messagesRepository.appendPinnedMessageId(
+        message.conversationId,
+        message.id,
+        parsedWorkspaceId,
+        ownerUserId,
+        tx
+      );
+
+      return {
+        message,
+        pinnedMessageIds
+      };
     });
   }
 
   private async touchConversation(
-    client: PoolClient,
     conversationId: string,
     workspaceId: string,
-    ownerUserId: string
+    ownerUserId: string,
+    executor?: import("../database/database.service.js").DatabaseExecutor
   ): Promise<void> {
-    const result = await client.query(
-      `
-        UPDATE conversations
-        SET updated_at = now()
-        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
-      `,
-      [conversationId, workspaceId, ownerUserId]
+    const updatedCount = await this.messagesRepository.touchConversation(
+      conversationId,
+      workspaceId,
+      ownerUserId,
+      executor
     );
 
-    if ((result.rowCount ?? 0) === 0) {
+    if (updatedCount === 0) {
       throw new NotFoundException(
         `Conversation ${conversationId} was not found in workspace ${workspaceId}`
       );
@@ -308,16 +219,13 @@ export class MessagesService {
     workspaceId: string,
     ownerUserId: string
   ): Promise<void> {
-    const result = await this.database.query<{ id: string }>(
-      `
-        SELECT id
-        FROM conversations
-        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
-      `,
-      [conversationId, workspaceId, ownerUserId]
+    const exists = await this.conversationsRepository.conversationExists(
+      conversationId,
+      workspaceId,
+      ownerUserId
     );
 
-    if (!result.rows[0]) {
+    if (!exists) {
       throw new NotFoundException(
         `Conversation ${conversationId} was not found in workspace ${workspaceId}`
       );

@@ -28,7 +28,6 @@ export function ShareConversationDialog({
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
   async function refresh(): Promise<void> {

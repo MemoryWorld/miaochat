@@ -1,4 +1,6 @@
 import { Injectable, type OnModuleDestroy } from "@nestjs/common";
+import type { SQLWrapper } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import {
   Pool,
   type PoolClient,
@@ -6,19 +8,42 @@ import {
   type QueryResultRow
 } from "pg";
 
+export type DatabaseExecutor = {
+  execute<Row extends QueryResultRow = QueryResultRow>(
+    query: SQLWrapper | string
+  ): Promise<QueryResult<Row>>;
+};
+
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   private readonly pool = new Pool({
     connectionString:
-      process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub",
+      process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:6432/agenthub",
     max: resolvePoolMax()
   });
+  private readonly drizzleDb = drizzle(this.pool);
 
   query<Row extends QueryResultRow = QueryResultRow>(
     text: string,
     values: unknown[] = []
   ): Promise<QueryResult<Row>> {
     return this.pool.query<Row>(text, values);
+  }
+
+  execute<Row extends QueryResultRow = QueryResultRow>(
+    query: SQLWrapper | string
+  ): Promise<QueryResult<Row>> {
+    return this.drizzleDb.execute<Row>(query) as Promise<QueryResult<Row>>;
+  }
+
+  transaction<T>(callback: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
+    return this.drizzleDb.transaction(async (tx) =>
+      callback(tx as unknown as DatabaseExecutor)
+    );
+  }
+
+  get db() {
+    return this.drizzleDb;
   }
 
   async withClient<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {

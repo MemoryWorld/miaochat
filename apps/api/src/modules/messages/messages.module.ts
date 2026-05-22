@@ -8,6 +8,7 @@ import { WorkspacesModule } from "../workspaces/workspaces.module.js";
 import { MessageDispatchService } from "./message-dispatch.service.js";
 import { MessageRegenerateService } from "./message-regenerate.service.js";
 import { MessagesController } from "./messages.controller.js";
+import { MessagesRepository } from "./messages.repository.js";
 import { MessagesService } from "./messages.service.js";
 import { PinMessageService } from "./pin-message.service.js";
 
@@ -17,6 +18,7 @@ import { PinMessageService } from "./pin-message.service.js";
   providers: [
     MessageDispatchService,
     MessageRegenerateService,
+    MessagesRepository,
     MessagesService,
     PinMessageService
   ]

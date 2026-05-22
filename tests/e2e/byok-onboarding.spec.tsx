@@ -41,6 +41,14 @@ describe("byok onboarding flow", () => {
         })
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             message: "OpenClaw credential passed local format validation.",

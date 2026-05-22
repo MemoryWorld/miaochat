@@ -1,0 +1,53 @@
+name: staging-provider-acceptance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+jobs:
+  staging-provider-acceptance:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    env:
+      AGENTHUB_API_BASE_URL: ${{ secrets.AGENTHUB_API_BASE_URL }}
+      AGENTHUB_LOAD_CONVERSATION_IDS: ${{ secrets.AGENTHUB_LOAD_CONVERSATION_IDS }}
+      AGENTHUB_LOAD_GROUP_CONVERSATION_IDS: ${{ secrets.AGENTHUB_LOAD_GROUP_CONVERSATION_IDS }}
+      AGENTHUB_LOAD_STREAM_CONVERSATION_IDS: ${{ secrets.AGENTHUB_LOAD_STREAM_CONVERSATION_IDS }}
+      HERMES_BASE_URL: ${{ secrets.HERMES_BASE_URL }}
+      HERMES_REAL_ACCOUNT_ID: ${{ secrets.HERMES_REAL_ACCOUNT_ID }}
+      HERMES_REAL_SECRET: ${{ secrets.HERMES_REAL_SECRET }}
+      OPENCLAW_BASE_URL: ${{ secrets.OPENCLAW_BASE_URL }}
+      OPENCLAW_REAL_ACCOUNT_ID: ${{ secrets.OPENCLAW_REAL_ACCOUNT_ID }}
+      OPENCLAW_REAL_SECRET: ${{ secrets.OPENCLAW_REAL_SECRET }}
+      CODEX_BASE_URL: ${{ secrets.CODEX_BASE_URL }}
+      CODEX_REAL_ACCOUNT_ID: ${{ secrets.CODEX_REAL_ACCOUNT_ID }}
+      CODEX_REAL_SECRET: ${{ secrets.CODEX_REAL_SECRET }}
+      CLAUDE_CODE_BASE_URL: ${{ secrets.CLAUDE_CODE_BASE_URL }}
+      CLAUDE_CODE_REAL_ACCOUNT_ID: ${{ secrets.CLAUDE_CODE_REAL_ACCOUNT_ID }}
+      CLAUDE_CODE_REAL_SECRET: ${{ secrets.CLAUDE_CODE_REAL_SECRET }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run staging provider acceptance and load tests
+        run: pnpm test:e2e:staging

@@ -40,6 +40,7 @@ export function DiffCard({
       aria-label={`Diff artifact ${artifact.title}`}
       data-artifact-card="diff"
       data-artifact-kind={artifact.kind}
+      id={`artifact-${artifact.id}`}
     >
       <header>
         <span data-testid="diff-card-kind">Diff</span>

@@ -31,10 +31,10 @@ green before the release branch is tagged.
 - [ ] `tests/e2e/openclaw-real.spec.ts` passes against the local replay server.
 - [ ] `tests/e2e/codex-real.spec.ts` passes against the local replay server.
 - [ ] `tests/e2e/claude-code-real.spec.ts` passes against the local replay server.
-- [ ] Each of the four real-provider acceptance specs is rerun against the
-      production SaaS endpoints with valid BYOK credentials configured via
-      `HERMES_BASE_URL`, `OPENCLAW_BASE_URL`, `CODEX_BASE_URL`, and
-      `CLAUDE_CODE_BASE_URL`.
+- [ ] `pnpm test:e2e:staging` reruns the four real-provider acceptance specs
+      against the staging SaaS endpoints with rotated BYOK credentials
+      configured via `HERMES_*`, `OPENCLAW_*`, `CODEX_*`, and `CLAUDE_CODE_*`
+      environment variables.
 
 ## Observability
 
@@ -76,9 +76,26 @@ green before the release branch is tagged.
 | `pnpm lint` | Lint passes for every workspace. |
 | `pnpm test` | All package-level test suites pass. |
 | `pnpm test:integration` | Integration suite passes against the deployed test infra. |
-| `pnpm test:e2e` | All ten e2e tests pass, including the four real-provider acceptance specs. |
+| `pnpm test:e2e` | Playwright browser e2e suite passes against the Next.js app. |
+| `pnpm test:e2e:smoke` | Existing vitest+jsdom smoke suite passes, including the four local replay real-provider specs. |
+| `pnpm test:e2e:providers` | Real-provider specs pass in the current mode (`local` replay by default, `staging` when enabled). |
+| `pnpm test:e2e:staging` | Secrets-backed staging runner completes provider acceptance plus the four k6 scenarios. |
 | `pnpm test:load` | Placeholder runs cleanly; the four real k6 scenarios are run separately and recorded in `docs/operations/load-test-results.md`. |
 | `k6 run tests/load/<scenario>.js` | Each scenario passes its k6 thresholds. |
+
+## Hardening Track
+
+- [x] `H-05` Drizzle migration is in place for conversations, messages, custom
+      agents, credentials, and artifacts.
+- [x] `H-06` `pgBouncer` fronts the compose and Kubernetes Postgres targets.
+- [x] `H-07` Tailwind CSS and the web token baseline are wired into `apps/web`.
+- [x] `H-08` `pnpm test:e2e` now runs Playwright; `pnpm test:e2e:smoke`
+      retains the jsdom suite.
+- [x] `H-09` Supertest contract tests cover auth, workspaces, messages,
+      artifacts, and credentials.
+- [x] `H-10` staging provider acceptance and k6 runner entrypoints are wired;
+      the latest committed state is documented in
+      `docs/operations/load-test-results.md`.
 
 ## Sign-Off
 

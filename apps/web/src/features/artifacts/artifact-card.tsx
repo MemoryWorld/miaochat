@@ -31,6 +31,7 @@ function AttachmentCard({ artifact }: AttachmentCardProps) {
       aria-label={`Attachment artifact ${artifact.title}`}
       data-artifact-card="attachment"
       data-artifact-kind={artifact.kind}
+      id={`artifact-${artifact.id}`}
       style={cardStyle}
     >
       <header style={headerStyle}>

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import { DatabaseError } from "pg";
 
 import {
@@ -31,43 +32,40 @@ export class CustomAgentsService {
     const parsed = createCustomAgentInputSchema.parse(input);
 
     try {
-      const result = await this.database.query<CustomAgentRow>(
-        `
-          INSERT INTO custom_agents (
-            id,
-            avatar_url,
-            capability_tags,
-            name,
-            owner_user_id,
-            provider,
-            system_prompt,
-            tool_bindings,
-            workspace_id
-          )
-          VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb, $9)
-          RETURNING
-            avatar_url,
-            capability_tags,
-            id,
-            name,
-            owner_user_id,
-            provider,
-            system_prompt,
-            tool_bindings,
-            workspace_id
-        `,
-        [
-          randomUUID(),
-          parsed.avatarUrl ?? null,
-          JSON.stringify(parsed.capabilityTags),
-          parsed.name,
-          ownerUserId,
-          parsed.provider,
-          parsed.systemPrompt,
-          JSON.stringify(parsed.toolBindings),
-          parsed.workspaceId
-        ]
-      );
+      const result = await this.database.execute<CustomAgentRow>(sql`
+        INSERT INTO custom_agents (
+          id,
+          avatar_url,
+          capability_tags,
+          name,
+          owner_user_id,
+          provider,
+          system_prompt,
+          tool_bindings,
+          workspace_id
+        )
+        VALUES (
+          ${randomUUID()},
+          ${parsed.avatarUrl ?? null},
+          ${JSON.stringify(parsed.capabilityTags)}::jsonb,
+          ${parsed.name},
+          ${ownerUserId},
+          ${parsed.provider},
+          ${parsed.systemPrompt},
+          ${JSON.stringify(parsed.toolBindings)}::jsonb,
+          ${parsed.workspaceId}
+        )
+        RETURNING
+          avatar_url,
+          capability_tags,
+          id,
+          name,
+          owner_user_id,
+          provider,
+          system_prompt,
+          tool_bindings,
+          workspace_id
+      `);
 
       return mapCustomAgentRow(result.rows[0]);
     } catch (error) {
@@ -86,24 +84,22 @@ export class CustomAgentsService {
   }
 
   async list(workspaceId: string, ownerUserId: string): Promise<CustomAgent[]> {
-    const result = await this.database.query<CustomAgentRow>(
-      `
-        SELECT
-          avatar_url,
-          capability_tags,
-          id,
-          name,
-          owner_user_id,
-          provider,
-          system_prompt,
-          tool_bindings,
-          workspace_id
-        FROM custom_agents
-        WHERE workspace_id = $1 AND owner_user_id = $2
-        ORDER BY created_at DESC, id DESC
-      `,
-      [workspaceId, ownerUserId]
-    );
+    const result = await this.database.execute<CustomAgentRow>(sql`
+      SELECT
+        avatar_url,
+        capability_tags,
+        id,
+        name,
+        owner_user_id,
+        provider,
+        system_prompt,
+        tool_bindings,
+        workspace_id
+      FROM custom_agents
+      WHERE workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+      ORDER BY created_at DESC, id DESC
+    `);
 
     return result.rows.map(mapCustomAgentRow);
   }

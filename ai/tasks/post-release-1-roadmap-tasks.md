@@ -322,43 +322,48 @@
   
   ### Phase 18: Deploy Pipeline Foundation
   
-  - [ ] Task 58: Add a deploy-target abstraction and credential vault entries
+  - [x] Task 58: Add a deploy-target abstraction and credential vault entries
     - Acceptance: The platform persists deploy targets per workspace (static
       site, container, source-archive) with the same `credential_source`
       abstraction used for provider credentials.
     - Verify: `pnpm --filter api test`; `pnpm test:integration`
-    - Files: `db/migrations/0013_deploy_targets.sql`,
+    - Files: `db/migrations/0014_deploy_targets.sql`,
       `apps/api/src/modules/deploys/targets.service.ts`,
       `packages/contracts/src/deploy-target.ts`,
       `tests/integration/deploy-targets.spec.ts`
   
-  - [ ] Task 59: Deploy execution workflow on the worker
+  - [x] Task 59: Deploy execution workflow on the worker
     - Acceptance: A `deployArtifactWorkflow` runs a deploy job for a chosen
       target, emits structured progress events, and persists the resulting
       deployment record.
     - Verify: `pnpm --filter worker test`; `pnpm test:integration`
-    - Files: `apps/worker/src/workflows/deploy-artifact.workflow.ts`,
+    - Files: `db/migrations/0015_deployments.sql`,
+      `apps/worker/src/workflows/deploy-artifact.workflow.ts`,
       `apps/worker/src/activities/deploy-static-site.activity.ts`,
       `apps/worker/src/activities/deploy-container.activity.ts`,
       `tests/integration/deploy-workflow.spec.ts`
   
   ### Phase 19: Deploy Status Card And Chat Wiring
   
-  - [ ] Task 60: Deploy command parser and dispatch
+  - [x] Task 60: Deploy command parser and dispatch
     - Acceptance: A user can type `/deploy <target>` (or use a button) inside a
       chat composer; the command dispatches the deploy workflow and renders a
       deploy-status card linked to the artifact under discussion.
     - Verify: `pnpm --filter web test`; `pnpm test:e2e`
-    - Files: `apps/web/src/features/chat/deploy-command.tsx`,
+    - Files: `packages/contracts/src/deploy-command.ts`,
+      `apps/api/src/modules/deploys/deploys.controller.ts`,
+      `apps/api/src/modules/deploys/dispatch.service.ts`,
+      `apps/web/src/features/chat/deploy-command.tsx`,
       `apps/web/src/features/artifacts/deploy-status-card.tsx`,
       `tests/e2e/deploy-command.spec.tsx`
   
-  - [ ] Task 61: Preview URL provisioning
+  - [x] Task 61: Preview URL provisioning
     - Acceptance: Successful static-site and container deploys produce a
       preview URL that is reachable from the deploy-status card; URLs are
       workspace-scoped and rotate on revocation.
     - Verify: `pnpm test:integration`; `pnpm test:e2e`
-    - Files: `apps/api/src/modules/deploys/preview-url.service.ts`,
+    - Files: `apps/api/src/modules/deploys/deploys.controller.ts`,
+      `apps/api/src/modules/deploys/preview-url.service.ts`,
       `infra/k8s/preview-ingress.yaml`,
       `tests/integration/preview-url.spec.ts`
   
@@ -369,44 +374,49 @@
   
   ### Phase 20: Desktop Client
   
-  - [ ] Task 62: Desktop application shell
+  - [x] Task 62: Desktop application shell
     - Acceptance: A `Tauri` (or `Electron`) shell embeds the existing web
       bundle, provides system notifications, and exposes a local-file picker
       that hands files to the existing artifact upload flow.
     - Verify: `pnpm --filter desktop build`; `pnpm --filter desktop test`
-    - Files: `apps/desktop/src/main.ts`,
+    - Files: `apps/desktop/package.json`,
+      `apps/desktop/src/main.ts`,
       `apps/desktop/src/system-notifications.ts`,
       `apps/desktop/src/file-bridge.ts`,
       `apps/desktop/test/system-notifications.spec.ts`
   
-  - [ ] Task 63: Local agent process supervision
+  - [x] Task 63: Local agent process supervision
     - Acceptance: The desktop client can run user-configured local agent
       processes, surface their lifecycle through the workspace audit log, and
       forward their tool calls through the shared tool runtime contract.
     - Verify: `pnpm --filter desktop test`; `pnpm test:e2e`
-    - Files: `apps/desktop/src/agent-supervisor.ts`,
+    - Files: `apps/desktop/package.json`,
+      `apps/desktop/src/agent-supervisor.ts`,
       `apps/desktop/src/tool-bridge.ts`,
+      `apps/desktop/test/agent-supervisor.spec.ts`,
       `tests/e2e/desktop-agent-supervisor.spec.tsx`
   
   ### Phase 21: Mobile Client
   
-  - [ ] Task 64: Mobile shell with read-and-approve flows
+  - [x] Task 64: Mobile shell with read-and-approve flows
     - Acceptance: A mobile client (Expo or React Native) lets users browse
       conversations, approve outgoing actions surfaced as approval cards, and
       preview attachments. Heavy editing remains a desktop/web concern.
     - Verify: `pnpm --filter mobile test`
-    - Files: `apps/mobile/src/screens/conversation-list.tsx`,
+    - Files: `apps/mobile/package.json`,
+      `apps/mobile/src/screens/conversation-list.tsx`,
       `apps/mobile/src/screens/conversation-thread.tsx`,
       `apps/mobile/src/components/approval-card.tsx`,
       `apps/mobile/test/approval-card.spec.tsx`
   
-  - [ ] Task 65: Mobile push-notification gateway
+  - [x] Task 65: Mobile push-notification gateway
     - Acceptance: Push notifications are delivered for assigned-to-me events,
       approval requests, and orchestrator-failure escalations; the gateway is
       workspace-aware and respects per-user notification preferences.
     - Verify: `pnpm --filter mobile test`; `pnpm test:integration`
     - Files: `apps/api/src/modules/notifications/push-gateway.service.ts`,
       `apps/mobile/src/notifications/push-bridge.ts`,
+      `apps/mobile/test/push-bridge.spec.tsx`,
       `tests/integration/push-notifications.spec.ts`
   
   ## Release 6: Platform-Managed Credentials And Quota
@@ -416,32 +426,39 @@
   
   ### Phase 22: Credential Pool And Quota
   
-  - [ ] Task 66: Credential pool data model
+  - [x] Task 66: Credential pool data model
     - Acceptance: The platform persists pool-managed provider credentials
       keyed by provider, region, tier, and quota class; pool selection is
       deterministic and observable.
     - Verify: `pnpm --filter api test`; `pnpm test:integration`
-    - Files: `db/migrations/0014_credential_pool.sql`,
+    - Files: `db/migrations/0016_credential_pool.sql`,
       `apps/api/src/modules/credentials/pool.service.ts`,
       `packages/contracts/src/credential-pool.ts`,
+      `apps/api/test/credential-pool.e2e-spec.ts`,
       `tests/integration/credential-pool.spec.ts`
   
-  - [ ] Task 67: Per-workspace quota enforcement
+  - [x] Task 67: Per-workspace quota enforcement
     - Acceptance: Workspace consumption of platform-managed credentials is
       recorded per provider and per period; quota breaches map to a
       `quota_exceeded` public error code; renewals are scheduled.
     - Verify: `pnpm --filter api test`; `pnpm test:integration`
-    - Files: `apps/api/src/modules/quota/quota.service.ts`,
+    - Files: `db/migrations/0017_workspace_provider_quota_periods.sql`,
+      `apps/api/src/modules/quota/quota.service.ts`,
+      `apps/api/src/modules/quota/quota.module.ts`,
       `packages/domain/src/errors/public-error-mapper.ts`,
+      `apps/api/test/quota.e2e-spec.ts`,
       `tests/integration/quota-enforcement.spec.ts`
   
-  - [ ] Task 68: Mode switch surface
+  - [x] Task 68: Mode switch surface
     - Acceptance: A workspace owner can opt a workspace into the
       platform-managed mode for a provider when policy allows; the BYOK path
       remains the default and continues to pass the Release 1 acceptance.
     - Verify: `pnpm --filter web test`; `pnpm test:e2e`
-    - Files: `apps/web/src/features/setup/credential-mode-toggle.tsx`,
+    - Files: `db/migrations/0018_workspace_provider_credential_modes.sql`,
       `apps/api/src/modules/credentials/credentials.service.ts`,
+      `apps/api/src/modules/credentials/credentials.controller.ts`,
+      `apps/web/src/features/setup/credential-mode-toggle.tsx`,
+      `apps/web/src/features/setup/setup-flow.tsx`,
       `tests/e2e/credential-mode-switch.spec.tsx`
   
   ## Cross-Cutting Hardening Track
@@ -450,37 +467,44 @@
   shortcut that diverged from `SPEC.md` while still keeping the existing
   acceptance criteria green.
   
-  - [ ] Task H-01: Replace the in-house JSON logger with `Pino`
+  - [x] Task H-01: Replace the in-house JSON logger with `Pino`
     - Acceptance: `apps/api` and `apps/worker` emit Pino logs with redaction,
       serialization, and child-logger semantics; the existing log fields and
       levels are preserved.
     - Verify: `pnpm --filter api test`; `pnpm --filter worker test`
     - Files: `apps/api/src/observability/structured-logger.service.ts`,
-      `apps/worker/src/observability/observability.ts`
+      `apps/worker/src/observability/observability.ts`,
+      `apps/api/test/observability.e2e-spec.ts`,
+      `apps/worker/test/observability.spec.ts`
   
-  - [ ] Task H-02: Wire real OpenTelemetry tracing
+  - [x] Task H-02: Wire real OpenTelemetry tracing
     - Acceptance: API and worker use the OpenTelemetry SDK, export to OTLP, and
       keep the existing `trace.span.start`/`end` log lines as a fallback.
     - Verify: `pnpm --filter api test`; `pnpm --filter worker test`
     - Files: `packages/observability-otel/src/index.ts`,
       `apps/api/src/observability/observability.module.ts`,
-      `apps/worker/src/observability/observability.ts`
+      `apps/api/src/observability/trace-recorder.service.ts`,
+      `apps/worker/src/observability/observability.ts`,
+      `apps/api/test/observability.e2e-spec.ts`,
+      `apps/worker/test/observability.spec.ts`
   
-  - [ ] Task H-03: Add Sentry-equivalent error capture
+  - [x] Task H-03: Add Sentry-equivalent error capture
     - Acceptance: Unhandled exceptions in API and worker are forwarded to the
       error capture sink with workspace, conversation, and trace context.
     - Verify: `pnpm --filter api test`; `pnpm test:integration`
     - Files: `packages/observability-errors/src/index.ts`,
       `apps/api/src/observability/error-reporter.service.ts`
   
-  - [ ] Task H-04: Move the rate-limit service onto Redis
+  - [x] Task H-04: Move the rate-limit service onto Redis
     - Acceptance: `RateLimitService` reads and writes its buckets through Redis;
       the in-process implementation is retained as a test double.
     - Verify: `pnpm --filter api test`; `pnpm test:integration`
     - Files: `apps/api/src/modules/limits/rate-limit.service.ts`,
-      `apps/api/src/modules/limits/redis-rate-limit.repository.ts`
+      `apps/api/src/modules/limits/redis-rate-limit.repository.ts`,
+      `apps/api/test/rate-limit.e2e-spec.ts`,
+      `tests/integration/rate-limit.spec.ts`
   
-  - [ ] Task H-05: Migrate API services to Drizzle ORM
+  - [x] Task H-05: Migrate API services to Drizzle ORM
     - Acceptance: Conversations, messages, custom agents, credentials, and
       artifacts are queried through Drizzle. Raw `pg` access is allowed only
       for migrations and exotic stream cursors.
@@ -489,7 +513,7 @@
       `apps/api/src/modules/conversations/conversations.repository.ts`,
       `apps/api/src/modules/messages/messages.repository.ts`
   
-  - [ ] Task H-06: Add `pgBouncer` in front of PostgreSQL
+  - [x] Task H-06: Add `pgBouncer` in front of PostgreSQL
     - Acceptance: The Docker compose stack and Kubernetes manifests route the
       API and worker through `pgBouncer`; the `DATABASE_URL` continues to be
       a single environment variable.
@@ -498,7 +522,7 @@
       `infra/k8s/pgbouncer.yaml`,
       `docs/operations/pgbouncer.md`
   
-  - [ ] Task H-07: Adopt `Tailwind CSS` and a shadcn-style UI baseline
+  - [x] Task H-07: Adopt `Tailwind CSS` and a shadcn-style UI baseline
     - Acceptance: The web client is rebuilt against Tailwind tokens; existing
       chat, setup, and agents specs continue to pass after the migration.
     - Verify: `pnpm --filter web build`; `pnpm --filter web test`; `pnpm test:e2e`
@@ -506,7 +530,7 @@
       `apps/web/src/app/globals.css`,
       `apps/web/src/components/**/*.tsx`
   
-  - [ ] Task H-08: Replace vitest+jsdom e2e with `Playwright`
+  - [x] Task H-08: Replace vitest+jsdom e2e with `Playwright`
     - Acceptance: The e2e suite runs against a real browser using Playwright,
       targeting the same scenarios as the existing `tests/e2e/*.spec.tsx`
       files; the in-process spec files are kept as smoke tests.
@@ -515,7 +539,7 @@
       `tests/e2e-playwright/*.spec.ts`,
       `docs/operations/e2e-playwright.md`
   
-  - [ ] Task H-09: Add Supertest API contract tests
+  - [x] Task H-09: Add Supertest API contract tests
     - Acceptance: Critical API contracts (auth, workspaces, messages,
       artifacts, credentials) have Supertest-driven contract tests covering
       happy paths and permission boundaries.
@@ -524,7 +548,7 @@
       `apps/api/test/workspaces.contract-spec.ts`,
       `apps/api/test/messages.contract-spec.ts`
   
-  - [ ] Task H-10: Run real-SaaS provider acceptance against staging
+  - [x] Task H-10: Run real-SaaS provider acceptance against staging
     - Acceptance: A staging-only k6 / vitest pipeline runs `tests/e2e/*-real.spec.ts`
       against the real `Hermes`, `OpenClaw`, `Codex`, and `Claude Code`
       endpoints with rotated BYOK credentials; results are stored in

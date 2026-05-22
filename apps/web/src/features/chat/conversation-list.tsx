@@ -19,7 +19,6 @@ export function ConversationList({ onSelect, workspaceId }: ConversationListProp
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, includeArchived]);
 
   async function refresh(): Promise<void> {

@@ -4,6 +4,11 @@ import { useState } from "react";
 
 import type { CustomAgent } from "@agenthub/contracts";
 
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Select } from "../../components/ui/select";
+import { Textarea } from "../../components/ui/textarea";
+
 export type AgentDraft = {
   avatarUrl: string;
   capabilityTags: string[];
@@ -78,33 +83,28 @@ export function AgentForm({ busy = false, onSubmit }: AgentFormProps) {
         setProvider("codex");
         setSystemPrompt("");
       }}
-      style={{
-        display: "grid",
-        gap: "0.9rem"
-      }}
+      className="grid gap-4"
     >
-      <label htmlFor="agent-name" style={fieldLabelStyle}>
+      <label className={fieldLabelClassName} htmlFor="agent-name">
         Agent name
-        <input
+        <Input
           id="agent-name"
           onChange={(event) => {
             setName(event.target.value);
           }}
           placeholder="Release Drafter"
-          style={inputStyle}
           type="text"
           value={name}
         />
       </label>
 
-      <label htmlFor="agent-provider" style={fieldLabelStyle}>
+      <label className={fieldLabelClassName} htmlFor="agent-provider">
         Provider
-        <select
+        <Select
           id="agent-provider"
           onChange={(event) => {
             setProvider(event.target.value as CustomAgent["provider"]);
           }}
-          style={inputStyle}
           value={provider}
         >
           {providerOptions.map((option) => (
@@ -112,92 +112,60 @@ export function AgentForm({ busy = false, onSubmit }: AgentFormProps) {
               {option.label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
-      <label htmlFor="agent-capability-tags" style={fieldLabelStyle}>
+      <label className={fieldLabelClassName} htmlFor="agent-capability-tags">
         Capability tags
-        <input
+        <Input
           id="agent-capability-tags"
           onChange={(event) => {
             setCapabilityTagsText(event.target.value);
           }}
           placeholder="release, writing"
-          style={inputStyle}
           type="text"
           value={capabilityTagsText}
         />
       </label>
 
-      <label htmlFor="agent-avatar-url" style={fieldLabelStyle}>
+      <label className={fieldLabelClassName} htmlFor="agent-avatar-url">
         Avatar URL
-        <input
+        <Input
           id="agent-avatar-url"
           onChange={(event) => {
             setAvatarUrl(event.target.value);
           }}
           placeholder="https://example.com/agent.png"
-          style={inputStyle}
           type="url"
           value={avatarUrl}
         />
       </label>
 
-      <label htmlFor="agent-system-prompt" style={fieldLabelStyle}>
+      <label className={fieldLabelClassName} htmlFor="agent-system-prompt">
         System prompt
-        <textarea
+        <Textarea
+          className="min-h-36 resize-y"
           id="agent-system-prompt"
           onChange={(event) => {
             setSystemPrompt(event.target.value);
           }}
           placeholder="Draft release notes and changelog summaries."
           rows={6}
-          style={textareaStyle}
           value={systemPrompt}
         />
       </label>
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-        <p style={{ color: "#475467", fontSize: "0.92rem", lineHeight: 1.6, margin: 0 }}>
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <p className="m-0 text-sm leading-7 text-slate-600">
           Light custom agents stay prompt-first for Release 1. Tool bindings can be
           attached later through the registry slice.
         </p>
-        <button disabled={!canSubmit} style={buttonStyle} type="submit">
+        <Button className="shrink-0" disabled={!canSubmit} type="submit">
           Create agent
-        </button>
+        </Button>
       </div>
     </form>
   );
 }
 
-const buttonStyle = {
-  alignSelf: "start",
-  background: "#101828",
-  border: 0,
-  borderRadius: "999px",
-  color: "#fff",
-  cursor: "pointer",
-  font: "inherit",
-  fontWeight: 600,
-  padding: "0.75rem 1.1rem"
-} as const;
-
-const fieldLabelStyle = {
-  color: "#344054",
-  display: "grid",
-  fontSize: "0.95rem",
-  fontWeight: 600,
-  gap: "0.4rem"
-} as const;
-
-const inputStyle = {
-  border: "1px solid rgba(15, 23, 42, 0.12)",
-  borderRadius: "16px",
-  font: "inherit",
-  padding: "0.85rem 0.95rem"
-} as const;
-
-const textareaStyle = {
-  ...inputStyle,
-  resize: "vertical"
-} as const;
+const fieldLabelClassName = "grid gap-2 text-sm font-semibold text-slate-700";

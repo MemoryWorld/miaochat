@@ -4,12 +4,28 @@ import { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CodexAdapter } from "../../packages/agent-adapters/src/codex/codex-adapter.js";
+import {
+  assertStagingProviderResult,
+  getStagingProviderRuntimeConfig,
+  isStagingRealProviderMode
+} from "./real-provider-test-support.js";
 
 let server: Server;
 let baseUrl: string;
+let providerAccountId: string;
+let secret: string;
 const requestLog: { body?: string; headers?: Record<string, string | string[] | undefined>; url?: string } = {};
+const stagingMode = isStagingRealProviderMode();
 
 beforeAll(async () => {
+  if (stagingMode) {
+    const config = getStagingProviderRuntimeConfig("codex");
+    baseUrl = config.baseUrl;
+    providerAccountId = config.providerAccountId;
+    secret = config.secret;
+    return;
+  }
+
   server = createServer((request, response) => {
     requestLog.url = request.url ?? "";
     requestLog.headers = request.headers;
@@ -63,9 +79,15 @@ beforeAll(async () => {
 
   const address = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${address.port}`;
+  providerAccountId = "acct_codex_real";
+  secret = "sk-codex-real-123";
 });
 
 afterAll(async () => {
+  if (stagingMode) {
+    return;
+  }
+
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
@@ -76,8 +98,8 @@ describe("Codex real-provider acceptance", () => {
     const adapter = new CodexAdapter({
       baseUrl,
       credentialResolver: async () => ({
-        providerAccountId: "acct_codex_real",
-        secret: "sk-codex-real-123"
+        providerAccountId,
+        secret
       })
     });
     const result = await adapter.execute({
@@ -88,6 +110,11 @@ describe("Codex real-provider acceptance", () => {
       provider: "codex",
       workspaceId: "workspace_codex_real"
     });
+
+    if (stagingMode) {
+      assertStagingProviderResult(result);
+      return;
+    }
 
     expect(result.finalContent).toBe("Hello from Codex");
     expect(result.streamEvents.map((event) => event.kind)).toEqual([
@@ -106,7 +133,7 @@ describe("Codex real-provider acceptance", () => {
         workspace_id: "workspace_codex_real"
       })
     );
-    expect(requestLog.headers?.authorization).toBe("Bearer sk-codex-real-123");
-    expect(requestLog.headers?.["codex-account"]).toBe("acct_codex_real");
+    expect(requestLog.headers?.authorization).toBe(`Bearer ${secret}`);
+    expect(requestLog.headers?.["codex-account"]).toBe(providerAccountId);
   });
 });

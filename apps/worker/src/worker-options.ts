@@ -21,6 +21,18 @@ const awaitableActivities = {
     const { aggregateResultsActivity } = await import("./activities/index.js");
     return aggregateResultsActivity(input as never);
   },
+  deployContainerActivity: async (input: unknown) => {
+    const { deployContainerActivity } = await import("./activities/index.js");
+    return deployContainerActivity(input as never);
+  },
+  deployStaticSiteActivity: async (input: unknown) => {
+    const { deployStaticSiteActivity } = await import("./activities/index.js");
+    return deployStaticSiteActivity(input as never);
+  },
+  finalizeDeployActivity: async (input: unknown) => {
+    const { finalizeDeployActivity } = await import("./activities/index.js");
+    return finalizeDeployActivity(input as never);
+  },
   executeDirectAgentActivity: async (input: unknown) => {
     const { executeDirectAgentActivity } = await import("./activities/index.js");
     return executeDirectAgentActivity(input as never);
@@ -32,5 +44,9 @@ const awaitableActivities = {
   placeholderActivity: async (input: string) => {
     const { placeholderActivity } = await import("./activities/index.js");
     return placeholderActivity(input);
+  },
+  prepareDeployActivity: async (input: unknown) => {
+    const { prepareDeployActivity } = await import("./activities/index.js");
+    return prepareDeployActivity(input as never);
   }
 };

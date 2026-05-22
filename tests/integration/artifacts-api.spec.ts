@@ -113,6 +113,9 @@ describe("artifacts integration", () => {
     const messageId = messageResponse.json().id as string;
 
     const uploadTargetResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         fileName: "release-checklist.md",
@@ -144,6 +147,9 @@ describe("artifacts integration", () => {
     expect(uploadTarget.previewUrl).toBeNull();
 
     const createArtifactResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "POST",
       payload: {
         id: uploadTarget.artifactId,
@@ -173,6 +179,9 @@ describe("artifacts integration", () => {
     );
 
     const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
       method: "GET",
       url: `/artifacts?messageId=${messageId}&workspaceId=${workspaceId}`
     });

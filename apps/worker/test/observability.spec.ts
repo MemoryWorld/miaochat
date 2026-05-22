@@ -1,6 +1,8 @@
 import { Writable } from "node:stream";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { OpenTelemetryRuntime } from "@agenthub/observability-otel";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import {
   StructuredWorkerLogger,
@@ -34,14 +36,19 @@ describe("worker observability", () => {
       serviceName: "worker-test",
       stream
     });
+    const child = logger.child({
+      workspaceId: "ws_worker_obs"
+    });
 
     logger.info("worker.dispatch_agent.started", {
       agentId: "agent_obs",
       provider: "mock"
     });
-    logger.warn("worker.dispatch_agent.retry", {
+    child.warn("worker.dispatch_agent.retry", {
       agentId: "agent_obs",
-      provider: "mock"
+      error: new Error("retryable"),
+      provider: "mock",
+      rawSecret: "worker-secret"
     });
 
     const decoded = stream.entries.map((entry) => JSON.parse(entry));
@@ -56,9 +63,17 @@ describe("worker observability", () => {
       }),
       expect.objectContaining({
         event: "worker.dispatch_agent.retry",
-        level: "warn"
+        error: expect.objectContaining({
+          message: "retryable",
+          type: "Error"
+        }),
+        level: "warn",
+        rawSecret: "[Redacted]",
+        service: "worker-test",
+        workspaceId: "ws_worker_obs"
       })
     ]);
+    expect(decoded[0]?.ts).toEqual(expect.any(String));
   });
 
   it("records counters and observations through the metrics registry", () => {
@@ -78,7 +93,7 @@ describe("worker observability", () => {
     expect(registry.exportPrometheus()).toContain("worker_dispatch_total");
   });
 
-  it("traces success and failure spans through the worker recorder", () => {
+  it("traces success and failure spans through the worker recorder", async () => {
     const stream = new CapturingStream();
     const logger = new StructuredWorkerLogger({
       minLevel: "info",
@@ -86,7 +101,13 @@ describe("worker observability", () => {
       stream
     });
     const metrics = new WorkerMetricsRegistry();
-    const tracer = new WorkerTraceRecorder(logger, metrics);
+    const exporter = new InMemorySpanExporter();
+    const otel = new OpenTelemetryRuntime({
+      exporter,
+      serviceName: "worker-test",
+      useSimpleProcessor: true
+    });
+    const tracer = new WorkerTraceRecorder(logger, metrics, otel);
 
     const okSpan = tracer.startSpan("worker.dispatch_agent", {
       agentId: "agent_obs"
@@ -118,5 +139,27 @@ describe("worker observability", () => {
         value: 1
       })
     ]);
+
+    const finishedSpans = exporter.getFinishedSpans();
+
+    expect(finishedSpans).toHaveLength(2);
+    expect(finishedSpans[0]?.name).toBe("worker.dispatch_agent");
+    expect(finishedSpans[0]?.attributes).toEqual(
+      expect.objectContaining({
+        agentId: "agent_obs",
+        contentLength: 12,
+        result: "ok"
+      })
+    );
+    expect(finishedSpans[1]?.status.message).toBe("boom");
+    expect(finishedSpans[1]?.attributes).toEqual(
+      expect.objectContaining({
+        agentId: "agent_failure",
+        error: "boom",
+        result: "error"
+      })
+    );
+
+    await otel.shutdown();
   });
 });

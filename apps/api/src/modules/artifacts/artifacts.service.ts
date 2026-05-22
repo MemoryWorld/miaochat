@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import { DatabaseError } from "pg";
 
 import {
@@ -34,48 +35,45 @@ export class ArtifactsService {
     @Inject(StorageService) private readonly storageService: StorageService
   ) {}
 
-  async create(input: unknown): Promise<Artifact> {
+  async create(input: unknown, ownerUserId: string): Promise<Artifact> {
     const parsed = createArtifactInputSchema.parse(input);
     const workspaceId = parsed.workspaceId ?? "default-workspace";
 
-    await this.assertMessageExists(parsed.messageId, workspaceId);
+    await this.assertMessageExists(parsed.messageId, workspaceId, ownerUserId);
 
     try {
-      const result = await this.database.query<ArtifactRow>(
-        `
-          INSERT INTO artifacts (
-            id,
-            kind,
-            message_id,
-            mime_type,
-            preview_url,
-            storage_key,
-            title,
-            workspace_id
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          RETURNING
-            created_at,
-            id,
-            kind,
-            message_id,
-            mime_type,
-            preview_url,
-            storage_key,
-            title,
-            workspace_id
-        `,
-        [
-          parsed.id ?? randomUUID(),
-          parsed.kind,
-          parsed.messageId,
-          parsed.mimeType,
-          parsed.previewUrl ?? null,
-          parsed.storageKey ?? null,
-          parsed.title,
-          workspaceId
-        ]
-      );
+      const result = await this.database.execute<ArtifactRow>(sql`
+        INSERT INTO artifacts (
+          id,
+          kind,
+          message_id,
+          mime_type,
+          preview_url,
+          storage_key,
+          title,
+          workspace_id
+        )
+        VALUES (
+          ${parsed.id ?? randomUUID()},
+          ${parsed.kind},
+          ${parsed.messageId},
+          ${parsed.mimeType},
+          ${parsed.previewUrl ?? null},
+          ${parsed.storageKey ?? null},
+          ${parsed.title},
+          ${workspaceId}
+        )
+        RETURNING
+          created_at,
+          id,
+          kind,
+          message_id,
+          mime_type,
+          preview_url,
+          storage_key,
+          title,
+          workspace_id
+      `);
 
       return mapArtifactRow(result.rows[0]);
     } catch (error) {
@@ -89,35 +87,40 @@ export class ArtifactsService {
     }
   }
 
-  async list(input: unknown): Promise<Artifact[]> {
+  async list(input: unknown, ownerUserId: string): Promise<Artifact[]> {
     const parsed = artifactQuerySchema.parse(input);
-    const result = await this.database.query<ArtifactRow>(
-      `
-        SELECT
-          created_at,
-          id,
-          kind,
-          message_id,
-          mime_type,
-          preview_url,
-          storage_key,
-          title,
-          workspace_id
-        FROM artifacts
-        WHERE message_id = $1 AND workspace_id = $2
-        ORDER BY created_at ASC, id ASC
-      `,
-      [parsed.messageId, parsed.workspaceId]
-    );
+    const result = await this.database.execute<ArtifactRow>(sql`
+      SELECT
+        artifacts.created_at,
+        artifacts.id,
+        artifacts.kind,
+        artifacts.message_id,
+        artifacts.mime_type,
+        artifacts.preview_url,
+        artifacts.storage_key,
+        artifacts.title,
+        artifacts.workspace_id
+      FROM artifacts
+      INNER JOIN messages
+        ON messages.id = artifacts.message_id
+        AND messages.workspace_id = artifacts.workspace_id
+      WHERE artifacts.message_id = ${parsed.messageId}
+        AND artifacts.workspace_id = ${parsed.workspaceId}
+        AND messages.owner_user_id = ${ownerUserId}
+      ORDER BY artifacts.created_at ASC, artifacts.id ASC
+    `);
 
     return result.rows.map(mapArtifactRow);
   }
 
-  async prepareUploadTarget(input: unknown): Promise<ArtifactUploadTarget> {
+  async prepareUploadTarget(
+    input: unknown,
+    ownerUserId: string
+  ): Promise<ArtifactUploadTarget> {
     const parsed = prepareArtifactUploadInputSchema.parse(input);
     const workspaceId = parsed.workspaceId ?? "default-workspace";
 
-    await this.assertMessageExists(parsed.messageId, workspaceId);
+    await this.assertMessageExists(parsed.messageId, workspaceId, ownerUserId);
 
     return this.storageService.prepareArtifactUpload({
       ...parsed,
@@ -127,16 +130,16 @@ export class ArtifactsService {
 
   private async assertMessageExists(
     messageId: string,
-    workspaceId: string
+    workspaceId: string,
+    ownerUserId: string
   ): Promise<void> {
-    const result = await this.database.query<{ id: string }>(
-      `
-        SELECT id
-        FROM messages
-        WHERE id = $1 AND workspace_id = $2
-      `,
-      [messageId, workspaceId]
-    );
+    const result = await this.database.execute<{ id: string }>(sql`
+      SELECT id
+      FROM messages
+      WHERE id = ${messageId}
+        AND workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+    `);
 
     if (!result.rows[0]) {
       throw new NotFoundException(

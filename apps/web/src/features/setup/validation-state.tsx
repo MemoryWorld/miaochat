@@ -52,37 +52,20 @@ export function ValidationState({
   return (
     <section
       aria-live="polite"
-      style={{
-        background: "#f8fafc",
-        border: `1px solid ${state.accent}`,
-        borderRadius: "18px",
-        minHeight: "116px",
-        padding: "1rem"
-      }}
+      className="min-h-[116px] rounded-3xl bg-slate-50 p-4"
+      style={{ border: `1px solid ${state.accent}` }}
     >
       <div
-        style={{
-          color: state.tone,
-          fontSize: "0.85rem",
-          fontWeight: 700,
-          letterSpacing: "0.02em",
-          marginBottom: "0.65rem",
-          textTransform: "uppercase"
-        }}
+        className="mb-3 text-xs font-bold uppercase tracking-[0.12em]"
+        style={{ color: state.tone }}
       >
         {state.label}
       </div>
-      <p style={{ color: "#344054", lineHeight: 1.6, margin: 0 }}>
+      <p className="m-0 text-sm leading-7 text-slate-700">
         {message ?? "Select a provider, validate the secret, then bind it for future sessions."}
       </p>
       {providerAccountId ? (
-        <div
-          style={{
-            color: "#475467",
-            fontSize: "0.9rem",
-            marginTop: "0.75rem"
-          }}
-        >
+        <div className="mt-3 text-sm text-slate-600">
           Provider account: <strong>{providerAccountId}</strong>
         </div>
       ) : null}

@@ -15,6 +15,9 @@ describe("publicErrorMapper", () => {
     expect(mapToPublicError(new Error("Hit rate limit on conversation"))).toEqual(
       expect.objectContaining({ code: "rate_limited", status: 429 })
     );
+    expect(mapToPublicError({ code: "quota_exceeded" })).toEqual(
+      expect.objectContaining({ code: "quota_exceeded", status: 429 })
+    );
   });
 
   it("maps timeouts and provider failures to safe 5xx surfaces", () => {

@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-
 import { Inject, Injectable } from "@nestjs/common";
+import { getGlobalErrorContextStore } from "@agenthub/observability-errors";
+import { OpenTelemetryRuntime } from "@agenthub/observability-otel";
 
 import { MetricsRegistry } from "./metrics-registry.service.js";
 import { StructuredLogger } from "./structured-logger.service.js";
@@ -18,7 +18,8 @@ export type TraceSpan = {
 export class TraceRecorder {
   constructor(
     @Inject(StructuredLogger) private readonly logger: StructuredLogger,
-    @Inject(MetricsRegistry) private readonly metrics: MetricsRegistry
+    @Inject(MetricsRegistry) private readonly metrics: MetricsRegistry,
+    @Inject(OpenTelemetryRuntime) private readonly otel: OpenTelemetryRuntime
   ) {}
 
   startSpan(
@@ -26,9 +27,17 @@ export class TraceRecorder {
     fields: TraceSpanFields = {},
     options: { parentTraceId?: string } = {}
   ): TraceSpan {
-    const traceId = options.parentTraceId ?? randomUUID();
-    const spanId = randomUUID();
+    const span = this.otel.startSpan(name, fields, options);
+    const traceId = span.traceId;
+    const spanId = span.spanId;
     const startedAt = Date.now();
+
+    getGlobalErrorContextStore().enterWith({
+      conversationId: stringOrUndefined(fields.conversationId),
+      traceId,
+      workspaceId:
+        stringOrUndefined(fields.workspaceId) ?? stringOrUndefined(fields.workspace_id)
+    });
 
     this.logger.info("trace.span.start", {
       ...fields,
@@ -50,7 +59,7 @@ export class TraceRecorder {
 
       this.metrics.incrementCounter("trace_span_total", labels);
       this.metrics.observeHistogram("trace_span_duration_ms", durationMs, labels);
-      this.logger.info("trace.span.end", {
+      const finalizedFields = {
         ...fields,
         ...extraFields,
         durationMs,
@@ -59,7 +68,15 @@ export class TraceRecorder {
         span: name,
         spanId,
         traceId
-      });
+      };
+
+      if (result === "error") {
+        span.fail(error, finalizedFields);
+      } else {
+        span.end(finalizedFields);
+      }
+
+      this.logger.info("trace.span.end", finalizedFields);
     };
 
     return {
@@ -73,4 +90,8 @@ export class TraceRecorder {
       traceId
     };
   }
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }

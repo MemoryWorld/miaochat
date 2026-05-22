@@ -43,6 +43,14 @@ describe("SetupFlow", () => {
         })
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             message: "Codex credential passed local format validation.",
@@ -129,14 +137,14 @@ describe("SetupFlow", () => {
     });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       "http://localhost:3001/credentials/validate",
       expect.objectContaining({
         method: "POST"
       })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       "http://localhost:3001/credentials",
       expect.objectContaining({
         method: "POST"
@@ -145,14 +153,31 @@ describe("SetupFlow", () => {
   });
 
   it("switches provider guidance when a different provider is selected", async () => {
-    fetchMock.mockImplementation(async () =>
-      new Response(JSON.stringify([]), {
-        headers: {
-          "Content-Type": "application/json"
-        },
-        status: 200
-      })
-    );
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      );
 
     render(<SetupFlow />);
 
@@ -162,5 +187,57 @@ describe("SetupFlow", () => {
 
     expect(screen.getByText("Expected prefix: hermes_")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Hermes engineering key")).toBeInTheDocument();
+  });
+
+  it("enables platform-managed mode for the selected provider", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            credentialSource: "platform_managed",
+            provider: "codex",
+            workspaceId: "default-workspace"
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            },
+            status: 200
+          }
+        )
+      );
+
+    render(<SetupFlow />);
+
+    await screen.findByText("Nothing has been saved in the default workspace yet.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Platform-managed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enable platform-managed mode" }));
+
+    await screen.findByText("Platform-managed mode enabled");
   });
 });

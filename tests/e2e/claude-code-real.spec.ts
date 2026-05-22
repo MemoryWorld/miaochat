@@ -4,12 +4,28 @@ import { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ClaudeCodeAdapter } from "../../packages/agent-adapters/src/claude-code/claude-code-adapter.js";
+import {
+  assertStagingProviderResult,
+  getStagingProviderRuntimeConfig,
+  isStagingRealProviderMode
+} from "./real-provider-test-support.js";
 
 let server: Server;
 let baseUrl: string;
+let providerAccountId: string;
+let secret: string;
 const requestLog: { body?: string; headers?: Record<string, string | string[] | undefined>; url?: string } = {};
+const stagingMode = isStagingRealProviderMode();
 
 beforeAll(async () => {
+  if (stagingMode) {
+    const config = getStagingProviderRuntimeConfig("claude-code");
+    baseUrl = config.baseUrl;
+    providerAccountId = config.providerAccountId;
+    secret = config.secret;
+    return;
+  }
+
   server = createServer((request, response) => {
     requestLog.url = request.url ?? "";
     requestLog.headers = request.headers;
@@ -54,9 +70,15 @@ beforeAll(async () => {
 
   const address = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${address.port}`;
+  providerAccountId = "acct_claude_code_real";
+  secret = "sk-ant-real-123";
 });
 
 afterAll(async () => {
+  if (stagingMode) {
+    return;
+  }
+
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
@@ -67,8 +89,8 @@ describe("Claude Code real-provider acceptance", () => {
     const adapter = new ClaudeCodeAdapter({
       baseUrl,
       credentialResolver: async () => ({
-        providerAccountId: "acct_claude_code_real",
-        secret: "sk-ant-real-123"
+        providerAccountId,
+        secret
       })
     });
     const result = await adapter.execute({
@@ -79,6 +101,11 @@ describe("Claude Code real-provider acceptance", () => {
       provider: "claude-code",
       workspaceId: "workspace_claude_code_real"
     });
+
+    if (stagingMode) {
+      assertStagingProviderResult(result);
+      return;
+    }
 
     expect(result.finalContent).toBe("Hello from Claude Code");
     expect(result.streamEvents.map((event) => event.kind)).toEqual([
@@ -98,8 +125,8 @@ describe("Claude Code real-provider acceptance", () => {
         workspace_id: "workspace_claude_code_real"
       })
     );
-    expect(requestLog.headers?.["x-api-key"]).toBe("sk-ant-real-123");
-    expect(requestLog.headers?.["claude-code-account"]).toBe("acct_claude_code_real");
+    expect(requestLog.headers?.["x-api-key"]).toBe(secret);
+    expect(requestLog.headers?.["claude-code-account"]).toBe(providerAccountId);
     expect(requestLog.headers?.["anthropic-version"]).toBe("2023-06-01");
   });
 });

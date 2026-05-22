@@ -12,6 +12,7 @@ export function PreviewCard({ artifact }: PreviewCardProps) {
       aria-label={`Preview artifact ${artifact.title}`}
       data-artifact-card="preview"
       data-artifact-kind={artifact.kind}
+      id={`artifact-${artifact.id}`}
       style={cardStyle}
     >
       <header style={headerStyle}>

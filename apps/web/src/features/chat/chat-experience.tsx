@@ -2,19 +2,24 @@
 
 import { startTransition, useEffect, useRef, useState } from "react";
 
-import type {
-  Artifact,
-  Conversation,
-  CustomAgent,
-  Message,
-  OrchestratorStatusEventPayload
+import {
+  deployCommandResultSchema,
+  type Artifact,
+  type Conversation,
+  type CustomAgent,
+  type DeployCommandResult,
+  type Message,
+  type OrchestratorStatusEventPayload
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
 import { NewConversationDialog } from "../conversations/new-conversation-dialog";
 import { ChatComposer } from "./chat-composer";
+import { parseDeployCommand } from "./deploy-command";
 import { ChatThread } from "./chat-thread";
 import { useConversationStream } from "./use-conversation-stream";
 
@@ -42,6 +47,7 @@ export function ChatExperience() {
   const [isSending, setIsSending] = useState(false);
   const [liveAssistantMessage, setLiveAssistantMessage] =
     useState<LiveAssistantMessage | null>(null);
+  const [deployments, setDeployments] = useState<DeployCommandResult[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [artifactsByMessageId, setArtifactsByMessageId] = useState<
     Record<string, Artifact[]>
@@ -56,7 +62,6 @@ export function ChatExperience() {
 
   useEffect(() => {
     void loadConversations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   useEffect(() => {
@@ -64,6 +69,7 @@ export function ChatExperience() {
     setMessages([]);
     setArtifactsByMessageId({});
     setLiveAssistantMessage(null);
+    setDeployments([]);
     setCustomAgents([]);
     processedStreamEventCountRef.current = 0;
   }, [workspaceId]);
@@ -73,11 +79,13 @@ export function ChatExperience() {
       setMessages([]);
       setArtifactsByMessageId({});
       setLiveAssistantMessage(null);
+      setDeployments([]);
       processedStreamEventCountRef.current = 0;
       return;
     }
 
     processedStreamEventCountRef.current = 0;
+    setDeployments([]);
     void loadMessages(selectedConversationId);
   }, [selectedConversationId]);
 
@@ -168,7 +176,10 @@ export function ChatExperience() {
   async function loadArtifactsForMessage(messageId: string): Promise<void> {
     try {
       const response = await fetch(
-        `${apiBaseUrl}/artifacts?messageId=${messageId}&workspaceId=${workspaceId}`
+        `${apiBaseUrl}/artifacts?messageId=${messageId}&workspaceId=${workspaceId}`,
+        {
+          credentials: "include"
+        }
       );
 
       if (!response?.ok) {
@@ -277,6 +288,44 @@ export function ChatExperience() {
     setIsSending(true);
 
     try {
+      const deployCommand = parseDeployCommand(input.content);
+
+      if (deployCommand) {
+        const response = await fetch(`${apiBaseUrl}/deploys`, {
+          body: JSON.stringify({
+            conversationId: selectedConversationId,
+            targetName: deployCommand.targetName,
+            workspaceId
+          }),
+          headers: {
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          const message =
+            typeof payload === "object" &&
+            payload !== null &&
+            "message" in payload &&
+            typeof payload.message === "string"
+              ? payload.message
+              : "Failed to trigger the deploy workflow.";
+          throw new Error(message);
+        }
+
+        const parsedPayload = deployCommandResultSchema.parse(payload);
+
+        startTransition(() => {
+          setDeployments((current) => [
+            parsedPayload,
+            ...current.filter((entry) => entry.deployment.id !== parsedPayload.deployment.id)
+          ]);
+        });
+        return;
+      }
+
       const response = await fetch(`${apiBaseUrl}/messages/send`, {
         body: JSON.stringify({
           content: input.content,
@@ -356,30 +405,38 @@ export function ChatExperience() {
     <AppShell
       sidebar={
         <>
-          <h1 style={{ marginTop: 0 }}>AgentHub</h1>
+          <Badge className="mb-3" tone="primary">
+            Chat Workspace
+          </Badge>
+          <h1 className="mt-0 text-3xl font-semibold tracking-tight text-slate-950">
+            AgentHub
+          </h1>
           <WorkspaceSwitcher
             activeWorkspaceId={workspaceId}
             isLoading={isLoadingWorkspaces}
             onSelect={selectWorkspace}
             workspaces={workspaces}
           />
-          <p style={{ color: "#475467", lineHeight: 1.6 }}>
+          <p className="text-sm leading-7 text-slate-600">
             Release 1 keeps the mock direct path for smoke checks, while custom agents
             can now be created separately and selected for new sessions.
           </p>
-          <a href="/agents" style={linkStyle}>
+          <a
+            className="inline-flex items-center text-sm font-semibold text-sky-700 no-underline transition hover:text-sky-600"
+            href="/agents"
+          >
             Open agents workspace
           </a>
-          <button
+          <Button
+            className="mt-2"
             disabled={isCreating}
             onClick={() => {
               void handleCreateConversation();
             }}
-            style={primaryButtonStyle}
             type="button"
           >
             Start mock conversation
-          </button>
+          </Button>
           <NewConversationDialog
             agents={customAgents}
             busy={isCreating}
@@ -393,36 +450,28 @@ export function ChatExperience() {
             }}
             onToggleOpen={setIsNewConversationOpen}
           />
-          <div
-            style={{
-              display: "grid",
-              gap: "0.6rem",
-              marginTop: "1rem"
-            }}
-          >
+          <div className="mt-4 grid gap-2.5">
             {conversations.map((conversation) => (
               <button
                 key={conversation.id}
                 onClick={() => {
                   setSelectedConversationId(conversation.id);
                 }}
-                style={{
-                  ...conversationButtonStyle,
-                  borderColor:
-                    conversation.id === selectedConversationId
-                      ? "rgba(11, 110, 255, 0.28)"
-                      : "rgba(15, 23, 42, 0.08)"
-                }}
+                className={`grid gap-1 rounded-3xl border bg-white/80 px-4 py-3 text-left transition hover:bg-white ${
+                  conversation.id === selectedConversationId
+                    ? "border-sky-200"
+                    : "border-slate-200"
+                }`}
                 type="button"
               >
-                <strong style={{ color: "#101828" }}>{conversation.title}</strong>
-                <span style={{ color: "#475467", fontSize: "0.85rem" }}>
+                <strong className="text-slate-950">{conversation.title}</strong>
+                <span className="text-xs text-slate-500">
                   {conversation.participants.map((entry) => entry.agentName).join(", ")}
                 </span>
               </button>
             ))}
             {conversations.length === 0 ? (
-              <p style={{ color: "#475467", lineHeight: 1.6, marginBottom: 0 }}>
+              <p className="mb-0 text-sm leading-7 text-slate-600">
                 No conversations yet. Start the seeded mock direct conversation first.
               </p>
             ) : null}
@@ -431,43 +480,28 @@ export function ChatExperience() {
       }
     >
       <section>
-        <div
-          style={{
-            alignItems: "start",
-            display: "flex",
-            justifyContent: "space-between",
-            gap: "1rem",
-            marginBottom: "1rem"
-          }}
-        >
+        <div className="mb-4 flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
           <div>
-            <h2 style={{ margin: 0 }}>
+            <h2 className="m-0 text-2xl font-semibold text-slate-950">
               {selectedConversation?.title ?? "Conversation Viewport"}
             </h2>
-            <p style={{ color: "#475467", lineHeight: 1.6, marginBottom: 0 }}>
+            <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
               {selectedConversation
                 ? "Send one message to exercise the single-agent mock worker path."
                 : "Create the mock conversation to activate the chat thread and SSE stream."}
             </p>
           </div>
-          <div
-            style={{
-              border: "1px solid rgba(15, 23, 42, 0.08)",
-              borderRadius: "999px",
-              color: "#475467",
-              fontSize: "0.82rem",
-              padding: "0.45rem 0.75rem"
-            }}
-          >
+          <div className="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500">
             {stream.connectionState}
           </div>
         </div>
         {errorMessage ? (
-          <p style={{ color: "#b42318", marginTop: 0 }}>{errorMessage}</p>
+          <p className="mt-0 text-sm font-medium text-red-700">{errorMessage}</p>
         ) : null}
         <ChatThread
           artifactsByMessageId={artifactsByMessageId}
           connectionState={stream.connectionState}
+          deployments={deployments}
           isPinningMessageId={isPinningMessageId}
           liveAssistantMessage={liveAssistantMessage}
           messages={messages}
@@ -483,37 +517,6 @@ export function ChatExperience() {
     </AppShell>
   );
 }
-
-const primaryButtonStyle = {
-  background: "#101828",
-  border: 0,
-  borderRadius: "999px",
-  color: "#fff",
-  cursor: "pointer",
-  font: "inherit",
-  fontWeight: 600,
-  marginTop: "0.4rem",
-  padding: "0.75rem 1rem"
-} as const;
-
-const conversationButtonStyle = {
-  background: "rgba(255, 255, 255, 0.74)",
-  border: "1px solid rgba(15, 23, 42, 0.08)",
-  borderRadius: "18px",
-  cursor: "pointer",
-  display: "grid",
-  gap: "0.35rem",
-  padding: "0.8rem 0.9rem",
-  textAlign: "left"
-} as const;
-
-const linkStyle = {
-  color: "#0b6eff",
-  display: "inline-block",
-  fontWeight: 600,
-  marginTop: "0.1rem",
-  textDecoration: "none"
-} as const;
 
 function mergeMessages(
   currentMessages: Message[],

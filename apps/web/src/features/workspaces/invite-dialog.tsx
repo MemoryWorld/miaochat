@@ -31,7 +31,6 @@ export function InviteDialog({ workspaceId, onClose }: InviteDialogProps) {
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   async function refresh(): Promise<void> {

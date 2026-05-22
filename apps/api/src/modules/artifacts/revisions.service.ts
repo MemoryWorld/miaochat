@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 
 import {
   artifactRevisionSchema,
@@ -30,87 +31,55 @@ export class ArtifactRevisionsService {
 
   async append(input: {
     artifactId: string;
+    ownerUserId: string;
     workspaceId: string;
     payload: unknown;
   }): Promise<ArtifactRevision> {
     const parsed = createArtifactRevisionInputSchema.parse(input.payload);
+    await this.assertArtifactOwnedBy(input.artifactId, input.workspaceId, input.ownerUserId);
 
-    return this.database.withClient(async (client) => {
-      await client.query("BEGIN");
-      try {
-        const previous = await client.query<{
-          id: string;
-          revision_index: number;
-        }>(
-          `
-            SELECT id, revision_index
-            FROM artifact_revisions
-            WHERE artifact_id = $1
-            ORDER BY revision_index DESC
-            LIMIT 1
-            FOR UPDATE
-          `,
-          [input.artifactId]
-        );
+    return this.database.transaction(async (tx) => {
+      const previous = await tx.execute<{
+        id: string;
+        revision_index: number;
+      }>(sql`
+        SELECT id, revision_index
+        FROM artifact_revisions
+        WHERE artifact_id = ${input.artifactId}
+        ORDER BY revision_index DESC
+        LIMIT 1
+        FOR UPDATE
+      `);
 
-        const previousRow = previous.rows[0] ?? null;
-        const revisionIndex = (previousRow?.revision_index ?? -1) + 1;
+      const previousRow = previous.rows[0] ?? null;
+      const revisionIndex = (previousRow?.revision_index ?? -1) + 1;
 
-        const inserted = await client.query<RevisionRow>(
-          `
-            INSERT INTO artifact_revisions (
-              id,
-              artifact_id,
-              workspace_id,
-              revision_index,
-              parent_revision_id,
-              author_user_id,
-              content_digest,
-              preview_url,
-              storage_key,
-              summary
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING
-              artifact_id,
-              author_user_id,
-              content_digest,
-              created_at,
-              id,
-              parent_revision_id,
-              preview_url,
-              revision_index,
-              storage_key,
-              summary,
-              workspace_id
-          `,
-          [
-            randomUUID(),
-            input.artifactId,
-            input.workspaceId,
-            revisionIndex,
-            previousRow?.id ?? null,
-            parsed.authorUserId ?? null,
-            parsed.contentDigest,
-            parsed.previewUrl ?? null,
-            parsed.storageKey ?? null,
-            parsed.summary ?? null
-          ]
-        );
-
-        await client.query("COMMIT");
-        return mapRow(inserted.rows[0]);
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      }
-    });
-  }
-
-  async listForArtifact(artifactId: string): Promise<ArtifactRevision[]> {
-    const result = await this.database.query<RevisionRow>(
-      `
-        SELECT
+      const inserted = await tx.execute<RevisionRow>(sql`
+        INSERT INTO artifact_revisions (
+          id,
+          artifact_id,
+          workspace_id,
+          revision_index,
+          parent_revision_id,
+          author_user_id,
+          content_digest,
+          preview_url,
+          storage_key,
+          summary
+        )
+        VALUES (
+          ${randomUUID()},
+          ${input.artifactId},
+          ${input.workspaceId},
+          ${revisionIndex},
+          ${previousRow?.id ?? null},
+          ${parsed.authorUserId ?? null},
+          ${parsed.contentDigest},
+          ${parsed.previewUrl ?? null},
+          ${parsed.storageKey ?? null},
+          ${parsed.summary ?? null}
+        )
+        RETURNING
           artifact_id,
           author_user_id,
           content_digest,
@@ -122,12 +91,36 @@ export class ArtifactRevisionsService {
           storage_key,
           summary,
           workspace_id
-        FROM artifact_revisions
-        WHERE artifact_id = $1
-        ORDER BY revision_index ASC
-      `,
-      [artifactId]
-    );
+      `);
+
+      return mapRow(inserted.rows[0]);
+    });
+  }
+
+  async listForArtifact(input: {
+    artifactId: string;
+    ownerUserId: string;
+    workspaceId: string;
+  }): Promise<ArtifactRevision[]> {
+    await this.assertArtifactOwnedBy(input.artifactId, input.workspaceId, input.ownerUserId);
+    const result = await this.database.execute<RevisionRow>(sql`
+      SELECT
+        artifact_id,
+        author_user_id,
+        content_digest,
+        created_at,
+        id,
+        parent_revision_id,
+        preview_url,
+        revision_index,
+        storage_key,
+        summary,
+        workspace_id
+      FROM artifact_revisions
+      WHERE artifact_id = ${input.artifactId}
+        AND workspace_id = ${input.workspaceId}
+      ORDER BY revision_index ASC
+    `);
 
     return result.rows.map(mapRow);
   }
@@ -139,55 +132,81 @@ export class ArtifactRevisionsService {
    * fetching both blobs is necessary.
    */
   async describeDiff(
-    artifactId: string,
-    revisionIndex: number
+    input: {
+      artifactId: string;
+      ownerUserId: string;
+      revisionIndex: number;
+      workspaceId: string;
+    }
   ): Promise<{
     after: ArtifactRevision;
     before: ArtifactRevision | null;
   }> {
-    if (revisionIndex < 0) {
-      throw new NotFoundException(`Negative revision index ${revisionIndex}.`);
+    if (input.revisionIndex < 0) {
+      throw new NotFoundException(`Negative revision index ${input.revisionIndex}.`);
     }
+    await this.assertArtifactOwnedBy(input.artifactId, input.workspaceId, input.ownerUserId);
 
-    const result = await this.database.query<RevisionRow>(
-      `
-        SELECT
-          artifact_id,
-          author_user_id,
-          content_digest,
-          created_at,
-          id,
-          parent_revision_id,
-          preview_url,
-          revision_index,
-          storage_key,
-          summary,
-          workspace_id
-        FROM artifact_revisions
-        WHERE artifact_id = $1
-          AND revision_index IN ($2, $3)
-        ORDER BY revision_index ASC
-      `,
-      [artifactId, Math.max(0, revisionIndex - 1), revisionIndex]
-    );
+    const result = await this.database.execute<RevisionRow>(sql`
+      SELECT
+        artifact_id,
+        author_user_id,
+        content_digest,
+        created_at,
+        id,
+        parent_revision_id,
+        preview_url,
+        revision_index,
+        storage_key,
+        summary,
+        workspace_id
+      FROM artifact_revisions
+      WHERE artifact_id = ${input.artifactId}
+        AND workspace_id = ${input.workspaceId}
+        AND revision_index IN (${Math.max(0, input.revisionIndex - 1)}, ${input.revisionIndex})
+      ORDER BY revision_index ASC
+    `);
 
-    if (!result.rows.find((row) => row.revision_index === revisionIndex)) {
+    if (!result.rows.find((row) => row.revision_index === input.revisionIndex)) {
       throw new NotFoundException(
-        `Artifact revision ${revisionIndex} was not found for artifact ${artifactId}.`
+        `Artifact revision ${input.revisionIndex} was not found for artifact ${input.artifactId}.`
       );
     }
 
     const after = mapRow(
-      result.rows.find((row) => row.revision_index === revisionIndex)
+      result.rows.find((row) => row.revision_index === input.revisionIndex)
     );
     const beforeRow = result.rows.find(
-      (row) => row.revision_index === revisionIndex - 1
+      (row) => row.revision_index === input.revisionIndex - 1
     );
 
     return {
       after,
       before: beforeRow ? mapRow(beforeRow) : null
     };
+  }
+
+  private async assertArtifactOwnedBy(
+    artifactId: string,
+    workspaceId: string,
+    ownerUserId: string
+  ): Promise<void> {
+    const result = await this.database.execute<{ id: string }>(sql`
+      SELECT artifacts.id
+      FROM artifacts
+      INNER JOIN messages
+        ON messages.id = artifacts.message_id
+        AND messages.workspace_id = artifacts.workspace_id
+      WHERE artifacts.id = ${artifactId}
+        AND artifacts.workspace_id = ${workspaceId}
+        AND messages.owner_user_id = ${ownerUserId}
+    `);
+
+    if (!result.rows[0]) {
+      throw new NotFoundException(
+        `Artifact ${artifactId} was not found in workspace ${workspaceId}.`
+      );
+    }
   }
 }
 

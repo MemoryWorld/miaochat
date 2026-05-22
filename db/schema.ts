@@ -1,5 +1,6 @@
 import {
   boolean,
+  integer,
   jsonb,
   primaryKey,
   pgEnum,
@@ -23,6 +24,19 @@ export const conversationMode = pgEnum("conversation_mode", [
 export const credentialSource = pgEnum("credential_source", [
   "platform_managed",
   "user_provided"
+]);
+
+export const deployTargetKind = pgEnum("deploy_target_kind", [
+  "static-site",
+  "container",
+  "source-archive"
+]);
+
+export const deploymentStatus = pgEnum("deployment_status", [
+  "queued",
+  "running",
+  "succeeded",
+  "failed"
 ]);
 
 export const messageRole = pgEnum("message_role", [
@@ -148,6 +162,106 @@ export const providerCredentials = pgTable("provider_credentials", {
   provider: providerId("provider").notNull(),
   providerAccountId: text("provider_account_id").notNull(),
   validationState: text("validation_state").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const credentialPoolEntries = pgTable("credential_pool_entries", {
+  credentialSource: credentialSource("credential_source")
+    .notNull()
+    .default("platform_managed"),
+  encryptedSecret: text("encrypted_secret").notNull(),
+  id: text("id").primaryKey(),
+  isActive: boolean("is_active").notNull().default(true),
+  label: text("label").notNull(),
+  provider: providerId("provider").notNull(),
+  providerAccountId: text("provider_account_id").notNull(),
+  quotaClass: text("quota_class").notNull(),
+  region: text("region").notNull(),
+  tier: text("tier").notNull(),
+  ...timestampColumns
+});
+
+export const workspaceProviderQuotaPeriods = pgTable("workspace_provider_quota_periods", {
+  consumedUnits: integer("consumed_units").notNull().default(0),
+  id: text("id").primaryKey(),
+  periodEndsAt: timestamp("period_ends_at", { withTimezone: true }).notNull(),
+  periodStartedAt: timestamp("period_started_at", { withTimezone: true }).notNull(),
+  provider: providerId("provider").notNull(),
+  quotaClass: text("quota_class").notNull().default("standard"),
+  quotaLimit: integer("quota_limit").notNull(),
+  renewsAt: timestamp("renews_at", { withTimezone: true }).notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const workspaceProviderCredentialModes = pgTable(
+  "workspace_provider_credential_modes",
+  {
+    credentialSource: credentialSource("credential_source").notNull(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: providerId("provider").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    ...timestampColumns
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.ownerUserId, table.workspaceId, table.provider],
+      name: "workspace_provider_credential_modes_pkey"
+    })
+  })
+);
+
+export const deployTargets = pgTable("deploy_targets", {
+  config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+  credentialSource: credentialSource("credential_source").notNull(),
+  encryptedSecret: text("encrypted_secret"),
+  id: text("id").primaryKey(),
+  kind: deployTargetKind("kind").notNull(),
+  name: text("name").notNull(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const deployments = pgTable("deployments", {
+  artifactId: text("artifact_id")
+    .notNull()
+    .references(() => artifacts.id, { onDelete: "cascade" }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  deployTargetId: text("deploy_target_id")
+    .notNull()
+    .references(() => deployTargets.id, { onDelete: "cascade" }),
+  errorMessage: text("error_message"),
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  previewUrl: text("preview_url"),
+  progressEvents: jsonb("progress_events")
+    .$type<
+      Array<{
+        at: string;
+        label:
+          | "deployment.received"
+          | "deployment.running"
+          | "deployment.completed"
+          | "deployment.failed";
+        message: string;
+        metadata: Record<string, unknown>;
+        status: "failed" | "queued" | "running" | "succeeded";
+      }>
+    >()
+    .notNull()
+    .default([]),
+  resultMessage: text("result_message").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  status: deploymentStatus("status").notNull(),
+  targetKind: deployTargetKind("target_kind").notNull(),
   workspaceId: text("workspace_id").notNull(),
   ...timestampColumns
 });

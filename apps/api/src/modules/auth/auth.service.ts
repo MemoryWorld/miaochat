@@ -156,7 +156,7 @@ export class AuthService {
     const ipAddress = normalizeIpAddress(context.ipAddress);
 
     try {
-      this.authRateLimitService.enforceLoginLimit(parsed.email, ipAddress);
+      await this.authRateLimitService.enforceLoginLimit(parsed.email, ipAddress);
     } catch (error) {
       await this.authAuditService.recordLoginAttempt({
         email: parsed.email,
@@ -306,7 +306,7 @@ export class AuthService {
     const parsed = parsePasswordResetRequestInput(input);
     const ipAddress = normalizeIpAddress(context.ipAddress);
 
-    this.authRateLimitService.enforcePasswordResetLimit(parsed.email, ipAddress);
+    await this.authRateLimitService.enforcePasswordResetLimit(parsed.email, ipAddress);
 
     const result = await this.database.query<UserRow>(
       `

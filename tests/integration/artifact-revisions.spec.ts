@@ -70,6 +70,7 @@ describe("artifact revisions integration", () => {
     const digestB = "b".repeat(64);
 
     const first = await app.inject({
+      headers: { cookie: session.cookie },
       method: "POST",
       payload: { contentDigest: digestA, summary: "Initial draft" },
       url: `/artifacts/${artifactId}/revisions`
@@ -81,6 +82,7 @@ describe("artifact revisions integration", () => {
     });
 
     const second = await app.inject({
+      headers: { cookie: session.cookie },
       method: "POST",
       payload: {
         contentDigest: digestB,
@@ -96,6 +98,7 @@ describe("artifact revisions integration", () => {
     });
 
     const list = await app.inject({
+      headers: { cookie: session.cookie },
       method: "GET",
       url: `/artifacts/${artifactId}/revisions`
     });
@@ -103,6 +106,7 @@ describe("artifact revisions integration", () => {
     expect(list.json()).toHaveLength(2);
 
     const diff = await app.inject({
+      headers: { cookie: session.cookie },
       method: "GET",
       url: `/artifacts/${artifactId}/revisions/1/diff`
     });

@@ -149,6 +149,9 @@ describe("workspaces integration", () => {
     const messageId = messageResponse.json().id as string;
 
     const uploadTargetResponse = await app.inject({
+      headers: {
+        cookie: session.cookie
+      },
       method: "POST",
       payload: {
         fileName: "launch-checklist.md",
@@ -168,6 +171,9 @@ describe("workspaces integration", () => {
     };
 
     const artifactResponse = await app.inject({
+      headers: {
+        cookie: session.cookie
+      },
       method: "POST",
       payload: {
         id: uploadTarget.artifactId,

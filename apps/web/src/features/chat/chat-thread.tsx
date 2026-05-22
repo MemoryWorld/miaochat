@@ -1,11 +1,18 @@
-import type { Artifact, Message, OrchestratorStatusEventPayload } from "@agenthub/contracts";
+import type {
+  Artifact,
+  Message,
+  OrchestratorStatusEventPayload
+} from "@agenthub/contracts";
 
+import { DeployStatusCard } from "../artifacts/deploy-status-card";
+import type { DeployCommandResult } from "./deploy-command";
 import { ChatMessage } from "./chat-message";
 import { SystemStatusCard } from "./system-status-card";
 
 type ChatThreadProps = {
   artifactsByMessageId: Record<string, Artifact[]>;
   connectionState: "connecting" | "error" | "idle" | "open";
+  deployments: DeployCommandResult[];
   isPinningMessageId: string | null;
   liveAssistantMessage: {
     content: string;
@@ -19,6 +26,7 @@ type ChatThreadProps = {
 export function ChatThread({
   artifactsByMessageId,
   connectionState,
+  deployments,
   isPinningMessageId,
   liveAssistantMessage,
   messages,
@@ -50,7 +58,15 @@ export function ChatThread({
           key={`${event.label}:${event.successfulAgentCount}:${event.failures.length}:${index}`}
         />
       ))}
-      {messages.length === 0 && !liveAssistantMessage ? (
+      {deployments.map((entry) => (
+        <DeployStatusCard
+          artifact={entry.artifact}
+          deployment={entry.deployment}
+          key={entry.deployment.id}
+          target={entry.target}
+        />
+      ))}
+      {messages.length === 0 && deployments.length === 0 && !liveAssistantMessage ? (
         <div
           style={{
             border: "1px dashed rgba(15, 23, 42, 0.16)",

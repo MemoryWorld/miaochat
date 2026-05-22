@@ -12,17 +12,17 @@ import {
   type ConversationAgentMember
 } from "@agenthub/contracts";
 
-import { DatabaseService } from "../database/database.service.js";
-
-type ConversationMemberRow = {
-  agent_id: string | null;
-  agent_name: string | null;
-  mode: Conversation["mode"];
-};
+import {
+  ConversationsRepository,
+  type ConversationMemberRow
+} from "./conversations.repository.js";
 
 @Injectable()
 export class GroupMembersService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(ConversationsRepository)
+    private readonly conversationsRepository: ConversationsRepository
+  ) {}
 
   async listMembers(
     conversationId: string,
@@ -81,31 +81,19 @@ export class GroupMembersService {
   }> {
     const parsedConversationId = conversationIdSchema.parse(conversationId);
     const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
-    const result = await this.database.query<ConversationMemberRow>(
-      `
-        SELECT
-          conversations.mode,
-          conversation_agents.agent_id,
-          conversation_agents.agent_name
-        FROM conversations
-        LEFT JOIN conversation_agents
-          ON conversation_agents.conversation_id = conversations.id
-          AND conversation_agents.workspace_id = conversations.workspace_id
-        WHERE conversations.id = $1
-          AND conversations.workspace_id = $2
-          AND conversations.owner_user_id = $3
-        ORDER BY conversation_agents.agent_id ASC
-      `,
-      [parsedConversationId, parsedWorkspaceId, ownerUserId]
+    const result = await this.conversationsRepository.listConversationMembers(
+      parsedConversationId,
+      parsedWorkspaceId,
+      ownerUserId
     );
 
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       throw new NotFoundException(
         `Conversation ${parsedConversationId} was not found in workspace ${parsedWorkspaceId}`
       );
     }
 
-    const firstRow = result.rows[0];
+    const firstRow = result[0];
 
     if (!firstRow) {
       throw new NotFoundException(
@@ -114,7 +102,7 @@ export class GroupMembersService {
     }
 
     return {
-      members: result.rows
+      members: result
         .filter(
           (row): row is ConversationMemberRow & { agent_id: string; agent_name: string } =>
             typeof row.agent_id === "string" && typeof row.agent_name === "string"

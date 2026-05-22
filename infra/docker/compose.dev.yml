@@ -21,6 +21,25 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres-init/00-init-databases.sh:/docker-entrypoint-initdb.d/00-init-databases.sh:ro
 
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.1-p0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [
+        "CMD-SHELL",
+        "pg_isready -h 127.0.0.1 -p 5432 -U agenthub -d agenthub"
+      ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "6432:5432"
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]

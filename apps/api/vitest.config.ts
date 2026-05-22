@@ -11,6 +11,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["test/**/*.spec.ts", "test/**/*.e2e-spec.ts"]
+    include: [
+      "test/**/*.spec.ts",
+      "test/**/*.e2e-spec.ts",
+      "test/**/*.contract-spec.ts"
+    ]
   }
 });

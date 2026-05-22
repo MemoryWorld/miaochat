@@ -1,30 +1,67 @@
 import { Injectable } from "@nestjs/common";
+import pino, { type Logger as PinoLogger } from "pino";
 
 export type LogLevel = "debug" | "error" | "info" | "warn";
 
 export type LogFields = Record<string, unknown>;
 
-const levelOrder: Record<LogLevel, number> = {
-  debug: 10,
-  info: 20,
-  warn: 30,
-  error: 40
-};
+const redactedPaths = [
+  "authorization",
+  "cookie",
+  "cookies",
+  "headers.authorization",
+  "headers.cookie",
+  "headers.set-cookie",
+  "password",
+  "providerSecret",
+  "rawSecret",
+  "secret",
+  "sessionToken",
+  "token"
+] as const;
 
 @Injectable()
 export class StructuredLogger {
-  private readonly stream: NodeJS.WritableStream;
-  private readonly minLevel: LogLevel;
-  private readonly serviceName: string;
+  private readonly logger: PinoLogger;
+  private stream: NodeJS.WritableStream;
 
   constructor(options: {
+    logger?: PinoLogger;
     minLevel?: LogLevel;
     serviceName?: string;
     stream?: NodeJS.WritableStream;
   } = {}) {
-    this.serviceName = options.serviceName ?? process.env.SERVICE_NAME ?? "api";
-    this.minLevel = options.minLevel ?? (process.env.LOG_LEVEL as LogLevel) ?? "info";
     this.stream = options.stream ?? process.stdout;
+    this.logger =
+      options.logger ??
+      pino(
+        {
+          base: {
+            service: options.serviceName ?? process.env.SERVICE_NAME ?? "api"
+          },
+          formatters: {
+            level: (label) => ({
+              level: label
+            })
+          },
+          level: options.minLevel ?? (process.env.LOG_LEVEL as LogLevel) ?? "info",
+          messageKey: "event",
+          redact: {
+            censor: "[Redacted]",
+            paths: [...redactedPaths]
+          },
+          serializers: {
+            err: pino.stdSerializers.err,
+            error: pino.stdSerializers.err
+          },
+          timestamp: () => `,"ts":"${new Date().toISOString()}"`
+        },
+        {
+          write: (chunk: string) => {
+            this.stream.write(chunk);
+          }
+        }
+      );
   }
 
   info(event: string, fields: LogFields = {}): void {
@@ -44,34 +81,25 @@ export class StructuredLogger {
   }
 
   child(extraFields: LogFields): StructuredLogger {
-    const parent = this;
-    return Object.assign(
-      new StructuredLogger({
-        minLevel: this.minLevel,
-        serviceName: this.serviceName,
-        stream: this.stream
-      }),
-      {
-        emit(level: LogLevel, event: string, fields: LogFields) {
-          parent.emit(level, event, { ...extraFields, ...fields });
-        }
-      } as Partial<StructuredLogger>
-    );
+    return new StructuredLogger({
+      logger: this.logger.child(extraFields)
+    });
   }
 
   protected emit(level: LogLevel, event: string, fields: LogFields): void {
-    if (levelOrder[level] < levelOrder[this.minLevel]) {
-      return;
+    switch (level) {
+      case "debug":
+        this.logger.debug(fields, event);
+        return;
+      case "info":
+        this.logger.info(fields, event);
+        return;
+      case "warn":
+        this.logger.warn(fields, event);
+        return;
+      case "error":
+        this.logger.error(fields, event);
+        return;
     }
-
-    const record = {
-      event,
-      level,
-      service: this.serviceName,
-      ts: new Date().toISOString(),
-      ...fields
-    };
-
-    this.stream.write(`${JSON.stringify(record)}\n`);
   }
 }

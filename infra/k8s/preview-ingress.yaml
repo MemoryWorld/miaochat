@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: agenthub-preview-ingress
+  namespace: agenthub
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: preview.agenthub.local
+      http:
+        paths:
+          - path: /workspaces/([^/]+)/(static-site|container)/(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: agenthub-preview-router
+                port:
+                  number: 8080

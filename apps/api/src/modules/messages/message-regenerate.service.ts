@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 
-import { DatabaseService } from "../database/database.service.js";
 import { WorkspaceAuditService } from "../workspaces/audit.service.js";
+import { MessagesRepository } from "./messages.repository.js";
 
 export type MessageRegenerateRequest = {
   messageId: string;
@@ -20,7 +20,7 @@ export type MessageRegenerateResponse = {
 export class MessageRegenerateService {
   constructor(
     @Inject(WorkspaceAuditService) private readonly audit: WorkspaceAuditService,
-    @Inject(DatabaseService) private readonly database: DatabaseService
+    @Inject(MessagesRepository) private readonly messagesRepository: MessagesRepository
   ) {}
 
   /**
@@ -32,20 +32,12 @@ export class MessageRegenerateService {
    * the dispatcher converts into a fresh agent invocation.
    */
   async request(input: MessageRegenerateRequest): Promise<MessageRegenerateResponse> {
-    const lookup = await this.database.query<{
-      conversation_id: string;
-      role: string;
-      workspace_id: string;
-    }>(
-      `
-        SELECT conversation_id, role, workspace_id
-        FROM messages
-        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
-      `,
-      [input.messageId, input.workspaceId, input.ownerUserId]
+    const row = await this.messagesRepository.findMessageForRegeneration(
+      input.messageId,
+      input.workspaceId,
+      input.ownerUserId
     );
 
-    const row = lookup.rows[0];
     if (!row) {
       throw new NotFoundException(
         `Message ${input.messageId} was not found in workspace ${input.workspaceId}.`

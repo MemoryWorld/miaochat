@@ -7,9 +7,12 @@ import {
 
 import { z } from "zod";
 
-import { DatabaseService } from "../database/database.service.js";
 import { WorkspaceAuditService } from "../workspaces/audit.service.js";
 import { WorkspaceMembershipsService } from "../workspaces/memberships.service.js";
+import {
+  ConversationsRepository,
+  type ConversationShareRow
+} from "./conversations.repository.js";
 
 export type ConversationSharePermission = "read" | "comment";
 
@@ -28,21 +31,12 @@ const shareInputSchema = z.object({
   userIds: z.array(z.string().min(1)).min(1).max(50)
 });
 
-type ShareRow = {
-  conversation_id: string;
-  created_at: Date;
-  created_by_user_id: string;
-  permission: ConversationSharePermission;
-  shared_with_user_id: string;
-  workspace_id: string;
-  workspace_owner_user_id: string;
-};
-
 @Injectable()
 export class ConversationSharesService {
   constructor(
     @Inject(WorkspaceAuditService) private readonly audit: WorkspaceAuditService,
-    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(ConversationsRepository)
+    private readonly conversationsRepository: ConversationsRepository,
     @Inject(WorkspaceMembershipsService)
     private readonly memberships: WorkspaceMembershipsService
   ) {}
@@ -73,39 +67,18 @@ export class ConversationSharesService {
         );
       }
 
-      const result = await this.database.query<ShareRow>(
-        `
-          INSERT INTO conversation_shares (
-            conversation_id,
-            workspace_id,
-            workspace_owner_user_id,
-            shared_with_user_id,
-            permission,
-            created_by_user_id
-          )
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (conversation_id, shared_with_user_id) DO UPDATE
-            SET permission = EXCLUDED.permission
-          RETURNING
-            conversation_id,
-            created_at,
-            created_by_user_id,
-            permission,
-            shared_with_user_id,
-            workspace_id,
-            workspace_owner_user_id
-        `,
-        [
+      const result = await this.conversationsRepository.upsertShare(
+        {
+          actorUserId,
           conversationId,
-          conversation.workspaceId,
-          conversation.ownerUserId,
-          userId,
-          parsed.permission,
-          actorUserId
-        ]
+          permission: parsed.permission,
+          sharedWithUserId: userId,
+          workspaceId: conversation.workspaceId,
+          workspaceOwnerUserId: conversation.ownerUserId
+        }
       );
 
-      inserted.push(mapShareRow(result.rows[0]));
+      inserted.push(mapShareRow(result));
     }
 
     await this.audit.append({
@@ -131,24 +104,9 @@ export class ConversationSharesService {
   ): Promise<ConversationShare[]> {
     await this.findConversationOwnedBy(conversationId, actorUserId);
 
-    const result = await this.database.query<ShareRow>(
-      `
-        SELECT
-          conversation_id,
-          created_at,
-          created_by_user_id,
-          permission,
-          shared_with_user_id,
-          workspace_id,
-          workspace_owner_user_id
-        FROM conversation_shares
-        WHERE conversation_id = $1
-        ORDER BY created_at ASC
-      `,
-      [conversationId]
-    );
+    const result = await this.conversationsRepository.listShares(conversationId);
 
-    return result.rows.map(mapShareRow);
+    return result.map(mapShareRow);
   }
 
   async revoke(
@@ -158,15 +116,12 @@ export class ConversationSharesService {
   ): Promise<void> {
     await this.findConversationOwnedBy(conversationId, actorUserId);
 
-    const result = await this.database.query(
-      `
-        DELETE FROM conversation_shares
-        WHERE conversation_id = $1 AND shared_with_user_id = $2
-      `,
-      [conversationId, sharedWithUserId]
+    const deletedCount = await this.conversationsRepository.revokeShare(
+      conversationId,
+      sharedWithUserId
     );
 
-    if ((result.rowCount ?? 0) === 0) {
+    if (deletedCount === 0) {
       throw new NotFoundException(
         `Share for ${sharedWithUserId} on conversation ${conversationId} was not found.`
       );
@@ -187,28 +142,13 @@ export class ConversationSharesService {
     workspaceId: string;
     workspaceOwnerUserId: string;
   }[]> {
-    const result = await this.database.query<{
-      conversation_id: string;
-      permission: ConversationSharePermission;
-      workspace_id: string;
-      workspace_owner_user_id: string;
-    }>(
-      `
-        SELECT
-          conversation_id,
-          permission,
-          workspace_id,
-          workspace_owner_user_id
-        FROM conversation_shares
-        WHERE shared_with_user_id = $1
-          AND workspace_owner_user_id = $2
-          AND workspace_id = $3
-        ORDER BY created_at DESC
-      `,
-      [actorUserId, workspaceOwnerUserId, workspaceId]
+    const result = await this.conversationsRepository.listSharedWith(
+      actorUserId,
+      workspaceOwnerUserId,
+      workspaceId
     );
 
-    return result.rows.map((row) => ({
+    return result.map((row) => ({
       conversationId: row.conversation_id,
       permission: row.permission,
       workspaceId: row.workspace_id,
@@ -220,32 +160,25 @@ export class ConversationSharesService {
     conversationId: string,
     actorUserId: string
   ): Promise<{ ownerUserId: string; workspaceId: string }> {
-    const result = await this.database.query<{
-      owner_user_id: string;
-      workspace_id: string;
-    }>(
-      `
-        SELECT owner_user_id, workspace_id
-        FROM conversations
-        WHERE id = $1 AND owner_user_id = $2
-      `,
-      [conversationId, actorUserId]
+    const result = await this.conversationsRepository.findOwnedConversation(
+      conversationId,
+      actorUserId
     );
 
-    if (!result.rows[0]) {
+    if (!result) {
       throw new NotFoundException(
         `Conversation ${conversationId} was not found for the authenticated user.`
       );
     }
 
     return {
-      ownerUserId: result.rows[0].owner_user_id,
-      workspaceId: result.rows[0].workspace_id
+      ownerUserId: result.owner_user_id,
+      workspaceId: result.workspace_id
     };
   }
 }
 
-function mapShareRow(row: ShareRow | undefined): ConversationShare {
+function mapShareRow(row: ConversationShareRow | undefined): ConversationShare {
   if (!row) {
     throw new Error("Conversation share row not found.");
   }

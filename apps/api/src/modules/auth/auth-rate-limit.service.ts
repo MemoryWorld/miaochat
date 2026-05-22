@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 
-import { RateLimitService, type RateLimitConfig } from "../limits/rate-limit.service.js";
+import { RateLimitService } from "../limits/rate-limit.service.js";
+import type { RateLimitConfig } from "../limits/rate-limit.types.js";
 
 export type AuthRateLimitWindowConfig = RateLimitConfig;
 
@@ -90,21 +91,21 @@ export class AuthRateLimitService {
     };
   }
 
-  reset(): void {
-    this.rateLimitService.reset();
+  async reset(): Promise<void> {
+    await this.rateLimitService.reset();
     this.config = cloneConfig(defaultConfig);
   }
 
-  enforceLoginLimit(email: string, ipAddress: string): void {
-    const result = this.consumePair("auth.login", email, ipAddress, this.config.login);
+  async enforceLoginLimit(email: string, ipAddress: string): Promise<void> {
+    const result = await this.consumePair("auth.login", email, ipAddress, this.config.login);
 
     if (!result.allowed) {
       throw buildRateLimitException(result);
     }
   }
 
-  enforcePasswordResetLimit(email: string, ipAddress: string): void {
-    const result = this.consumePair(
+  async enforcePasswordResetLimit(email: string, ipAddress: string): Promise<void> {
+    const result = await this.consumePair(
       "auth.password-reset",
       email,
       ipAddress,
@@ -116,16 +117,16 @@ export class AuthRateLimitService {
     }
   }
 
-  private consumePair(
+  private async consumePair(
     namespace: string,
     email: string,
     ipAddress: string,
     config: AuthRateLimitConfig["login"] | AuthRateLimitConfig["passwordReset"]
-  ): ConsumeResult {
+  ): Promise<ConsumeResult> {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedIpAddress = normalizeIpAddress(ipAddress);
 
-    const emailResult = this.rateLimitService.consume({
+    const emailResult = await this.rateLimitService.consume({
       key: `${namespace}:email:${normalizedEmail}`,
       ...config.email
     });
@@ -137,7 +138,7 @@ export class AuthRateLimitService {
       };
     }
 
-    const ipResult = this.rateLimitService.consume({
+    const ipResult = await this.rateLimitService.consume({
       key: `${namespace}:ip:${normalizedIpAddress}`,
       ...config.ip
     });

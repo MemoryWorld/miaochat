@@ -19,7 +19,7 @@ import { mapToPublicError } from "@agenthub/domain";
 import { Client, Connection } from "@temporalio/client";
 import { z } from "zod";
 
-import { DatabaseService } from "../database/database.service.js";
+import { ConversationsRepository } from "../conversations/conversations.repository.js";
 import { RateLimitService } from "../limits/rate-limit.service.js";
 import { MetricsRegistry } from "../../observability/metrics-registry.service.js";
 import { StructuredLogger } from "../../observability/structured-logger.service.js";
@@ -45,7 +45,8 @@ export class MessageDispatchService implements OnModuleDestroy {
   private temporalClient: Client | null = null;
 
   constructor(
-    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(ConversationsRepository)
+    private readonly conversationsRepository: ConversationsRepository,
     @Inject(MessagesService) private readonly messagesService: MessagesService,
     @Inject(MetricsRegistry) private readonly metrics: MetricsRegistry,
     @Inject(PinMessageService) private readonly pinMessageService: PinMessageService,
@@ -67,7 +68,7 @@ export class MessageDispatchService implements OnModuleDestroy {
     }
 
     const rateLimitKey = `messages.send:${parsed.workspaceId}:${parsed.conversationId}`;
-    const rateLimit = this.rateLimitService.consume({ key: rateLimitKey });
+    const rateLimit = await this.rateLimitService.consume({ key: rateLimitKey });
 
     if (!rateLimit.allowed) {
       this.metrics.incrementCounter("messages_send_rate_limited_total", {
@@ -334,46 +335,25 @@ export class MessageDispatchService implements OnModuleDestroy {
     workspaceId: string,
     ownerUserId: string
   ): Promise<z.infer<typeof resolvedConversationSchema>> {
-    const result = await this.database.query<{
-      agent_id: string;
-      agent_name: string;
-      mode: "direct" | "group";
-      provider: ProviderId;
-    }>(
-      `
-        SELECT
-          conversation_agents.agent_id,
-          conversation_agents.agent_name,
-          conversations.mode,
-          custom_agents.provider
-        FROM conversations
-        INNER JOIN conversation_agents
-          ON conversation_agents.conversation_id = conversations.id
-          AND conversation_agents.workspace_id = conversations.workspace_id
-        INNER JOIN custom_agents
-          ON custom_agents.id = conversation_agents.agent_id
-          AND custom_agents.workspace_id = conversation_agents.workspace_id
-        WHERE conversations.id = $1
-          AND conversations.workspace_id = $2
-          AND conversations.owner_user_id = $3
-        ORDER BY conversation_agents.agent_id ASC
-      `,
-      [conversationId, workspaceId, ownerUserId]
+    const result = await this.conversationsRepository.listConversationAgentsWithProviders(
+      conversationId,
+      workspaceId,
+      ownerUserId
     );
 
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       throw new NotFoundException(
         `No agent binding found for conversation ${conversationId} in workspace ${workspaceId}`
       );
     }
 
     return resolvedConversationSchema.parse({
-      agents: result.rows.map((row) => ({
+      agents: result.map((row) => ({
         agentId: row.agent_id,
         agentName: row.agent_name,
         provider: row.provider
       })),
-      mode: result.rows[0]?.mode
+      mode: result[0]?.mode
     });
   }
 

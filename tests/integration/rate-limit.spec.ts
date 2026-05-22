@@ -41,13 +41,21 @@ async function clearAgents(client: Client): Promise<void> {
 }
 
 describe("rate limit guardrail", () => {
-  let app: NestFastifyApplication;
+  const originalBackend = process.env.RATE_LIMIT_BACKEND;
+  const originalPrefix = process.env.RATE_LIMIT_REDIS_PREFIX;
+  const originalRedisUrl = process.env.REDIS_URL;
+  const redisPrefix = `agenthub:test:integration-rate-limit:${Date.now()}`;
+  let firstApp: NestFastifyApplication;
+  let secondApp: NestFastifyApplication;
   let client: Client;
   let authCookie: string;
   let ownerUserId: string;
   let previousWorkerTaskQueue: string | undefined;
 
   beforeAll(async () => {
+    process.env.RATE_LIMIT_BACKEND = "redis";
+    process.env.RATE_LIMIT_REDIS_PREFIX = redisPrefix;
+    process.env.REDIS_URL ??= "redis://127.0.0.1:6379";
     previousWorkerTaskQueue = process.env.WORKER_TASK_QUEUE;
     process.env.WORKER_TASK_QUEUE = workerTaskQueue;
 
@@ -59,12 +67,17 @@ describe("rate limit guardrail", () => {
     await clearWorkspace(client);
     await clearAgents(client);
 
-    app = await createApp();
-    await app.init();
-    await app.getHttpAdapter().getInstance().ready();
-    app.get(RateLimitService).configure({ limit: 1, windowMs: 60_000 });
+    firstApp = await createApp();
+    await firstApp.init();
+    await firstApp.getHttpAdapter().getInstance().ready();
+    firstApp.get(RateLimitService).configure({ limit: 1, windowMs: 60_000 });
 
-    const session = await signupSessionViaInject(app, {
+    secondApp = await createApp();
+    await secondApp.init();
+    await secondApp.getHttpAdapter().getInstance().ready();
+    secondApp.get(RateLimitService).configure({ limit: 1, windowMs: 60_000 });
+
+    const session = await signupSessionViaInject(firstApp, {
       displayName: "Rate Limit Integration",
       email: `rate-limit-integration-${Date.now()}@example.com`
     });
@@ -75,16 +88,36 @@ describe("rate limit guardrail", () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await firstApp.get(RateLimitService).reset();
+    await secondApp.close();
+    await firstApp.close();
     await clearWorkspace(client);
     await clearAgents(client);
     await client.end();
 
     process.env.WORKER_TASK_QUEUE = previousWorkerTaskQueue;
+
+    if (originalBackend === undefined) {
+      delete process.env.RATE_LIMIT_BACKEND;
+    } else {
+      process.env.RATE_LIMIT_BACKEND = originalBackend;
+    }
+
+    if (originalPrefix === undefined) {
+      delete process.env.RATE_LIMIT_REDIS_PREFIX;
+    } else {
+      process.env.RATE_LIMIT_REDIS_PREFIX = originalPrefix;
+    }
+
+    if (originalRedisUrl === undefined) {
+      delete process.env.REDIS_URL;
+    } else {
+      process.env.REDIS_URL = originalRedisUrl;
+    }
   });
 
-  it("returns a structured 429 response after the per-conversation limit is exceeded", async () => {
-    const conversationResponse = await app.inject({
+  it("returns a structured 429 response across app instances after the shared bucket is exceeded", async () => {
+    const conversationResponse = await firstApp.inject({
       headers: {
         cookie: authCookie
       },
@@ -99,7 +132,7 @@ describe("rate limit guardrail", () => {
     expect(conversationResponse.statusCode).toBe(201);
     const conversationId = conversationResponse.json().id as string;
 
-    const firstSend = await app.inject({
+    const firstSend = await firstApp.inject({
       headers: {
         cookie: authCookie
       },
@@ -114,7 +147,7 @@ describe("rate limit guardrail", () => {
     });
     expect(firstSend.statusCode).toBe(202);
 
-    const secondSend = await app.inject({
+    const secondSend = await secondApp.inject({
       headers: {
         cookie: authCookie
       },

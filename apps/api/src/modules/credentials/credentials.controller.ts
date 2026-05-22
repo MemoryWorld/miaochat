@@ -11,7 +11,7 @@ import {
   Query
 } from "@nestjs/common";
 
-import type { CredentialCreateInput } from "./dto.js";
+import type { CredentialCreateInput, CredentialModeInput } from "./dto.js";
 import {
   parseCredentialIdParams,
   parseWorkspaceQuery
@@ -51,6 +51,30 @@ export class CredentialsController {
   ) {
     await this.authService.requireAuthenticatedUser(cookieHeader);
     return this.credentialsService.validate(input);
+  }
+
+  @Get("modes")
+  async listModes(
+    @Query() query: Record<string, string | undefined>,
+    @Headers("cookie") cookieHeader?: string
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const { workspaceId } = parseWorkspaceQuery(query);
+    await this.permissionGuard.assert(user.id, workspaceId, "credential.read");
+    return this.credentialsService.listModes(workspaceId, user.id);
+  }
+
+  @Post("modes")
+  @HttpCode(200)
+  async setMode(
+    @Body() input: CredentialModeInput,
+    @Headers("cookie") cookieHeader?: string
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const workspaceId =
+      (input as { workspaceId?: string })?.workspaceId ?? "default-workspace";
+    await this.permissionGuard.assert(user.id, workspaceId, "credential.manage");
+    return this.credentialsService.setMode(input, user.id);
   }
 
   @Get()

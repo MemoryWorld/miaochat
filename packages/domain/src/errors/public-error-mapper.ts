@@ -4,6 +4,7 @@ export type PublicErrorCode =
   | "not_found"
   | "provider_failed"
   | "provider_timeout"
+  | "quota_exceeded"
   | "rate_limited"
   | "validation"
   | "workspace_unauthorized";
@@ -45,6 +46,11 @@ const catalog: Record<PublicErrorCode, Omit<PublicError, "retryAfterMs">> = {
     code: "provider_timeout",
     message: "The provider did not respond in time. Try the request again.",
     status: 504
+  },
+  quota_exceeded: {
+    code: "quota_exceeded",
+    message: "This workspace exhausted its platform-managed quota for the current period.",
+    status: 429
   },
   rate_limited: {
     code: "rate_limited",
@@ -89,6 +95,10 @@ export function mapToPublicError(error: unknown): PublicError {
 
     if (code === "rate_limited" || message.includes("rate limit")) {
       return buildPublicError("rate_limited");
+    }
+
+    if (code === "quota_exceeded" || message.includes("quota exceeded")) {
+      return buildPublicError("quota_exceeded");
     }
 
     if (

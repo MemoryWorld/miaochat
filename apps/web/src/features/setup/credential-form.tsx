@@ -1,5 +1,9 @@
 "use client";
 
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+
 import type { ProviderCatalogEntry } from "./provider-catalog";
 
 export type CredentialDraft = {
@@ -28,123 +32,66 @@ export function CredentialForm({
   provider
 }: CredentialFormProps) {
   return (
-    <section
-      style={{
-        display: "grid",
-        gap: "1rem"
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gap: "0.35rem"
-        }}
-      >
-        <label htmlFor="credential-label">Credential label</label>
-        <input
+    <section className="grid gap-4">
+      <div className="grid gap-2">
+        <label className="text-sm font-semibold text-slate-700" htmlFor="credential-label">
+          Credential label
+        </label>
+        <Input
           id="credential-label"
           onChange={(event) => onChange("label", event.target.value)}
           placeholder={provider.labelHint}
-          style={inputStyle}
           value={draft.label}
         />
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gap: "0.35rem"
-        }}
-      >
-        <label htmlFor="provider-account-id">Provider account identifier</label>
-        <input
+      <div className="grid gap-2">
+        <label
+          className="text-sm font-semibold text-slate-700"
+          htmlFor="provider-account-id"
+        >
+          Provider account identifier
+        </label>
+        <Input
           id="provider-account-id"
           onChange={(event) => onChange("providerAccountId", event.target.value)}
           placeholder="acct_main"
-          style={inputStyle}
           value={draft.providerAccountId}
         />
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gap: "0.35rem"
-        }}
-      >
-        <label htmlFor="provider-secret">Provider secret</label>
-        <textarea
+      <div className="grid gap-2">
+        <label className="text-sm font-semibold text-slate-700" htmlFor="provider-secret">
+          Provider secret
+        </label>
+        <Textarea
+          className="min-h-32 resize-y font-mono"
           id="provider-secret"
           onChange={(event) => onChange("rawSecret", event.target.value)}
           placeholder={provider.secretHint}
           rows={5}
-          style={{
-            ...inputStyle,
-            fontFamily: "\"IBM Plex Mono\", monospace",
-            resize: "vertical"
-          }}
           value={draft.rawSecret}
         />
-        <span style={{ color: "#667085", fontSize: "0.9rem" }}>{provider.secretHint}</span>
+        <span className="text-sm text-slate-500">{provider.secretHint}</span>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.75rem"
-        }}
-      >
-        <button
+      <div className="flex flex-wrap gap-3">
+        <Button
           disabled={isBusy}
           onClick={onValidate}
-          style={secondaryButtonStyle}
           type="button"
+          variant="secondary"
         >
           Validate credential
-        </button>
-        <button
+        </Button>
+        <Button
           disabled={!canSave || isBusy}
           onClick={onSave}
-          style={primaryButtonStyle(!canSave || isBusy)}
           type="button"
         >
           Save and bind
-        </button>
+        </Button>
       </div>
     </section>
   );
-}
-
-const inputStyle = {
-  background: "#ffffff",
-  border: "1px solid rgba(15, 23, 42, 0.12)",
-  borderRadius: "14px",
-  color: "#101828",
-  font: "inherit",
-  padding: "0.875rem 1rem"
-} as const;
-
-const secondaryButtonStyle = {
-  background: "#f8fafc",
-  border: "1px solid rgba(15, 23, 42, 0.12)",
-  borderRadius: "999px",
-  color: "#101828",
-  cursor: "pointer",
-  font: "inherit",
-  fontWeight: 600,
-  padding: "0.8rem 1.1rem"
-} as const;
-
-function primaryButtonStyle(disabled: boolean) {
-  return {
-    background: disabled ? "#98a2b3" : "#101828",
-    border: "1px solid transparent",
-    borderRadius: "999px",
-    color: "#f8fafc",
-    cursor: disabled ? "not-allowed" : "pointer",
-    font: "inherit",
-    fontWeight: 700,
-    padding: "0.8rem 1.1rem"
-  } as const;
 }

@@ -16,13 +16,16 @@
 | `pnpm --filter api test` | Pass (15 tests including observability + health). |
 | `pnpm --filter worker test` | Pass (14 tests including retry-policy + observability). |
 | `pnpm --filter web test` | Pass (6 tests across chat, agents, setup). |
-| `pnpm test:e2e` | Pass (10 tests, including the four real-provider acceptance specs). |
+| `pnpm test:e2e` | Pass (20 Playwright browser tests). |
+| `pnpm test:e2e:smoke` | Pass (24 Vitest smoke files / 26 tests, including the four replay-backed real-provider specs). |
 | `pnpm test:load` | Placeholder runs cleanly; real k6 scenarios are run separately. |
 
 ## Release Acceptance Evidence
 
 - Real-provider acceptance: `docs/operations/provider-acceptance.md` plus the
   `tests/e2e/{hermes,openclaw,codex,claude-code}-real.spec.ts` specs.
+- Browser e2e harness: `playwright.config.ts`,
+  `tests/e2e-playwright/`, `docs/operations/e2e-playwright.md`.
 - Observability readiness: `docs/operations/observability.md`,
   `infra/observability/otel-config.yaml`, `infra/observability/prometheus.yml`.
 - Guardrails: `apps/api/src/modules/limits/rate-limit.service.ts`,
@@ -40,13 +43,9 @@
    require Temporal, Postgres, and S3-compatible storage to be reachable in
    CI. The release pipeline must provision these dependencies before running
    `pnpm test:integration`.
-2. The four real-provider acceptance specs run against an in-process HTTP
-   server by default. Operational validation against the real SaaS endpoints
-   is gated behind the environment variables enumerated in
-   `docs/operations/provider-acceptance.md`.
-3. Rate-limit state is currently held in-process. For a multi-instance API
-   deployment the implementation should be moved behind Redis using the same
-   `RateLimitService` interface.
+2. The staging-only runner is committed, but a local execution against the real
+   SaaS endpoints is still blocked by missing staging secrets and seeded
+   load-test data in this workstation environment.
 
 ## Sign-Off Record
 
