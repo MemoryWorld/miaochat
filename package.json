@@ -14,6 +14,8 @@
     "db:migrate": "tsx db/migrate.ts",
     "db:seed": "tsx db/seeds/index.ts",
     "lint": "turbo run lint",
+    "shim:openclaw": "tsx tests/e2e/local-shim/openclaw-shim.ts",
+    "shim:hermes": "tsx tests/e2e/local-shim/hermes-shim.ts",
     "test": "turbo run test",
     "test:e2e": "playwright test",
     "test:e2e:providers": "vitest run tests/e2e/*-real.spec.ts",
