@@ -45,10 +45,19 @@ function writeStoredWorkspaceId(value: string): void {
 
 export function useActiveWorkspace(): UseActiveWorkspaceResult {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(
-    () => readStoredWorkspaceId() ?? FALLBACK_WORKSPACE_ID
-  );
+  const [activeWorkspaceId, setActiveWorkspaceId] =
+    useState<string>(FALLBACK_WORKSPACE_ID);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const storedWorkspaceId = readStoredWorkspaceId();
+
+    if (!storedWorkspaceId) {
+      return;
+    }
+
+    setActiveWorkspaceId(storedWorkspaceId);
+  }, []);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);

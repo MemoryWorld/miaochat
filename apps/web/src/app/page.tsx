@@ -1,5 +1,5 @@
-import { ChatExperience } from "../features/chat/chat-experience";
+import { HomePageClient } from "./home-page-client";
 
 export default function HomePage() {
-  return <ChatExperience />;
+  return <HomePageClient />;
 }

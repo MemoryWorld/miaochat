@@ -9,9 +9,9 @@ It is populated whenever the release checklist is exercised.
 | --- | --- |
 | Pipeline entrypoint | `pnpm test:e2e:staging` |
 | Workflow | `.github/workflows/staging-provider-acceptance.yml` |
-| Latest committed local verification | `2026-05-23` dry-run and script wiring only |
+| Latest committed local verification | `2026-05-25` staging preflight tool, local load-data seeding tool, prior dry-run, browser BYOK wiring, and reported Hermes/OpenClaw MiMo shim evidence |
 | Real staging execution | Pending secrets-backed runner |
-| Blocking prerequisite | Staging-only provider credentials and seeded load-test conversation ids |
+| Blocking prerequisite | Workflow not yet merged to the default branch; populate the GitHub `staging` environment secrets, then run `pnpm staging:seed-load` against the deployed API to produce the three load-test conversation-id exports |
 
 ## Run Metadata
 
@@ -78,6 +78,8 @@ Track the observed bottlenecks across runs. Common categories to update:
 
 - [ ] Run-specific follow-ups go here.
 - [ ] Confirm threshold breaches (if any) have an owner before the release cut.
+- [ ] Run `pnpm staging:preflight` before each formal staging attempt.
+- [ ] Refresh `AGENTHUB_LOAD_*` ids with `pnpm staging:seed-load` after the target staging API is ready.
 
 ## Decision
 

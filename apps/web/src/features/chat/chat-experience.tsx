@@ -15,6 +15,7 @@ import {
 import { AppShell } from "../../components/app-shell";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { AuthPanel } from "../auth/auth-panel";
 import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
 import { NewConversationDialog } from "../conversations/new-conversation-dialog";
@@ -23,7 +24,7 @@ import { parseDeployCommand } from "./deploy-command";
 import { ChatThread } from "./chat-thread";
 import { useConversationStream } from "./use-conversation-stream";
 
-const apiBaseUrl = "http://localhost:3001";
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 type LiveAssistantMessage = {
   content: string;
@@ -34,6 +35,7 @@ export function ChatExperience() {
   const {
     activeWorkspaceId: workspaceId,
     isLoading: isLoadingWorkspaces,
+    refresh: refreshWorkspaces,
     selectWorkspace,
     workspaces
   } = useActiveWorkspace();
@@ -139,38 +141,82 @@ export function ChatExperience() {
     }
   }, [selectedConversationId, stream.events]);
 
+  const conversationList = Array.isArray(conversations) ? conversations : [];
   const selectedConversation =
-    conversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+    conversationList.find((conversation) => conversation.id === selectedConversationId) ?? null;
   const statusEvents = stream.events.flatMap((event) =>
     event.kind === "conversation.status" ? [event.payload as OrchestratorStatusEventPayload] : []
   );
 
   async function loadConversations(): Promise<void> {
-    const response = await fetch(
-      `${apiBaseUrl}/conversations?workspaceId=${workspaceId}`
-    );
-    const payload = (await response.json()) as Conversation[];
+    try {
+      const response = await fetch(`${apiBaseUrl}/conversations?workspaceId=${workspaceId}`, {
+        credentials: "include"
+      });
+      const payload = await readJson(response);
 
-    startTransition(() => {
-      setConversations(payload);
-      setSelectedConversationId((current) => current ?? payload[0]?.id ?? null);
-    });
+      if (!response.ok) {
+        startTransition(() => {
+          setConversations([]);
+          setSelectedConversationId(null);
+          setErrorMessage(readErrorMessage(payload, "Failed to load conversations."));
+        });
+        return;
+      }
+
+      const nextConversations = asArray<Conversation>(payload);
+
+      startTransition(() => {
+        setErrorMessage(null);
+        setConversations(nextConversations);
+        setSelectedConversationId((current) =>
+          current && nextConversations.some((conversation) => conversation.id === current)
+            ? current
+            : nextConversations[0]?.id ?? null
+        );
+      });
+    } catch {
+      startTransition(() => {
+        setConversations([]);
+        setSelectedConversationId(null);
+        setErrorMessage("Failed to load conversations.");
+      });
+    }
   }
 
   async function loadMessages(conversationId: string): Promise<void> {
-    const response = await fetch(
-      `${apiBaseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`
-    );
-    const payload = (await response.json()) as Message[];
-
-    startTransition(() => {
-      setMessages((current) => mergeMessages(current, payload, conversationId));
-      setLiveAssistantMessage((current) =>
-        current && payload.some((message) => message.id === current.id) ? null : current
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`,
+        {
+          credentials: "include"
+        }
       );
-    });
+      const payload = await readJson(response);
 
-    await Promise.all(payload.map((message) => loadArtifactsForMessage(message.id)));
+      if (!response.ok) {
+        startTransition(() => {
+          setErrorMessage(readErrorMessage(payload, "Failed to load messages."));
+        });
+        return;
+      }
+
+      const nextMessages = asArray<Message>(payload);
+
+      startTransition(() => {
+        setErrorMessage(null);
+        setMessages((current) => mergeMessages(current, nextMessages, conversationId));
+        setLiveAssistantMessage((current) =>
+          current && nextMessages.some((message) => message.id === current.id) ? null : current
+        );
+      });
+
+      await Promise.all(nextMessages.map((message) => loadArtifactsForMessage(message.id)));
+    } catch {
+      startTransition(() => {
+        setErrorMessage("Failed to load messages.");
+      });
+    }
   }
 
   async function loadArtifactsForMessage(messageId: string): Promise<void> {
@@ -203,14 +249,22 @@ export function ChatExperience() {
     setIsLoadingCustomAgents(true);
 
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/custom-agents?workspaceId=${workspaceId}`
-      );
-      const payload = (await response.json()) as CustomAgent[];
+      const response = await fetch(`${apiBaseUrl}/custom-agents?workspaceId=${workspaceId}`, {
+        credentials: "include"
+      });
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "Failed to load custom agents."));
+      }
 
       startTransition(() => {
-        setCustomAgents(payload);
+        setCustomAgents(asArray<CustomAgent>(payload));
       });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to load custom agents."
+      );
     } finally {
       setIsLoadingCustomAgents(false);
     }
@@ -223,6 +277,7 @@ export function ChatExperience() {
         mode: "direct",
         workspaceId
       }),
+      credentials: "include",
       headers: {
         "Content-Type": "application/json"
       },
@@ -297,6 +352,7 @@ export function ChatExperience() {
             targetName: deployCommand.targetName,
             workspaceId
           }),
+          credentials: "include",
           headers: {
             "Content-Type": "application/json"
           },
@@ -334,15 +390,22 @@ export function ChatExperience() {
           role: "user",
           workspaceId
         }),
+        credentials: "include",
         headers: {
           "Content-Type": "application/json"
         },
         method: "POST"
       });
-      const payload = (await response.json()) as Message;
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "Failed to send the message."));
+      }
+
+      const message = payload as Message;
 
       startTransition(() => {
-        setMessages((current) => [...current, payload]);
+        setMessages((current) => [...current, message]);
       });
     } catch (error) {
       setErrorMessage(
@@ -367,10 +430,17 @@ export function ChatExperience() {
       const response = await fetch(
         `${apiBaseUrl}/messages/${messageId}/pin?workspaceId=${workspaceId}`,
         {
+          credentials: "include",
           method: "POST"
         }
       );
-      const payload = (await response.json()) as {
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "Failed to pin the selected message."));
+      }
+
+      const parsed = payload as {
         message: Message;
         pinnedMessageIds: string[];
       };
@@ -378,7 +448,7 @@ export function ChatExperience() {
       startTransition(() => {
         setMessages((current) =>
           current.map((message) =>
-            message.id === payload.message.id ? payload.message : message
+            message.id === parsed.message.id ? parsed.message : message
           )
         );
         setConversations((current) =>
@@ -386,7 +456,7 @@ export function ChatExperience() {
             conversation.id === conversationId
               ? {
                   ...conversation,
-                  pinnedMessageIds: payload.pinnedMessageIds
+                  pinnedMessageIds: parsed.pinnedMessageIds
                 }
               : conversation
           )
@@ -401,6 +471,28 @@ export function ChatExperience() {
     }
   }
 
+  function handleAuthenticated(): void {
+    startTransition(() => {
+      setErrorMessage(null);
+    });
+    void refreshWorkspaces();
+    void loadConversations();
+  }
+
+  function handleLoggedOut(): void {
+    startTransition(() => {
+      setArtifactsByMessageId({});
+      setConversations([]);
+      setCustomAgents([]);
+      setDeployments([]);
+      setErrorMessage(null);
+      setLiveAssistantMessage(null);
+      setMessages([]);
+      setSelectedConversationId(null);
+    });
+    void refreshWorkspaces();
+  }
+
   return (
     <AppShell
       sidebar={
@@ -411,6 +503,10 @@ export function ChatExperience() {
           <h1 className="mt-0 text-3xl font-semibold tracking-tight text-slate-950">
             AgentHub
           </h1>
+          <AuthPanel
+            onAuthenticated={handleAuthenticated}
+            onLoggedOut={handleLoggedOut}
+          />
           <WorkspaceSwitcher
             activeWorkspaceId={workspaceId}
             isLoading={isLoadingWorkspaces}
@@ -451,7 +547,7 @@ export function ChatExperience() {
             onToggleOpen={setIsNewConversationOpen}
           />
           <div className="mt-4 grid gap-2.5">
-            {conversations.map((conversation) => (
+            {conversationList.map((conversation) => (
               <button
                 key={conversation.id}
                 onClick={() => {
@@ -470,7 +566,7 @@ export function ChatExperience() {
                 </span>
               </button>
             ))}
-            {conversations.length === 0 ? (
+            {conversationList.length === 0 ? (
               <p className="mb-0 text-sm leading-7 text-slate-600">
                 No conversations yet. Start the seeded mock direct conversation first.
               </p>
@@ -516,6 +612,27 @@ export function ChatExperience() {
       </section>
     </AppShell>
   );
+}
+
+function asArray<T>(payload: unknown): T[] {
+  return Array.isArray(payload) ? (payload as T[]) : [];
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function readErrorMessage(payload: unknown, fallback: string): string {
+  return typeof payload === "object" &&
+    payload !== null &&
+    "message" in payload &&
+    typeof payload.message === "string"
+    ? payload.message
+    : fallback;
 }
 
 function mergeMessages(

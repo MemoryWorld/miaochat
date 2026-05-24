@@ -13,47 +13,54 @@ green before the release branch is tagged.
 ## Functional Coverage
 
 - [ ] BYOK onboarding completes end-to-end for each of the four providers
-      using real credentials (validated through the setup flow).
-- [ ] Single-agent conversation persists, streams, and reloads through the
+      using real credentials (validated through `pnpm test:e2e:byok:staging`).
+- [x] Single-agent conversation persists, streams, and reloads through the
       mock adapter (existing `tests/integration/single-agent-mock.spec.ts`).
-- [ ] Group orchestration produces deterministic partial-failure surfaces
+- [x] Group orchestration produces deterministic partial-failure surfaces
       (existing `tests/integration/group-failure.spec.ts`).
-- [ ] Pinned-context replay is included in the assembled provider request
+- [x] Pinned-context replay is included in the assembled provider request
       (existing `tests/integration/pinned-context.spec.ts`).
-- [ ] Custom-agent registry, tool registry, and the web flows in
+- [x] Custom-agent registry, tool registry, and the web flows in
       `tests/e2e/custom-agent-ui.spec.tsx` all pass.
-- [ ] Artifact preview, attachment, and Diff cards render inside the chat
+- [x] Artifact preview, attachment, and Diff cards render inside the chat
       timeline (`tests/e2e/artifact-cards.spec.tsx`).
 
 ## Real-Provider Acceptance
 
-- [ ] `tests/e2e/hermes-real.spec.ts` passes against the local replay server.
-- [ ] `tests/e2e/openclaw-real.spec.ts` passes against the local replay server.
-- [ ] `tests/e2e/codex-real.spec.ts` passes against the local replay server.
-- [ ] `tests/e2e/claude-code-real.spec.ts` passes against the local replay server.
+- [x] `tests/e2e/hermes-real.spec.ts` passes against the reported
+      `2026-05-24` Xiaomi MiMo local shim path documented in
+      `docs/operations/provider-acceptance.md`.
+- [x] `tests/e2e/openclaw-real.spec.ts` passes against the reported
+      `2026-05-24` Xiaomi MiMo local shim path documented in
+      `docs/operations/provider-acceptance.md`.
+- [ ] `tests/e2e/codex-real.spec.ts` passes against the staging SaaS endpoint.
+- [ ] `tests/e2e/claude-code-real.spec.ts` passes against the staging SaaS endpoint.
+- [ ] `pnpm test:e2e:byok:staging` completes the browser-driven `/setup`
+      flow for all four providers using real credentials.
 - [ ] `pnpm test:e2e:staging` reruns the four real-provider acceptance specs
       against the staging SaaS endpoints with rotated BYOK credentials
-      configured via `HERMES_*`, `OPENCLAW_*`, `CODEX_*`, and `CLAUDE_CODE_*`
-      environment variables.
+      configured via `HERMES_*`, `OPENCLAW_*`, `CODEX_*`, `CLAUDE_CODE_*`,
+      `AGENTHUB_WEB_BASE_URL`, and the `*_E2E_*` browser BYOK environment
+      variables.
 
 ## Observability
 
-- [ ] `GET /health/liveness` and `GET /health/readiness` return `200` for the
+- [x] `GET /health/liveness` and `GET /health/readiness` return `200` for the
       API service.
-- [ ] `GET /metrics` exposes the Release 1 counter and summary families
+- [x] `GET /metrics` exposes the Release 1 counter and summary families
       documented in `docs/operations/observability.md`.
-- [ ] Worker dispatch activities emit `worker.dispatch_agent.failed` log
+- [x] Worker dispatch activities emit `worker.dispatch_agent.failed` log
       entries on failure with structured context.
-- [ ] OpenTelemetry collector and Prometheus configurations under
+- [x] OpenTelemetry collector and Prometheus configurations under
       `infra/observability/` are wired into the deploy stack.
 
 ## Guardrails
 
-- [ ] Rate limit returns a structured `429` with `code`, `message`, and
+- [x] Rate limit returns a structured `429` with `code`, `message`, and
       `retryAfterMs` (`tests/integration/rate-limit.spec.ts`).
-- [ ] Internal errors are translated through `mapToPublicError`
+- [x] Internal errors are translated through `mapToPublicError`
       (`tests/integration/error-mapping.spec.ts`).
-- [ ] Worker retry policy emits backoff and exhaustion log lines
+- [x] Worker retry policy emits backoff and exhaustion log lines
       (`apps/worker/test/retry-policy.spec.ts`).
 
 ## Load Tests
@@ -77,10 +84,13 @@ green before the release branch is tagged.
 | `pnpm test` | All package-level test suites pass. |
 | `pnpm test:integration` | Integration suite passes against the deployed test infra. |
 | `pnpm test:e2e` | Playwright browser e2e suite passes against the Next.js app. |
+| `pnpm staging:preflight` | Reports the GitHub `staging` environment state, default-branch workflow availability, and any missing staging secrets. |
+| `pnpm test:e2e:byok:staging` | Browser-driven staging `/setup` flow passes for all four providers using real credentials. |
 | `pnpm test:e2e:smoke` | Existing vitest+jsdom smoke suite passes, including the four local replay real-provider specs. |
-| `pnpm test:e2e:providers` | Real-provider specs pass in the current mode (`local` replay by default, `staging` when enabled). |
+| `pnpm test:e2e:providers` | Real-provider specs pass in the current mode (`local` protocol server by default, `staging` when enabled). |
 | `pnpm test:e2e:staging` | Secrets-backed staging runner completes provider acceptance plus the four k6 scenarios. |
 | `pnpm test:load` | Placeholder runs cleanly; the four real k6 scenarios are run separately and recorded in `docs/operations/load-test-results.md`. |
+| `pnpm staging:seed-load` | Creates mock staging load-test conversations and prints export-ready `AGENTHUB_LOAD_*` values. |
 | `k6 run tests/load/<scenario>.js` | Each scenario passes its k6 thresholds. |
 
 ## Hardening Track

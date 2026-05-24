@@ -17,6 +17,11 @@ export async function createApp(): Promise<NestFastifyApplication> {
     })
   );
 
+  app.enableCors({
+    credentials: true,
+    origin: buildCorsOrigins()
+  });
+
   return app;
 }
 
@@ -47,4 +52,20 @@ if (process.env.NODE_ENV !== "test") {
       process.exitCode = 1;
     });
   }
+}
+
+function buildCorsOrigins(): string[] {
+  const configured = (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  return Array.from(
+    new Set([
+      process.env.AGENTHUB_WEB_BASE_URL,
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      ...configured
+    ].filter((value): value is string => Boolean(value)))
+  );
 }

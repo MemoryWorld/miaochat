@@ -1,7 +1,12 @@
-type ProviderKey = "claude-code" | "codex" | "hermes" | "openclaw";
+export type ProviderKey = "claude-code" | "codex" | "hermes" | "openclaw";
 
 type ProviderRuntimeConfig = {
   baseUrl: string;
+  providerAccountId: string;
+  secret: string;
+};
+
+type ProviderByokConfig = {
   providerAccountId: string;
   secret: string;
 };
@@ -32,6 +37,28 @@ const providerEnvMap: Record<
   }
 };
 
+const providerByokEnvMap: Record<
+  ProviderKey,
+  { accountId: string; secret: string }
+> = {
+  "claude-code": {
+    accountId: "CLAUDE_CODE_E2E_ACCOUNT_ID",
+    secret: "CLAUDE_CODE_E2E_SECRET"
+  },
+  codex: {
+    accountId: "CODEX_E2E_ACCOUNT_ID",
+    secret: "CODEX_E2E_SECRET"
+  },
+  hermes: {
+    accountId: "HERMES_E2E_ACCOUNT_ID",
+    secret: "HERMES_E2E_SECRET"
+  },
+  openclaw: {
+    accountId: "OPENCLAW_E2E_ACCOUNT_ID",
+    secret: "OPENCLAW_E2E_SECRET"
+  }
+};
+
 export function isStagingRealProviderMode(): boolean {
   return process.env.AGENTHUB_REAL_PROVIDER_MODE === "staging";
 }
@@ -41,6 +68,15 @@ export function getStagingProviderRuntimeConfig(provider: ProviderKey): Provider
 
   return {
     baseUrl: requireEnv(mapping.baseUrl),
+    providerAccountId: requireEnv(mapping.accountId),
+    secret: requireEnv(mapping.secret)
+  };
+}
+
+export function getStagingByokCredential(provider: ProviderKey): ProviderByokConfig {
+  const mapping = providerByokEnvMap[provider];
+
+  return {
     providerAccountId: requireEnv(mapping.accountId),
     secret: requireEnv(mapping.secret)
   };
@@ -69,7 +105,7 @@ export function assertStagingProviderResult(result: {
 
 export function getRequiredStagingEnvironment(): string[] {
   return [
-    "AGENTHUB_API_BASE_URL",
+    ...getRequiredStagingByokEnvironment(),
     "AGENTHUB_LOAD_CONVERSATION_IDS",
     "AGENTHUB_LOAD_GROUP_CONVERSATION_IDS",
     "AGENTHUB_LOAD_STREAM_CONVERSATION_IDS",
@@ -85,6 +121,21 @@ export function getRequiredStagingEnvironment(): string[] {
     "CLAUDE_CODE_BASE_URL",
     "CLAUDE_CODE_REAL_ACCOUNT_ID",
     "CLAUDE_CODE_REAL_SECRET"
+  ];
+}
+
+export function getRequiredStagingByokEnvironment(): string[] {
+  return [
+    "AGENTHUB_API_BASE_URL",
+    "AGENTHUB_WEB_BASE_URL",
+    "HERMES_E2E_ACCOUNT_ID",
+    "HERMES_E2E_SECRET",
+    "OPENCLAW_E2E_ACCOUNT_ID",
+    "OPENCLAW_E2E_SECRET",
+    "CODEX_E2E_ACCOUNT_ID",
+    "CODEX_E2E_SECRET",
+    "CLAUDE_CODE_E2E_ACCOUNT_ID",
+    "CLAUDE_CODE_E2E_SECRET"
   ];
 }
 

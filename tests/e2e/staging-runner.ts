@@ -23,6 +23,7 @@ async function main(): Promise<void> {
     );
   }
 
+  await runCommand("pnpm", ["test:e2e:byok:staging"], process.env);
   await runCommand("pnpm", ["test:e2e:providers"], {
     ...process.env,
     AGENTHUB_REAL_PROVIDER_MODE: "staging"
@@ -40,6 +41,7 @@ function printDryRun(): void {
     process.stdout.write(`- ${name}\n`);
   }
   process.stdout.write("\nCommands:\n");
+  process.stdout.write("- pnpm test:e2e:byok:staging\n");
   process.stdout.write("- AGENTHUB_REAL_PROVIDER_MODE=staging pnpm test:e2e:providers\n");
   for (const scenario of loadScenarios) {
     process.stdout.write(`- k6 run ${scenario}\n`);

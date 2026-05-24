@@ -1,6 +1,9 @@
 import type { Conversation, Message } from "@agenthub/contracts";
 
-export function buildSeedConversations(workspaceId = "default-workspace"): {
+export function buildSeedConversations(
+  workspaceId = "default-workspace",
+  ownerUserId = "user_seed_1"
+): {
   conversations: Conversation[];
   messages: Message[];
 } {
@@ -9,7 +12,7 @@ export function buildSeedConversations(workspaceId = "default-workspace"): {
       {
         id: "conv_seed_1",
         mode: "group",
-        ownerUserId: "user_seed_1",
+        ownerUserId,
         participants: [
           { agentId: "agent_hermes", agentName: "Hermes Planner" },
           { agentId: "agent_codex", agentName: "Codex Builder" }
@@ -28,6 +31,7 @@ export function buildSeedConversations(workspaceId = "default-workspace"): {
         id: "msg_seed_1",
         isPinned: true,
         mentionedAgentIds: [],
+        ownerUserId,
         role: "user",
         sourceAgentId: null,
         workspaceId
