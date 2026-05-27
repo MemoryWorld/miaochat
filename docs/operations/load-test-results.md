@@ -3,6 +3,13 @@
 This document records the most recent load-test runs for AgentHub Release 1.
 It is populated whenever the release checklist is exercised.
 
+## Phase A Note
+
+`Phase A: Hermes + OpenClaw Baseline` does not claim load-test completion.
+The current milestone closes runtime wiring, provider acceptance, and minimal
+BYOK proof for those two providers only. The four k6 scenarios below remain
+required work for the final Release 1 cut.
+
 ## Staging Acceptance Pipeline
 
 | Field | Value |
@@ -80,6 +87,8 @@ Track the observed bottlenecks across runs. Common categories to update:
 - [ ] Confirm threshold breaches (if any) have an owner before the release cut.
 - [ ] Run `pnpm staging:preflight` before each formal staging attempt.
 - [ ] Refresh `AGENTHUB_LOAD_*` ids with `pnpm staging:seed-load` after the target staging API is ready.
+- [ ] Record the eventual demo-video handoff and release sign-off once the full
+      Release 1 gate is attempted.
 
 ## Decision
 

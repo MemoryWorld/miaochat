@@ -138,4 +138,119 @@ describe("byok onboarding flow", () => {
     expect(screen.getByText("OpenClaw ops")).toBeInTheDocument();
     expect(screen.getByText(/acct_openclaw · valid/)).toBeInTheDocument();
   });
+
+  it("supports the same guided BYOK flow for Hermes", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            message: "Hermes credential passed local format validation.",
+            providerAccountId: "acct_hermes",
+            valid: true
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            },
+            status: 200
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            credentialSource: "user_provided",
+            id: "cred_hermes",
+            label: "Hermes ops",
+            provider: "hermes",
+            providerAccountId: "acct_hermes",
+            validationState: "valid",
+            workspaceId: "default-workspace"
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            },
+            status: 201
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              credentialSource: "user_provided",
+              id: "cred_hermes",
+              label: "Hermes ops",
+              provider: "hermes",
+              providerAccountId: "acct_hermes",
+              validationState: "valid",
+              workspaceId: "default-workspace"
+            }
+          ]),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            },
+            status: 200
+          }
+        )
+      );
+
+    render(<SetupFlow />);
+
+    await screen.findByText("Nothing has been saved in the default workspace yet.");
+
+    fireEvent.click(screen.getByRole("button", { name: /Hermes/i }));
+    fireEvent.change(screen.getByLabelText("Credential label"), {
+      target: {
+        value: "Hermes ops"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("Provider account identifier"), {
+      target: {
+        value: "acct_hermes"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("Provider secret"), {
+      target: {
+        value: "hermes_demo_secret"
+      }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Validate credential" }));
+
+    await screen.findByText("Validation passed");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save and bind" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Credential saved")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Hermes ops")).toBeInTheDocument();
+    expect(screen.getByText(/acct_hermes · valid/)).toBeInTheDocument();
+  });
 });

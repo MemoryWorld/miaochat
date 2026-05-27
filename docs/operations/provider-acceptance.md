@@ -33,6 +33,51 @@ The local HTTP server is intentionally used instead of an in-process JS mock so
 the adapter exercises the full network stack including HTTP/1.1 framing,
 streaming response bodies, and header normalization.
 
+## Phase A Hermes And OpenClaw Runtime Baseline
+
+On `2026-05-28`, the Phase A milestone added an application-level runtime
+acceptance slice for `Hermes` and `OpenClaw`. This slice is narrower than the
+full four-provider Release 1 gate: it proves that the browser/API/worker path
+no longer stops at mock-only execution for the two baseline providers.
+
+### What Phase A Proves
+
+- The worker now routes direct and group executions through a provider adapter
+  factory instead of hardcoded mock adapters.
+- Direct conversations can execute with `Hermes` or `OpenClaw`.
+- Group orchestration can mix `Hermes` and `OpenClaw` in one conversation.
+- Pinned context is replayed into the real provider request body.
+- The BYOK setup path is still exercised in the web layer and in runtime
+  integration for the two baseline providers.
+
+### Verification Commands
+
+Boot the local runtime dependencies:
+
+```bash
+docker compose -f infra/docker/compose.dev.yml up -d postgres pgbouncer redis temporal
+```
+
+Then run the Phase A runtime slice:
+
+```bash
+pnpm exec vitest run tests/integration/phase-a-runtime-baseline.spec.ts
+pnpm exec vitest run tests/e2e/hermes-real.spec.ts tests/e2e/openclaw-real.spec.ts
+pnpm exec vitest run tests/e2e/byok-onboarding.spec.tsx
+```
+
+The integration spec binds BYOK credentials for both providers through the API,
+creates direct and group conversations, verifies stream events, and asserts that
+the captured Hermes request body contains replayed pinned messages.
+
+### What Phase A Does Not Prove
+
+- `Codex` runtime wiring
+- `Claude Code` runtime wiring
+- four-provider staging acceptance
+- full load-test evidence
+- final Release 1 release sign-off
+
 ## Local Xiaomi MiMo Shims For Hermes And OpenClaw
 
 On `2026-05-24`, a separate local verification slice reported live upstream
@@ -187,6 +232,10 @@ against a live upstream path:
 
 The browser BYOK suite must also pass for all four providers with valid
 staging credentials.
+
+Phase A is intentionally narrower: the local jsdom setup flow now covers
+`Hermes` and `OpenClaw`, while the runtime integration slice proves those two
+providers can reach a usable conversation path after binding credentials.
 
 ## Staging Pipeline
 

@@ -1,5 +1,4 @@
 import type { AgentExecutionContext } from "@agenthub/agent-sdk";
-import { MockGroupAdapter } from "@agenthub/agent-adapters";
 import type {
   OrchestratorResult,
   OrchestratorTarget
@@ -11,13 +10,13 @@ import {
   getWorkerTracer
 } from "../observability/observability.js";
 import { maybeThrowMockDispatchFailure } from "./failure-handling.activity.js";
-
-const adapter = new MockGroupAdapter();
+import { createPhaseARuntimeExecution } from "./provider-runtime.js";
 
 export type DispatchAgentActivityInput = OrchestratorTarget & {
   context?: AgentExecutionContext;
   conversationId: string;
   message: string;
+  ownerUserId: string;
   workspaceId: string;
 };
 
@@ -37,13 +36,20 @@ export async function dispatchAgentActivity(
 
   try {
     maybeThrowMockDispatchFailure(input);
+    const runtime = await createPhaseARuntimeExecution({
+      executionMode: "group",
+      ownerUserId: input.ownerUserId,
+      provider: input.provider,
+      workspaceId: input.workspaceId
+    });
 
-    const execution = await adapter.execute({
+    const execution = await runtime.adapter.execute({
       agentId: input.agentId,
       context: input.context,
       conversationId: input.conversationId,
+      credentialId: runtime.credentialId,
       message: input.message,
-      provider: input.provider,
+      provider: runtime.provider,
       workspaceId: input.workspaceId
     });
 

@@ -13,6 +13,17 @@ shows the multi-agent coordination story clearly.
 - Artifact preview and deploy-status examples are available in existing
   conversations in case live generation is slow
 
+## Phase A Baseline Variant
+
+If the demo is being recorded against the current `Phase A` milestone instead of
+the final four-provider Release 1 target:
+
+- Use `Hermes` for the direct-conversation segment.
+- Use a mixed `Hermes + OpenClaw` group conversation for the orchestration
+  segment.
+- Call out explicitly that `Codex`, `Claude Code`, staging acceptance, load
+  validation, and the final sign-off remain deferred.
+
 ## Timeline
 
 ### 0:00-0:25 — Product Framing
@@ -23,9 +34,10 @@ shows the multi-agent coordination story clearly.
 ### 0:25-0:55 — BYOK Setup
 
 - Open `/setup`
-- Select one provider
+- Select `Hermes` or `OpenClaw`
 - Validate and bind a credential
-- Call out that the same setup flow exists across providers
+- Call out that the same setup flow is already smoke-tested for both baseline
+  providers in Phase A
 
 ### 0:55-1:35 — Direct Conversation
 

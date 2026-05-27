@@ -50,6 +50,7 @@ export type GroupOrchestratorWorkflowInput = {
   context?: AgentExecutionContext;
   conversationId: string;
   message: string;
+  ownerUserId: string;
   targets: OrchestratorTarget[];
   workspaceId: string;
 };
@@ -88,6 +89,7 @@ export async function groupOrchestratorWorkflow(
         context: input.context,
         conversationId: input.conversationId,
         message: input.message,
+        ownerUserId: input.ownerUserId,
         workspaceId: input.workspaceId
       })
         .then((result) => ({

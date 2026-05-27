@@ -1,4 +1,5 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
+import type { ProviderId } from "@agenthub/contracts";
 import { proxyActivities } from "@temporalio/workflow";
 import type {
   executeDirectAgentActivity as executeDirectAgentActivityFn
@@ -15,6 +16,8 @@ export type SingleAgentWorkflowInput = {
   conversationId: string;
   context?: AgentExecutionContext;
   message: string;
+  ownerUserId: string;
+  provider: ProviderId;
   workspaceId: string;
 };
 

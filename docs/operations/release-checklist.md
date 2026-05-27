@@ -3,6 +3,25 @@
 This checklist gates the AgentHub Release 1 cut. Every item must be confirmed
 green before the release branch is tagged.
 
+## Phase A Snapshot
+
+This repository also tracks a narrower implementation milestone:
+`Phase A: Hermes + OpenClaw Baseline`.
+
+Phase A is **not** the Release 1 cut. It proves the current runtime baseline
+while explicitly leaving the full four-provider release gate open.
+
+- [x] `tests/integration/phase-a-runtime-baseline.spec.ts` proves direct chat,
+      group orchestration, pinned-context replay, and normalized streaming
+      events through the real `Hermes` + `OpenClaw` runtime path.
+- [x] `tests/e2e/hermes-real.spec.ts` and `tests/e2e/openclaw-real.spec.ts`
+      still pass at the adapter acceptance layer.
+- [x] `tests/e2e/byok-onboarding.spec.tsx` covers the guided BYOK flow for
+      both in-scope Phase A providers.
+- [ ] Demo video remains outstanding.
+- [ ] Full Release 1 still requires `Codex`, `Claude Code`, staging acceptance,
+      load-test evidence, and final sign-off.
+
 ## Production Target
 
 - Concurrent web clients: `3 000`

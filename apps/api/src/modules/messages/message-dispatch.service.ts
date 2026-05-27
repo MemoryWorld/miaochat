@@ -100,15 +100,6 @@ export class MessageDispatchService implements OnModuleDestroy {
       ownerUserId
     );
 
-    if (
-      resolvedConversation.mode === "direct" &&
-      resolvedConversation.agents[0]?.provider !== "mock"
-    ) {
-      throw new BadRequestException(
-        "The single-agent mock slice requires a direct conversation backed by a mock agent."
-      );
-    }
-
     const userMessage = await this.messagesService.create(parsed, ownerUserId);
 
     if (resolvedConversation.mode === "direct") {
@@ -126,6 +117,7 @@ export class MessageDispatchService implements OnModuleDestroy {
           conversationId: parsed.conversationId,
           message: parsed.content,
           ownerUserId,
+          provider: directAgent.provider,
           workspaceId: parsed.workspaceId
         })
       );
@@ -152,17 +144,18 @@ export class MessageDispatchService implements OnModuleDestroy {
     conversationId: string;
     message: string;
     ownerUserId: string;
+    provider: ProviderId;
     workspaceId: string;
   }): Promise<void> {
     const span = this.traceRecorder.startSpan("provider.dispatch.direct", {
       agentId: input.agentId,
       conversationId: input.conversationId,
-      provider: "mock",
+      provider: input.provider,
       workspaceId: input.workspaceId
     });
     this.metrics.incrementCounter("provider_dispatch_total", {
       mode: "direct",
-      provider: "mock"
+      provider: input.provider
     });
 
     try {
@@ -207,13 +200,13 @@ export class MessageDispatchService implements OnModuleDestroy {
 
       this.metrics.incrementCounter("provider_dispatch_success_total", {
         mode: "direct",
-        provider: "mock"
+        provider: input.provider
       });
       span.end({ assistantMessageId });
     } catch (error) {
       this.metrics.incrementCounter("provider_dispatch_error_total", {
         mode: "direct",
-        provider: "mock"
+        provider: input.provider
       });
       this.logger.error("provider.dispatch.failed", {
         agentId: input.agentId,
@@ -232,16 +225,18 @@ export class MessageDispatchService implements OnModuleDestroy {
     message: string;
     ownerUserId: string;
     targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
-    workspaceId: string;
+      workspaceId: string;
   }): Promise<void> {
+    const providerLabel = summarizeProviders(input.targets);
     const span = this.traceRecorder.startSpan("provider.dispatch.group", {
       conversationId: input.conversationId,
+      provider: providerLabel,
       targetAgentCount: input.targets.length,
       workspaceId: input.workspaceId
     });
     this.metrics.incrementCounter("provider_dispatch_total", {
       mode: "group",
-      provider: "mock"
+      provider: providerLabel
     });
 
     try {
@@ -257,6 +252,7 @@ export class MessageDispatchService implements OnModuleDestroy {
             context,
             conversationId: input.conversationId,
             message: input.message,
+            ownerUserId: input.ownerUserId,
             targets: input.targets,
             workspaceId: input.workspaceId
           }
@@ -296,13 +292,13 @@ export class MessageDispatchService implements OnModuleDestroy {
 
       this.metrics.incrementCounter("provider_dispatch_success_total", {
         mode: "group",
-        provider: "mock"
+        provider: providerLabel
       });
       span.end({ assistantMessageId });
     } catch (error) {
       this.metrics.incrementCounter("provider_dispatch_error_total", {
         mode: "group",
-        provider: "mock"
+        provider: providerLabel
       });
       this.logger.error("provider.dispatch.failed", {
         conversationId: input.conversationId,
@@ -412,4 +408,16 @@ function remapStreamEventMessageIds(
         return event;
     }
   });
+}
+
+function summarizeProviders(
+  targets: Array<z.infer<typeof resolvedConversationAgentSchema>>
+): string {
+  const uniqueProviders = [...new Set(targets.map((target) => target.provider))];
+
+  if (uniqueProviders.length === 1) {
+    return uniqueProviders[0] ?? "unknown";
+  }
+
+  return "mixed";
 }
