@@ -7,7 +7,6 @@ import {
   Headers,
   HttpCode,
   Inject,
-  NotFoundException,
   Param,
   Post,
   Query,
@@ -23,8 +22,7 @@ import {
 import { z } from "zod";
 
 import { AuthService } from "../auth/auth.service.js";
-import { DatabaseService } from "../database/database.service.js";
-import { WorkspacePermissionGuard } from "../workspaces/permission.guard.js";
+import { ChannelMembersService } from "../channels/channel-members.service.js";
 import { PresenceBrokerService } from "./presence-broker.service.js";
 import { StreamBrokerService } from "./stream-broker.service.js";
 
@@ -39,10 +37,8 @@ export class StreamsController {
   constructor(
     @Inject(AuthService)
     private readonly authService: AuthService,
-    @Inject(DatabaseService)
-    private readonly database: DatabaseService,
-    @Inject(WorkspacePermissionGuard)
-    private readonly permissionGuard: WorkspacePermissionGuard,
+    @Inject(ChannelMembersService)
+    private readonly channelMembersService: ChannelMembersService,
     @Inject(PresenceBrokerService)
     private readonly presenceBroker: PresenceBrokerService,
     @Inject(StreamBrokerService)
@@ -63,11 +59,11 @@ export class StreamsController {
     const parsedConversationId = conversationIdSchema.parse(conversationId);
     const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
     const user = await this.authService.requireAuthenticatedUser(request.raw.headers.cookie);
-    await this.assertConversationOwnership(
-      parsedConversationId,
-      parsedWorkspaceId,
-      user.id
-    );
+    await this.channelMembersService.assertCanRead({
+      actorUserId: user.id,
+      channelId: parsedConversationId,
+      workspaceId: parsedWorkspaceId
+    });
     const unsubscribe = this.streamBroker.subscribe(
       {
         conversationId: parsedConversationId,
@@ -99,7 +95,11 @@ export class StreamsController {
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     const parsed = presenceInputSchema.parse(input ?? {});
-    await this.permissionGuard.assert(user.id, parsed.workspaceId, "conversation.read");
+    await this.channelMembersService.assertCanRead({
+      actorUserId: user.id,
+      channelId: conversationId,
+      workspaceId: parsed.workspaceId
+    });
     return this.presenceBroker.publish({
       action: parsed.action,
       conversationId,
@@ -118,29 +118,12 @@ export class StreamsController {
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     const parsed = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
-    await this.permissionGuard.assert(user.id, parsed, "conversation.read");
+    await this.channelMembersService.assertCanRead({
+      actorUserId: user.id,
+      channelId: conversationId,
+      workspaceId: parsed
+    });
     return this.presenceBroker.snapshot(parsed, conversationId);
-  }
-
-  private async assertConversationOwnership(
-    conversationId: string,
-    workspaceId: string,
-    ownerUserId: string
-  ): Promise<void> {
-    const result = await this.database.query<{ id: string }>(
-      `
-        SELECT id
-        FROM conversations
-        WHERE id = $1 AND workspace_id = $2 AND owner_user_id = $3
-      `,
-      [conversationId, workspaceId, ownerUserId]
-    );
-
-    if (!result.rows[0]) {
-      throw new NotFoundException(
-        `Conversation ${conversationId} was not found in workspace ${workspaceId}`
-      );
-    }
   }
 }
 

@@ -132,6 +132,43 @@ export class ConversationsRepository {
     }
   }
 
+  async insertOwnerChannelMembership(
+    input: {
+      conversationId: string;
+      ownerUserId: string;
+      workspaceId: string;
+    },
+    executor?: DatabaseExecutor
+  ): Promise<void> {
+    await this.resolveExecutor(executor).execute(sql`
+      INSERT INTO channel_user_memberships (
+        id,
+        channel_id,
+        workspace_id,
+        workspace_owner_user_id,
+        user_id,
+        role,
+        permission,
+        status,
+        invited_by_user_id,
+        joined_at
+      )
+      VALUES (
+        ${`channel-owner:${input.conversationId}:${input.ownerUserId}`},
+        ${input.conversationId},
+        ${input.workspaceId},
+        ${input.ownerUserId},
+        ${input.ownerUserId},
+        'owner',
+        'manage',
+        'active',
+        ${input.ownerUserId},
+        now()
+      )
+      ON CONFLICT DO NOTHING
+    `);
+  }
+
   async resolveParticipants(
     ownerUserId: string,
     workspaceId: string,

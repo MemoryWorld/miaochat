@@ -56,7 +56,7 @@ export class GroupMembersService {
 
     if (conversation.mode !== "group") {
       throw new BadRequestException(
-        "Explicit agent targeting is only supported in group conversations."
+        "只有群组频道支持指定 AI 同事。"
       );
     }
 
@@ -65,7 +65,7 @@ export class GroupMembersService {
     const invalidMentionIds = mentionedAgentIds.filter((agentId) => !memberIds.has(agentId));
 
     if (invalidMentionIds.length > 0) {
-      throw new BadRequestException("Mentioned agents must belong to the conversation.");
+      throw new BadRequestException("提到的 AI 同事必须已经在当前频道里。");
     }
 
     return mentionedAgentIds;

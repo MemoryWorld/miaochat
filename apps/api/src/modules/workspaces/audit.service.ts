@@ -7,6 +7,10 @@ import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service.js";
 
 export type WorkspaceAuditAction =
+  | "channel.member.add"
+  | "channel.member.remove"
+  | "channel.member.update"
+  | "channel.notification.update"
   | "conversation.share"
   | "credential.read"
   | "credential.revoke"

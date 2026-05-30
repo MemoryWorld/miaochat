@@ -60,6 +60,14 @@ export class ConversationsService {
         participants,
         tx
       );
+      await this.conversationsRepository.insertOwnerChannelMembership(
+        {
+          conversationId,
+          ownerUserId,
+          workspaceId
+        },
+        tx
+      );
 
       return mapConversationRow(inserted, participants);
     });

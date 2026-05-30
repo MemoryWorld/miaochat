@@ -25,6 +25,12 @@ export const messageAuthorSchema = z.discriminatedUnion("kind", [
   })
 ]);
 
+export const messageReactionSummarySchema = z.object({
+  count: z.number().int().min(0),
+  emoji: z.enum(["👍", "✅", "👀"]),
+  reactedByCurrentUser: z.boolean().default(false)
+});
+
 export const messageSchema = z.object({
   id: messageIdSchema,
   conversationId: z.string().min(1),
@@ -37,7 +43,11 @@ export const messageSchema = z.object({
   isPinned: z.boolean().default(false),
   mentionedAgentIds: z.array(z.string().min(1)).default([]),
   mentionedUserIds: z.array(userIdSchema).default([]),
+  reactions: z.array(messageReactionSummarySchema).default([]),
   sourceAgentId: z.string().min(1).nullable().default(null),
+  threadLastReplyAt: z.coerce.date().nullable().default(null),
+  threadParentMessageId: messageIdSchema.nullable().default(null),
+  threadReplyCount: z.number().int().min(0).default(0),
   workspaceId: z.string().min(1).default("default-workspace")
 });
 
@@ -47,9 +57,23 @@ export const createMessageInputSchema = z.object({
   mentionedAgentIds: z.array(z.string().min(1)).default([]),
   mentionedUserIds: z.array(userIdSchema).default([]),
   role: messageRoleSchema,
+  threadParentMessageId: messageIdSchema.nullable().default(null),
   workspaceId: z.string().min(1).default("default-workspace")
+});
+
+export const toggleMessageReactionInputSchema = z.object({
+  emoji: z.enum(["👍", "✅", "👀"]),
+  workspaceId: z.string().min(1).default("default-workspace")
+});
+
+export const messageThreadSchema = z.object({
+  parent: messageSchema,
+  replies: z.array(messageSchema)
 });
 
 export type CreateMessageInput = z.infer<typeof createMessageInputSchema>;
 export type MessageAuthor = z.infer<typeof messageAuthorSchema>;
 export type Message = z.infer<typeof messageSchema>;
+export type MessageReactionSummary = z.infer<typeof messageReactionSummarySchema>;
+export type MessageThread = z.infer<typeof messageThreadSchema>;
+export type ToggleMessageReactionInput = z.infer<typeof toggleMessageReactionInputSchema>;

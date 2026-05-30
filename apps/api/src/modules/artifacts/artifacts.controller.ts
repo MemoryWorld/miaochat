@@ -10,17 +10,12 @@ import {
 } from "@nestjs/common";
 
 import { workspaceIdSchema } from "@agenthub/contracts";
-import { z } from "zod";
 
 import { AuthService } from "../auth/auth.service.js";
 import { WorkspacePermissionGuard } from "../workspaces/permission.guard.js";
 import { ArtifactsService } from "./artifacts.service.js";
 import { ArtifactConflictDetectorService } from "./conflict-detector.service.js";
 import { ArtifactRevisionsService } from "./revisions.service.js";
-
-const artifactWorkspaceInputSchema = z
-  .object({ workspaceId: z.string().min(1).default("default-workspace") })
-  .passthrough();
 
 @Controller("artifacts")
 export class ArtifactsController {
@@ -43,8 +38,6 @@ export class ArtifactsController {
     @Headers("cookie") cookieHeader: string | undefined
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
-    const { workspaceId } = artifactWorkspaceInputSchema.parse(input ?? {});
-    await this.permissionGuard.assert(user.id, workspaceId, "artifact.create");
     return this.artifactsService.create(input, user.id);
   }
 
@@ -56,7 +49,6 @@ export class ArtifactsController {
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
-    await this.permissionGuard.assert(user.id, parsedWorkspaceId, "artifact.read");
     return this.artifactsService.list({
       messageId,
       workspaceId: parsedWorkspaceId
@@ -69,8 +61,6 @@ export class ArtifactsController {
     @Headers("cookie") cookieHeader: string | undefined
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
-    const { workspaceId } = artifactWorkspaceInputSchema.parse(input ?? {});
-    await this.permissionGuard.assert(user.id, workspaceId, "artifact.create");
     return this.artifactsService.prepareUploadTarget(input, user.id);
   }
 

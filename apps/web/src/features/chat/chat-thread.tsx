@@ -20,6 +20,8 @@ type ChatThreadProps = {
   } | null;
   messages: Message[];
   onPinMessage: (messageId: string) => Promise<void>;
+  onReplyMessage?: (message: Message) => void;
+  onToggleReaction?: (message: Message, emoji: string) => Promise<void>;
   resolveAuthorLabel?: (message: Message) => string | undefined;
   statusEvents: OrchestratorStatusEventPayload[];
 };
@@ -32,6 +34,8 @@ export function ChatThread({
   liveAssistantMessage,
   messages,
   onPinMessage,
+  onReplyMessage,
+  onToggleReaction,
   resolveAuthorLabel,
   statusEvents
 }: ChatThreadProps) {
@@ -80,19 +84,45 @@ export function ChatThread({
           当前频道还没有消息。发送第一条消息，开始和 AI 同事一起推进工作。
         </div>
       ) : null}
-      {messages.map((message) => (
-        <ChatMessage
-          authorLabel={resolveAuthorLabel?.(message)}
-          artifacts={artifactsByMessageId[message.id] ?? []}
-          isPinDisabled={isPinningMessageId !== null && isPinningMessageId !== message.id}
-          isPinPending={isPinningMessageId === message.id}
-          key={message.id}
-          message={message}
-          onPin={() => {
-            void onPinMessage(message.id);
-          }}
-        />
-      ))}
+      {messages.map((message, index) => {
+        const previous = messages[index - 1] ?? null;
+        const showDateDivider =
+          !previous || formatDateKey(previous.createdAt) !== formatDateKey(message.createdAt);
+        const authorLabel = resolveAuthorLabel?.(message) ?? message.author?.displayName;
+        const previousAuthorLabel = previous
+          ? resolveAuthorLabel?.(previous) ?? previous.author?.displayName
+          : null;
+        const isGroupedWithPrevious =
+          Boolean(previous) &&
+          previous?.role === message.role &&
+          previousAuthorLabel === authorLabel &&
+          !showDateDivider;
+
+        return (
+          <div className="grid gap-2" key={message.id}>
+            {showDateDivider ? (
+              <div className="flex items-center gap-3 text-xs font-semibold text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                {formatDateLabel(message.createdAt)}
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+            ) : null}
+            <ChatMessage
+              authorLabel={authorLabel}
+              artifacts={artifactsByMessageId[message.id] ?? []}
+              isGroupedWithPrevious={isGroupedWithPrevious}
+              isPinDisabled={isPinningMessageId !== null && isPinningMessageId !== message.id}
+              isPinPending={isPinningMessageId === message.id}
+              message={message}
+              onPin={() => {
+                void onPinMessage(message.id);
+              }}
+              onReply={onReplyMessage}
+              onToggleReaction={onToggleReaction}
+            />
+          </div>
+        );
+      })}
       {liveAssistantMessage && !hasPersistedLiveMessage ? (
         <article
           style={{
@@ -129,6 +159,18 @@ export function ChatThread({
       ) : null}
     </section>
   );
+}
+
+function formatDateKey(value: Date): string {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function formatDateLabel(value: Date): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    day: "numeric",
+    month: "long",
+    weekday: "short"
+  }).format(new Date(value));
 }
 
 function formatConnectionState(

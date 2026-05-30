@@ -137,6 +137,11 @@ export function ChannelOverviewPage() {
                   <span className="rounded-full bg-slate-100 px-3 py-1">
                     {channel.memberTeammateIds.length} 位 AI 同事
                   </span>
+                  {channel.unreadCount > 0 ? (
+                    <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+                      {channel.unreadCount} 条未读
+                    </span>
+                  ) : null}
                   <span className="rounded-full bg-slate-100 px-3 py-1">
                     更新于 {new Date(channel.updatedAt).toLocaleString("zh-CN")}
                   </span>

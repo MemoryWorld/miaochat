@@ -35,7 +35,7 @@ const resolvedConversationAgentSchema = z.object({
 });
 
 const resolvedConversationSchema = z.object({
-  agents: z.array(resolvedConversationAgentSchema).min(1),
+  agents: z.array(resolvedConversationAgentSchema),
   mode: z.enum(["direct", "group"])
 });
 
@@ -94,13 +94,22 @@ export class MessageDispatchService implements OnModuleDestroy {
       );
     }
 
+    const sendAccess = await this.messagesService.resolveSendAccess({
+      actorUserId: ownerUserId,
+      conversationId: parsed.conversationId,
+      workspaceId: parsed.workspaceId
+    });
     const resolvedConversation = await this.resolveConversation(
       parsed.conversationId,
       parsed.workspaceId,
-      ownerUserId
+      sendAccess.ownerUserId
     );
 
-    const userMessage = await this.messagesService.create(parsed, ownerUserId);
+    const userMessage = await this.messagesService.create(parsed, ownerUserId, sendAccess);
+
+    if (resolvedConversation.agents.length === 0) {
+      return userMessage;
+    }
 
     if (resolvedConversation.mode === "direct") {
       const directAgent = resolvedConversation.agents[0];
@@ -116,7 +125,7 @@ export class MessageDispatchService implements OnModuleDestroy {
           agentId: directAgent.agentId,
           conversationId: parsed.conversationId,
           message: parsed.content,
-          ownerUserId,
+          ownerUserId: sendAccess.ownerUserId,
           provider: directAgent.provider,
           workspaceId: parsed.workspaceId
         })
@@ -126,7 +135,7 @@ export class MessageDispatchService implements OnModuleDestroy {
         this.dispatchGroupAssistantReply({
           conversationId: parsed.conversationId,
           message: parsed.content,
-          ownerUserId,
+          ownerUserId: sendAccess.ownerUserId,
           targets: resolveTargetAgents(
             resolvedConversation.agents,
             userMessage.mentionedAgentIds
@@ -338,9 +347,22 @@ export class MessageDispatchService implements OnModuleDestroy {
     );
 
     if (result.length === 0) {
-      throw new NotFoundException(
-        `No agent binding found for conversation ${conversationId} in workspace ${workspaceId}`
+      const conversation = await this.conversationsRepository.findConversation(
+        conversationId,
+        workspaceId,
+        ownerUserId
       );
+
+      if (!conversation) {
+        throw new NotFoundException(
+          `Conversation ${conversationId} was not found in workspace ${workspaceId}`
+        );
+      }
+
+      return resolvedConversationSchema.parse({
+        agents: [],
+        mode: conversation.mode
+      });
     }
 
     return resolvedConversationSchema.parse({

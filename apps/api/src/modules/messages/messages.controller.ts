@@ -11,17 +11,11 @@ import {
 } from "@nestjs/common";
 
 import { workspaceIdSchema } from "@agenthub/contracts";
-import { z } from "zod";
 
 import { AuthService } from "../auth/auth.service.js";
-import { WorkspacePermissionGuard } from "../workspaces/permission.guard.js";
 import { MessageDispatchService } from "./message-dispatch.service.js";
 import { MessageRegenerateService } from "./message-regenerate.service.js";
 import { MessagesService } from "./messages.service.js";
-
-const messageInputSchema = z
-  .object({ workspaceId: z.string().min(1).default("default-workspace") })
-  .passthrough();
 
 @Controller("messages")
 export class MessagesController {
@@ -33,16 +27,12 @@ export class MessagesController {
     @Inject(MessageRegenerateService)
     private readonly regenerateService: MessageRegenerateService,
     @Inject(MessagesService)
-    private readonly messagesService: MessagesService,
-    @Inject(WorkspacePermissionGuard)
-    private readonly permissionGuard: WorkspacePermissionGuard
+    private readonly messagesService: MessagesService
   ) {}
 
   @Post()
   async create(@Body() input: unknown, @Headers("cookie") cookieHeader: string | undefined) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
-    const { workspaceId } = messageInputSchema.parse(input ?? {});
-    await this.permissionGuard.assert(user.id, workspaceId, "message.send");
     return this.messagesService.create(input, user.id);
   }
 
@@ -50,8 +40,6 @@ export class MessagesController {
   @HttpCode(202)
   async send(@Body() input: unknown, @Headers("cookie") cookieHeader: string | undefined) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
-    const { workspaceId } = messageInputSchema.parse(input ?? {});
-    await this.permissionGuard.assert(user.id, workspaceId, "message.send");
     return this.messageDispatchService.send(input, user.id);
   }
 
@@ -63,7 +51,6 @@ export class MessagesController {
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     const parsed = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
-    await this.permissionGuard.assert(user.id, parsed, "message.read");
     return this.messagesService.list({
       conversationId,
       ownerUserId: user.id,
@@ -80,8 +67,29 @@ export class MessagesController {
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     const parsed = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
-    await this.permissionGuard.assert(user.id, parsed, "conversation.update");
     return this.messagesService.pin(messageId, parsed, user.id);
+  }
+
+  @Get(":messageId/thread")
+  async getThread(
+    @Param("messageId") messageId: string,
+    @Query("workspaceId") workspaceId?: string,
+    @Headers("cookie") cookieHeader?: string
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsed = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+    return this.messagesService.getThread(messageId, parsed, user.id);
+  }
+
+  @Post(":messageId/reactions")
+  @HttpCode(200)
+  async toggleReaction(
+    @Param("messageId") messageId: string,
+    @Body() input: unknown,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    return this.messagesService.toggleReaction(messageId, input, user.id);
   }
 
   @Post(":messageId/regenerate")
@@ -93,7 +101,6 @@ export class MessagesController {
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     const parsed = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
-    await this.permissionGuard.assert(user.id, parsed, "message.send");
     return this.regenerateService.request({
       messageId,
       ownerUserId: user.id,

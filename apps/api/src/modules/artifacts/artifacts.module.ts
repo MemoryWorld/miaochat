@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module.js";
+import { ChannelsModule } from "../channels/channels.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { WorkspacesModule } from "../workspaces/workspaces.module.js";
 import { ArtifactsController } from "./artifacts.controller.js";
@@ -19,7 +20,7 @@ import { StorageService } from "./storage.service.js";
     AttachmentScanStubService,
     StorageService
   ],
-  imports: [AuthModule, DatabaseModule, WorkspacesModule],
+  imports: [AuthModule, ChannelsModule, DatabaseModule, WorkspacesModule],
   providers: [
     ArtifactConflictDetectorService,
     ArtifactRevisionsService,

@@ -3,6 +3,11 @@ import { z } from "zod";
 import { userIdSchema, workspaceIdSchema } from "./conversation.js";
 
 export const channelMemberPermissionSchema = z.enum(["read", "comment", "manage"]);
+export const channelNotificationPreferenceSchema = z.enum([
+  "all",
+  "mentions_only",
+  "muted"
+]);
 
 export const humanChannelMemberRoleSchema = z.enum([
   "admin",
@@ -71,12 +76,36 @@ export const addHumanChannelMembersInputSchema = z
     }
   });
 
+export const updateHumanChannelMemberInputSchema = z.object({
+  permission: z.enum(["read", "comment"]),
+  workspaceId: workspaceIdSchema
+});
+
 export const channelMemberListSchema = z.object({
   aiCount: z.number().int().min(0),
   channelId: z.string().min(1),
   humanCount: z.number().int().min(0),
   members: z.array(channelMemberSchema),
   totalCount: z.number().int().min(0),
+  workspaceId: workspaceIdSchema
+});
+
+export const markChannelReadInputSchema = z.object({
+  lastReadMessageId: z.string().min(1).nullable().default(null),
+  workspaceId: workspaceIdSchema
+});
+
+export const updateChannelNotificationPreferenceInputSchema = z.object({
+  notificationPreference: channelNotificationPreferenceSchema,
+  workspaceId: workspaceIdSchema
+});
+
+export const channelReadStateSchema = z.object({
+  channelId: z.string().min(1),
+  lastReadAt: z.coerce.date().nullable().default(null),
+  lastReadMessageId: z.string().min(1).nullable().default(null),
+  notificationPreference: channelNotificationPreferenceSchema.default("all"),
+  unreadCount: z.number().int().min(0),
   workspaceId: workspaceIdSchema
 });
 
@@ -87,6 +116,17 @@ export type AiChannelMember = z.infer<typeof aiChannelMemberSchema>;
 export type ChannelMember = z.infer<typeof channelMemberSchema>;
 export type ChannelMemberList = z.infer<typeof channelMemberListSchema>;
 export type ChannelMemberPermission = z.infer<typeof channelMemberPermissionSchema>;
+export type ChannelNotificationPreference = z.infer<
+  typeof channelNotificationPreferenceSchema
+>;
+export type ChannelReadState = z.infer<typeof channelReadStateSchema>;
 export type HumanChannelMember = z.infer<typeof humanChannelMemberSchema>;
 export type HumanChannelMemberRole = z.infer<typeof humanChannelMemberRoleSchema>;
 export type HumanChannelMemberStatus = z.infer<typeof humanChannelMemberStatusSchema>;
+export type MarkChannelReadInput = z.infer<typeof markChannelReadInputSchema>;
+export type UpdateHumanChannelMemberInput = z.infer<
+  typeof updateHumanChannelMemberInputSchema
+>;
+export type UpdateChannelNotificationPreferenceInput = z.infer<
+  typeof updateChannelNotificationPreferenceInputSchema
+>;

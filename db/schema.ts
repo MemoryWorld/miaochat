@@ -178,6 +178,7 @@ export const conversationAgents = pgTable("conversation_agents", {
 });
 
 export const messages = pgTable("messages", {
+  authorUserId: text("author_user_id").references(() => users.id, { onDelete: "set null" }),
   content: text("content").notNull(),
   conversationId: text("conversation_id")
     .notNull()
@@ -185,11 +186,26 @@ export const messages = pgTable("messages", {
   id: text("id").primaryKey(),
   isPinned: boolean("is_pinned").notNull().default(false),
   mentionedAgentIds: jsonb("mentioned_agent_ids").$type<string[]>().notNull().default([]),
+  mentionedUserIds: jsonb("mentioned_user_ids").$type<string[]>().notNull().default([]),
   ownerUserId: text("owner_user_id").notNull(),
   role: messageRole("role").notNull(),
   sourceAgentId: text("source_agent_id"),
+  threadParentMessageId: text("thread_parent_message_id"),
   workspaceId: text("workspace_id").notNull(),
   ...timestampColumns
+});
+
+export const messageReactions = pgTable("message_reactions", {
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  emoji: text("emoji").notNull(),
+  id: text("id").primaryKey(),
+  messageId: text("message_id")
+    .notNull()
+    .references(() => messages.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull()
 });
 
 export const providerCredentials = pgTable("provider_credentials", {
@@ -405,6 +421,34 @@ export const teammateChannelMemberships = pgTable("teammate_channel_memberships"
   teammateId: text("teammate_id").notNull(),
   teammateKind: text("teammate_kind").notNull().default("custom_agent"),
   workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const channelUserMemberships = pgTable("channel_user_memberships", {
+  channelId: text("channel_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  id: text("id").primaryKey(),
+  invitedByUserId: text("invited_by_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  invitedEmail: text("invited_email"),
+  joinedAt: timestamp("joined_at", { withTimezone: true }),
+  lastReadAt: timestamp("last_read_at", { withTimezone: true }),
+  lastReadMessageId: text("last_read_message_id").references(() => messages.id, {
+    onDelete: "set null"
+  }),
+  notificationPreference: text("notification_preference").notNull().default("all"),
+  permission: text("permission").notNull().default("comment"),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+  role: text("role").notNull().default("member"),
+  status: text("status").notNull().default("active"),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull(),
+  workspaceInvitationId: text("workspace_invitation_id"),
+  workspaceOwnerUserId: text("workspace_owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   ...timestampColumns
 });
 

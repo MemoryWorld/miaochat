@@ -2,28 +2,37 @@
 
 import { useState } from "react";
 
-import type { ConversationAgentMember } from "@agenthub/contracts";
+import type { ChannelMember, ConversationAgentMember } from "@agenthub/contracts";
 
-import { AgentMentionInput } from "./agent-mention-input";
+import { MemberMentionInput, buildMentionLabel } from "./member-mention-input";
 
 type ChatSendInput = {
+  attachments: File[];
   content: string;
   mentionedAgentIds: string[];
+  mentionedUserIds: string[];
 };
 
 type ChatComposerProps = {
   disabled?: boolean;
+  members?: ChannelMember[];
   onSend: (input: ChatSendInput) => Promise<void>;
+  onTyping?: () => void;
   participants?: ConversationAgentMember[];
 };
 
 export function ChatComposer({
   disabled = false,
+  members,
   onSend,
+  onTyping,
   participants = []
 }: ChatComposerProps) {
   const [content, setContent] = useState("");
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const mentionMembers = members ?? participants.map(mapParticipantToMember);
+  const showActionSuggestions = content.trimStart().startsWith("/");
 
   return (
     <form
@@ -37,11 +46,20 @@ export function ChatComposer({
         }
 
         await onSend({
+          attachments,
           content: trimmed,
-          mentionedAgentIds: selectedAgentId ? [selectedAgentId] : []
+          mentionedAgentIds: selectedMemberIds.flatMap((memberId) =>
+            memberId.startsWith("ai:") ? [memberId.slice("ai:".length)] : []
+          ),
+          mentionedUserIds: selectedMemberIds.flatMap((memberId) =>
+            memberId.startsWith("human:") && !memberId.startsWith("human:pending:")
+              ? [memberId.slice("human:".length)]
+              : []
+          )
         });
         setContent("");
-        setSelectedAgentId(null);
+        setAttachments([]);
+        setSelectedMemberIds([]);
       }}
       style={{
         borderTop: "1px solid rgba(15, 23, 42, 0.08)",
@@ -51,14 +69,22 @@ export function ChatComposer({
         paddingTop: "1rem"
       }}
     >
-      <AgentMentionInput
+      <MemberMentionInput
         disabled={disabled}
-        onSelectAgent={({ agentId, mentionLabel }) => {
-          setSelectedAgentId(agentId);
-          setContent((current) => replaceLeadingMention(current, mentionLabel));
+        members={mentionMembers}
+        onToggleMember={(member) => {
+          setSelectedMemberIds((current) =>
+            current.includes(member.memberId)
+              ? current.filter((memberId) => memberId !== member.memberId)
+              : [...current, member.memberId]
+          );
+          setContent((current) =>
+            current.includes(buildMentionLabel(member.displayName))
+              ? current
+              : appendMentionLabel(current, buildMentionLabel(member.displayName))
+          );
         }}
-        participants={participants}
-        selectedAgentId={selectedAgentId}
+        selectedMemberIds={selectedMemberIds}
       />
       <label
         htmlFor="chat-composer-input"
@@ -76,6 +102,7 @@ export function ChatComposer({
           disabled={disabled}
           onChange={(event) => {
             setContent(event.target.value);
+            onTyping?.();
           }}
           placeholder="请告诉 AI 同事下一步需要推进什么。"
           rows={3}
@@ -89,6 +116,54 @@ export function ChatComposer({
           }}
         />
       </label>
+      {showActionSuggestions ? (
+        <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+          <div className="text-xs font-semibold text-slate-500">快捷动作</div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: "总结", value: "请总结当前频道的关键结论和下一步。" },
+              { label: "创建任务", value: "请根据当前讨论创建一组可执行任务。" },
+              { label: "生成计划", value: "请先生成计划，列出风险和验收标准。" },
+              { label: "邀请同事", value: "我需要邀请一位同事加入这个频道。" }
+            ].map((action) => (
+              <button
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                key={action.label}
+                onClick={() => {
+                  setContent(action.value);
+                }}
+                type="button"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <label className="grid gap-2 text-sm font-semibold text-slate-600">
+        附件
+        <input
+          className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          disabled={disabled}
+          multiple
+          onChange={(event) => {
+            setAttachments(Array.from(event.target.files ?? []));
+          }}
+          type="file"
+        />
+      </label>
+      {attachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((file) => (
+            <span
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600"
+              key={`${file.name}:${file.size}:${file.lastModified}`}
+            >
+              {file.name}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div>
         <button
           disabled={disabled || content.trim().length === 0}
@@ -113,9 +188,27 @@ const buttonStyle = {
   padding: "0.75rem 1.1rem"
 } as const;
 
-function replaceLeadingMention(content: string, mentionLabel: string): string {
-  const trimmedStart = content.trimStart();
-  const withoutExistingMention = trimmedStart.replace(/^@\S+\s*/, "");
+function appendMentionLabel(content: string, mentionLabel: string): string {
+  const trimmedEnd = content.trimEnd();
 
-  return `${mentionLabel} ${withoutExistingMention}`.trimEnd();
+  if (!trimmedEnd) {
+    return `${mentionLabel} `;
+  }
+
+  return `${trimmedEnd} ${mentionLabel} `;
+}
+
+function mapParticipantToMember(participant: ConversationAgentMember): ChannelMember {
+  return {
+    avatarUrl: null,
+    displayName: participant.agentName,
+    joinedAt: null,
+    kind: "ai",
+    lastActiveAt: null,
+    memberId: `ai:${participant.agentId}`,
+    permission: "comment",
+    role: "ai_teammate",
+    status: "available",
+    teammateId: participant.agentId
+  };
 }

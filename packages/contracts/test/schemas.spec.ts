@@ -9,6 +9,7 @@ import {
   calculateCodingWorkflowAgentProgress,
   buildBuiltInActorProfile,
   channelMemberListSchema,
+  channelReadStateSchema,
   conversationSchema,
   createArtifactInputSchema,
   createConversationInputSchema,
@@ -24,6 +25,7 @@ import {
   hasCodingWorkflowExecutor,
   inboxItemSchema,
   memoryRecordSchema,
+  messageThreadSchema,
   messageSchema,
   normalizeRecommendedRoleIds,
   prepareArtifactUploadInputSchema,
@@ -191,13 +193,43 @@ describe("@agenthub/contracts", () => {
       mentionedAgentIds: ["agent_engineer"],
       mentionedUserIds: ["user_owner"],
       ownerUserId: "user_owner",
+      reactions: [
+        {
+          count: 2,
+          emoji: "✅",
+          reactedByCurrentUser: true
+        }
+      ],
       role: "user",
+      threadReplyCount: 1,
       workspaceId: "workspace_1"
+    });
+    const readState = channelReadStateSchema.parse({
+      channelId: "conv_1",
+      lastReadMessageId: "msg_1",
+      notificationPreference: "mentions_only",
+      unreadCount: 3,
+      workspaceId: "workspace_1"
+    });
+    const thread = messageThreadSchema.parse({
+      parent: message,
+      replies: [
+        {
+          ...message,
+          content: "线程回复",
+          id: "msg_reply_1",
+          threadParentMessageId: "msg_1",
+          threadReplyCount: 0
+        }
+      ]
     });
 
     expect(members.totalCount).toBe(3);
     expect(message.author?.kind).toBe("human");
     expect(message.mentionedUserIds).toEqual(["user_owner"]);
+    expect(message.reactions[0]?.reactedByCurrentUser).toBe(true);
+    expect(readState.notificationPreference).toBe("mentions_only");
+    expect(thread.replies[0]?.threadParentMessageId).toBe("msg_1");
   });
 
   it("supports structured orchestrator status events", () => {

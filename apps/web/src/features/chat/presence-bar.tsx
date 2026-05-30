@@ -38,21 +38,21 @@ export function PresenceBar({ conversationId, workspaceId }: PresenceBarProps) {
 
   if (snapshot.participants.length === 0) {
     return (
-      <div data-testid="presence-bar" aria-label="Presence">
-        <span>No one else is here.</span>
+      <div className="text-sm text-slate-500" data-testid="presence-bar" aria-label="频道在线状态">
+        <span>当前没有其他成员正在输入。</span>
       </div>
     );
   }
 
   return (
-    <div data-testid="presence-bar" aria-label="Presence">
-      <ul>
+    <div className="text-sm text-slate-600" data-testid="presence-bar" aria-label="频道在线状态">
+      <ul className="m-0 grid gap-1 p-0">
         {snapshot.participants.map((participant) => (
-          <li key={participant.userId} data-user-id={participant.userId}>
+          <li className="list-none" key={participant.userId} data-user-id={participant.userId}>
             {participant.userId}
-            {participant.action === "typing" ? " (typing…)" : ""}
+            {participant.action === "typing" ? " 正在输入..." : ""}
             {participant.lastReadMessageId
-              ? ` · read up to ${participant.lastReadMessageId}`
+              ? ` · 已读到 ${participant.lastReadMessageId}`
               : ""}
           </li>
         ))}

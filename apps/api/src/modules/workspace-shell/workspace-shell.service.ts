@@ -44,6 +44,7 @@ type ConversationChannelRow = {
   id: string;
   mode: "direct" | "group";
   title: string;
+  unread_count: number;
   updated_at: Date;
   workspace_id: string;
 };
@@ -223,6 +224,16 @@ type WorkspaceHumanMemberRow = {
   user_id: string;
 };
 
+type MentionInboxRow = {
+  content: string;
+  conversation_id: string;
+  created_at: Date;
+  id: string;
+  title: string;
+  updated_at: Date;
+  workspace_id: string;
+};
+
 const defaultSkillCatalog = [
   {
     category: "流程",
@@ -278,6 +289,7 @@ export class WorkspaceShellService {
           conversations.id,
           conversations.mode,
           conversations.title,
+          COALESCE(unread_state.unread_count, 0)::int AS unread_count,
           conversations.updated_at,
           conversations.workspace_id,
           conversation_agents.agent_id,
@@ -286,16 +298,71 @@ export class WorkspaceShellService {
         LEFT JOIN conversation_agents
           ON conversation_agents.conversation_id = conversations.id
           AND conversation_agents.workspace_id = conversations.workspace_id
-        WHERE conversations.owner_user_id = ${ownerUserId}
-          AND conversations.workspace_id = ${workspaceId}
+        LEFT JOIN LATERAL (
+          SELECT count(messages.id)::int AS unread_count
+          FROM channel_user_memberships
+          LEFT JOIN messages
+            ON messages.conversation_id = conversations.id
+            AND messages.workspace_id = conversations.workspace_id
+            AND messages.owner_user_id = conversations.owner_user_id
+            AND messages.thread_parent_message_id IS NULL
+            AND messages.author_user_id IS DISTINCT FROM ${ownerUserId}
+            AND (
+              channel_user_memberships.last_read_at IS NULL
+              OR messages.created_at > channel_user_memberships.last_read_at
+            )
+            AND channel_user_memberships.notification_preference <> 'muted'
+            AND (
+              channel_user_memberships.notification_preference = 'all'
+              OR (
+                channel_user_memberships.notification_preference = 'mentions_only'
+                AND messages.mentioned_user_ids @> jsonb_build_array(CAST(${ownerUserId} AS text))
+              )
+            )
+          WHERE channel_user_memberships.workspace_owner_user_id = conversations.owner_user_id
+            AND channel_user_memberships.workspace_id = conversations.workspace_id
+            AND channel_user_memberships.channel_id = conversations.id
+            AND channel_user_memberships.user_id = ${ownerUserId}
+            AND channel_user_memberships.status = 'active'
+            AND channel_user_memberships.removed_at IS NULL
+        ) AS unread_state ON true
+        WHERE conversations.workspace_id = ${workspaceId}
+          AND (
+            conversations.owner_user_id = ${ownerUserId}
+            OR EXISTS (
+              SELECT 1
+              FROM channel_user_memberships
+              WHERE channel_user_memberships.workspace_owner_user_id = conversations.owner_user_id
+                AND channel_user_memberships.workspace_id = conversations.workspace_id
+                AND channel_user_memberships.channel_id = conversations.id
+                AND channel_user_memberships.user_id = ${ownerUserId}
+                AND channel_user_memberships.status = 'active'
+                AND channel_user_memberships.removed_at IS NULL
+            )
+          )
           AND conversations.archived_at IS NULL
         ORDER BY conversations.updated_at DESC, conversations.id DESC
       `),
       this.database.execute<ChannelMembershipRow>(sql`
-        SELECT channel_id, teammate_id
+        SELECT teammate_channel_memberships.channel_id, teammate_channel_memberships.teammate_id
         FROM teammate_channel_memberships
-        WHERE owner_user_id = ${ownerUserId}
-          AND workspace_id = ${workspaceId}
+        INNER JOIN conversations
+          ON conversations.id = teammate_channel_memberships.channel_id
+          AND conversations.workspace_id = teammate_channel_memberships.workspace_id
+        WHERE teammate_channel_memberships.workspace_id = ${workspaceId}
+          AND (
+            conversations.owner_user_id = ${ownerUserId}
+            OR EXISTS (
+              SELECT 1
+              FROM channel_user_memberships
+              WHERE channel_user_memberships.workspace_owner_user_id = conversations.owner_user_id
+                AND channel_user_memberships.workspace_id = conversations.workspace_id
+                AND channel_user_memberships.channel_id = conversations.id
+                AND channel_user_memberships.user_id = ${ownerUserId}
+                AND channel_user_memberships.status = 'active'
+                AND channel_user_memberships.removed_at IS NULL
+            )
+          )
       `)
     ]);
 
@@ -337,7 +404,7 @@ export class WorkspaceShellService {
               ? `${memberTeammateIds.length} 位协作成员共享这个频道。`
               : "这是一个直接协作线程。",
           title: first.title,
-          unreadCount: 0,
+          unreadCount: first.unread_count,
           updatedAt: first.updated_at,
           visibility: "workspace",
           workspaceId: first.workspace_id
@@ -365,9 +432,24 @@ export class WorkspaceShellService {
       INNER JOIN messages
         ON messages.id = artifacts.message_id
         AND messages.workspace_id = artifacts.workspace_id
-      WHERE messages.owner_user_id = ${ownerUserId}
-        AND messages.workspace_id = ${workspaceId}
+      INNER JOIN conversations
+        ON conversations.id = messages.conversation_id
+        AND conversations.workspace_id = messages.workspace_id
+      WHERE messages.workspace_id = ${workspaceId}
         AND messages.conversation_id = ${channelId}
+        AND (
+          messages.owner_user_id = ${ownerUserId}
+          OR EXISTS (
+            SELECT 1
+            FROM channel_user_memberships
+            WHERE channel_user_memberships.workspace_owner_user_id = conversations.owner_user_id
+              AND channel_user_memberships.workspace_id = conversations.workspace_id
+              AND channel_user_memberships.channel_id = conversations.id
+              AND channel_user_memberships.user_id = ${ownerUserId}
+              AND channel_user_memberships.status = 'active'
+              AND channel_user_memberships.removed_at IS NULL
+          )
+        )
       ORDER BY artifacts.created_at DESC, artifacts.id DESC
     `);
 
@@ -791,13 +873,14 @@ export class WorkspaceShellService {
     teammateId?: string;
     workspaceId: string;
   }): Promise<InboxItem[]> {
-    const [approvals, rounds] = await Promise.all([
+    const [approvals, rounds, mentions] = await Promise.all([
       this.listApprovalRequests(input),
       this.listActivityRounds({
         ownerUserId: input.ownerUserId,
         teammateId: input.teammateId,
         workspaceId: input.workspaceId
-      })
+      }),
+      this.listMentionInboxItems(input)
     ]);
 
     const approvalItems = approvals.map((approval) =>
@@ -848,8 +931,69 @@ export class WorkspaceShellService {
       })
     );
 
-    return [...approvalItems, ...activityItems].sort(
+    return [...approvalItems, ...activityItems, ...mentions].sort(
       (left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()
+    );
+  }
+
+  private async listMentionInboxItems(input: {
+    ownerUserId: string;
+    teammateId?: string;
+    workspaceId: string;
+  }): Promise<InboxItem[]> {
+    if (input.teammateId) {
+      return [];
+    }
+
+    const result = await this.database.execute<MentionInboxRow>(sql`
+      SELECT
+        messages.content,
+        messages.conversation_id,
+        messages.created_at,
+        messages.id,
+        messages.updated_at,
+        messages.workspace_id,
+        conversations.title
+      FROM messages
+      INNER JOIN conversations
+        ON conversations.id = messages.conversation_id
+        AND conversations.workspace_id = messages.workspace_id
+      WHERE messages.workspace_id = ${input.workspaceId}
+        AND messages.mentioned_user_ids @> jsonb_build_array(CAST(${input.ownerUserId} AS text))
+        AND (
+          conversations.owner_user_id = ${input.ownerUserId}
+          OR EXISTS (
+            SELECT 1
+            FROM channel_user_memberships
+            WHERE channel_user_memberships.workspace_owner_user_id = conversations.owner_user_id
+              AND channel_user_memberships.workspace_id = conversations.workspace_id
+              AND channel_user_memberships.channel_id = conversations.id
+              AND channel_user_memberships.user_id = ${input.ownerUserId}
+              AND channel_user_memberships.status = 'active'
+              AND channel_user_memberships.removed_at IS NULL
+          )
+        )
+      ORDER BY messages.created_at DESC, messages.id DESC
+      LIMIT 50
+    `);
+
+    return result.rows.map((row) =>
+      inboxItemSchema.parse({
+        activityRoundId: null,
+        approvalRequestId: null,
+        channelId: row.conversation_id,
+        createdAt: row.created_at,
+        id: `mention:${row.id}`,
+        kind: "mention",
+        routeHref: `/channels/${row.conversation_id}#message-${row.id}`,
+        status: "action_required",
+        summary: row.content.slice(0, 140),
+        teammateId: null,
+        title: `你在「${row.title}」被提及`,
+        updatedAt: row.updated_at,
+        workflowId: null,
+        workspaceId: row.workspace_id
+      })
     );
   }
 

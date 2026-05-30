@@ -116,6 +116,54 @@ describe("ChannelShell", () => {
           }
         ])
       ],
+      [`${apiBaseUrl}/channels/conv_phase_d/members?workspaceId=default-workspace`]: [
+        jsonResponse(200, {
+          aiCount: 1,
+          channelId: "conv_phase_d",
+          humanCount: 1,
+          members: [
+            {
+              displayName: "你",
+              kind: "human",
+              memberId: "human:user_demo",
+              permission: "manage",
+              role: "owner",
+              status: "active",
+              userId: "user_demo"
+            },
+            {
+              displayName: "技术负责人",
+              kind: "ai",
+              memberId: "ai:agent_tech_lead",
+              permission: "comment",
+              role: "ai_teammate",
+              status: "available",
+              teammateId: "agent_tech_lead"
+            }
+          ],
+          totalCount: 2,
+          workspaceId: "default-workspace"
+        })
+      ],
+      [`${apiBaseUrl}/workspace-member-directory?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            actorType: "human",
+            displayName: "你",
+            id: "human:user_demo",
+            joinedAt: "2026-05-29T00:00:00.000Z",
+            lastActiveAt: "2026-05-29T00:00:00.000Z",
+            principalKind: "human",
+            role: "owner",
+            roleLabel: "工作区成员",
+            status: "active",
+            summary: null,
+            teammateId: null,
+            userId: "user_demo",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
       [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
         jsonResponse(200, [
           {
@@ -244,12 +292,12 @@ describe("ChannelShell", () => {
     render(<ChannelShell channelId="conv_phase_d" />);
 
     expect(await screen.findByText("Phase D 编码频道")).toBeInTheDocument();
-    expect(screen.getByText("频道成员")).toBeInTheDocument();
-    expect(screen.getByText("1 位用户 + 1 位 AI 同事")).toBeInTheDocument();
-    expect(screen.getByText("你")).toBeInTheDocument();
+    expect(screen.getByText("成员与权限")).toBeInTheDocument();
+    expect(screen.getByText("2 位成员 · 1 位同事 · 1 位 AI 同事")).toBeInTheDocument();
+    expect(screen.getAllByText("你").length).toBeGreaterThan(0);
     const memberPanel = screen.getByRole("complementary", { name: "频道成员" });
     const createTeammateLink = within(memberPanel).getByRole("link", {
-      name: "新建同事"
+      name: "新建 AI 同事"
     });
     expect(createTeammateLink).toHaveAttribute(
       "href",
@@ -264,6 +312,8 @@ describe("ChannelShell", () => {
       expect(requestedUrls).toEqual(
         expect.arrayContaining([
           `${apiBaseUrl}/channels?workspaceId=default-workspace`,
+          `${apiBaseUrl}/channels/conv_phase_d/members?workspaceId=default-workspace`,
+          `${apiBaseUrl}/workspace-member-directory?workspaceId=default-workspace`,
           `${apiBaseUrl}/conversations?workspaceId=default-workspace`,
           `${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`,
           `${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`,
@@ -652,13 +702,75 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
     const url = typeof input === "string" ? input : input.url;
     const method = typeof init === "object" && init !== null && "method" in init ? init.method : "GET";
 
-    if (method && method !== "GET" && url !== `${apiBaseUrl}/messages/send`) {
+    if (
+      method &&
+      method !== "GET" &&
+      url !== `${apiBaseUrl}/messages/send` &&
+      !url.endsWith("/presence") &&
+      !url.endsWith("/read-state") &&
+      !url.endsWith("/reactions")
+    ) {
       throw new Error(`Unexpected non-GET fetch in ChannelShell test: ${method} ${url}`);
+    }
+
+    if (method && method !== "GET" && url.endsWith("/read-state")) {
+      return jsonResponse(200, {
+        channelId: "channel",
+        lastReadAt: "2026-05-29T00:00:00.000Z",
+        lastReadMessageId: null,
+        notificationPreference: "all",
+        unreadCount: 0,
+        workspaceId: "default-workspace"
+      });
+    }
+
+    if (method && method !== "GET" && url.endsWith("/presence")) {
+      return jsonResponse(202, {
+        kind: "conversation.presence",
+        payload: {}
+      });
     }
 
     const queue = mapping[url];
 
     if (!queue || queue.length === 0) {
+      if (/^http:\/\/localhost:3001\/channels\/[^/]+\/members\?workspaceId=/.test(url)) {
+        return jsonResponse(200, {
+          aiCount: 0,
+          channelId: url.split("/channels/")[1]?.split("/members")[0] ?? "channel",
+          humanCount: 0,
+          members: [],
+          totalCount: 0,
+          workspaceId: "default-workspace"
+        });
+      }
+
+      if (/^http:\/\/localhost:3001\/channels\/[^/]+\/read-state\?workspaceId=/.test(url)) {
+        return jsonResponse(200, {
+          channelId: url.split("/channels/")[1]?.split("/read-state")[0] ?? "channel",
+          lastReadAt: null,
+          lastReadMessageId: null,
+          notificationPreference: "all",
+          unreadCount: 0,
+          workspaceId: "default-workspace"
+        });
+      }
+
+      if (/^http:\/\/localhost:3001\/artifacts\?messageId=/.test(url)) {
+        return jsonResponse(200, []);
+      }
+
+      if (url === `${apiBaseUrl}/workspace-member-directory?workspaceId=default-workspace`) {
+        return jsonResponse(200, []);
+      }
+
+      if (/^http:\/\/localhost:3001\/streams\/[^/]+\/presence\?workspaceId=/.test(url)) {
+        return jsonResponse(200, {
+          conversationId: "channel",
+          participants: []
+        });
+      }
+
       throw new Error(`Unexpected fetch: ${url}`);
     }
 

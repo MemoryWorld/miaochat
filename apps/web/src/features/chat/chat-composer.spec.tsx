@@ -12,37 +12,56 @@ describe("ChatComposer", () => {
     cleanup();
   });
 
-  it("maps an explicit @agent selection into mentioned agent ids on send", async () => {
+  it("maps explicit member selections into mentioned ids without stripping Chinese names", async () => {
     const onSend = vi.fn(async () => undefined);
 
     render(
       <ChatComposer
-        onSend={onSend}
-        participants={[
+        members={[
           {
-            agentId: "agent_hermes",
-            agentName: "Hermes Planner"
+            avatarUrl: null,
+            displayName: "张三",
+            joinedAt: null,
+            kind: "human",
+            lastActiveAt: null,
+            memberId: "human:user_zhang",
+            permission: "comment",
+            role: "member",
+            status: "active",
+            userId: "user_zhang"
           },
           {
-            agentId: "agent_codex",
-            agentName: "Codex Builder"
+            avatarUrl: null,
+            displayName: "软件工程师",
+            joinedAt: null,
+            kind: "ai",
+            lastActiveAt: null,
+            memberId: "ai:agent_engineer",
+            permission: "comment",
+            role: "ai_teammate",
+            status: "available",
+            teammateId: "agent_engineer"
           }
         ]}
+        onSend={onSend}
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "@hermes-planner" }));
+    fireEvent.click(screen.getByRole("button", { name: "@张三" }));
+    fireEvent.click(screen.getByRole("button", { name: "@软件工程师" }));
     fireEvent.change(screen.getByLabelText("消息内容"), {
       target: {
-        value: "@hermes-planner plan the next release step"
+        value: "@张三 @软件工程师 请看下一步计划"
       }
     });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     await waitFor(() => {
       expect(onSend).toHaveBeenCalledWith({
-        content: "@hermes-planner plan the next release step",
-        mentionedAgentIds: ["agent_hermes"]
+        attachments: [],
+        content: "@张三 @软件工程师 请看下一步计划",
+        mentionedAgentIds: ["agent_engineer"],
+        mentionedUserIds: ["user_zhang"]
       });
     });
   });

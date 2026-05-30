@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { HealthModule } from "./health/health.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { ArtifactsModule } from "./modules/artifacts/artifacts.module.js";
+import { ChannelsModule } from "./modules/channels/channels.module.js";
 import { ConversationsModule } from "./modules/conversations/conversations.module.js";
 import { CodingWorkflowsModule } from "./modules/coding-workflows/coding-workflows.module.js";
 import { CredentialsModule } from "./modules/credentials/credentials.module.js";
@@ -23,6 +24,7 @@ import { ObservabilityModule } from "./observability/observability.module.js";
     HealthModule,
     AuthModule,
     ArtifactsModule,
+    ChannelsModule,
     CodingWorkflowsModule,
     CredentialsModule,
     CustomAgentsModule,

@@ -280,6 +280,43 @@ export class WorkspaceInvitationsService {
           [row.id, acceptingUserId]
         );
 
+        await client.query(
+          `
+            UPDATE channel_user_memberships AS pending
+            SET user_id = $2,
+                status = 'active',
+                joined_at = now(),
+                updated_at = now()
+            WHERE pending.workspace_invitation_id = $1
+              AND pending.status = 'pending'
+              AND pending.removed_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM channel_user_memberships AS active
+                WHERE active.workspace_owner_user_id = pending.workspace_owner_user_id
+                  AND active.workspace_id = pending.workspace_id
+                  AND active.channel_id = pending.channel_id
+                  AND active.user_id = $2
+                  AND active.removed_at IS NULL
+              )
+          `,
+          [row.id, acceptingUserId]
+        );
+
+        await client.query(
+          `
+            UPDATE channel_user_memberships
+            SET status = 'removed',
+                removed_at = now(),
+                updated_at = now()
+            WHERE workspace_invitation_id = $1
+              AND status = 'pending'
+              AND user_id IS NULL
+              AND removed_at IS NULL
+          `,
+          [row.id]
+        );
+
         await client.query("COMMIT");
         return mapInvitationRow(updated.rows[0]);
       } catch (error) {

@@ -501,12 +501,14 @@ export function ChatExperience() {
     content: string;
     conversationId: string;
     mentionedAgentIds: string[];
+    mentionedUserIds?: string[];
   }): Promise<Message> {
     const response = await fetch(`${apiBaseUrl}/messages/send`, {
       body: JSON.stringify({
         content: input.content,
         conversationId: input.conversationId,
         mentionedAgentIds: input.mentionedAgentIds,
+        mentionedUserIds: input.mentionedUserIds ?? [],
         role: "user",
         workspaceId
       }),
@@ -618,8 +620,10 @@ export function ChatExperience() {
   }
 
   async function handleSend(input: {
+    attachments: File[];
     content: string;
     mentionedAgentIds: string[];
+    mentionedUserIds: string[];
   }): Promise<void> {
     if (!selectedConversationId) {
       return;
@@ -671,7 +675,8 @@ export function ChatExperience() {
       const message = await sendUserMessage({
         content: input.content,
         conversationId: selectedConversationId,
-        mentionedAgentIds: input.mentionedAgentIds
+        mentionedAgentIds: input.mentionedAgentIds,
+        mentionedUserIds: input.mentionedUserIds
       });
 
       startTransition(() => {

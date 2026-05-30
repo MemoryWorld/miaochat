@@ -2,7 +2,7 @@
 
 ## Phase F0: Contract And Membership Foundation
 
-- [ ] Task F00: Define unified channel member contracts
+- [x] Task F00: Define unified channel member contracts
   - Acceptance:
     - Shared contracts expose one `ChannelMember` union for humans and AI 同事.
     - Contracts include role, permission, status, display name, avatar, and stable member id.
@@ -14,7 +14,7 @@
     - `packages/contracts/src/**`
   - Scope: M
 
-- [ ] Task F01: Define message author and mention contract
+- [x] Task F01: Define message author and mention contract
   - Acceptance:
     - Message response can identify human authors and AI authors.
     - `ownerUserId` remains the namespace owner.
@@ -27,7 +27,7 @@
     - `packages/contracts/src/conversation.ts`
   - Scope: M
 
-- [ ] Task F02: Document channel access semantics
+- [x] Task F02: Document channel access semantics
   - Acceptance:
     - Read/comment/manage permissions are defined.
     - Owner/admin/member/guest/AI role behaviors are defined.
@@ -41,7 +41,7 @@
 
 ## Phase F1: Real Human Coworkers In Channels
 
-- [ ] Task F10: Add human channel membership persistence
+- [x] Task F10: Add human channel membership persistence
   - Acceptance:
     - A first-class table stores human membership for a channel.
     - Existing owner conversations are backfilled as active human members.
@@ -54,7 +54,7 @@
     - `apps/api/src/modules/conversations/**`
   - Scope: M
 
-- [ ] Task F11: Build channel member list API
+- [x] Task F11: Build channel member list API
   - Acceptance:
     - `GET /channels/:channelId/members` returns humans and AI 同事 in one list.
     - Current owner and existing AI 同事 appear correctly.
@@ -67,7 +67,7 @@
     - `packages/contracts/src/**`
   - Scope: M
 
-- [ ] Task F12: Add existing-user channel invite API
+- [x] Task F12: Add existing-user channel invite API
   - Acceptance:
     - A workspace member can be added to a channel with read/comment permission.
     - Duplicate adds are idempotent or return a product-safe Chinese error.
@@ -79,7 +79,7 @@
     - `apps/api/src/modules/workspaces/**`
   - Scope: M
 
-- [ ] Task F13: Add external-email channel invite bridge
+- [x] Task F13: Add external-email channel invite bridge
   - Acceptance:
     - Unknown email creates a workspace invitation.
     - Channel pending membership is visible as pending.
@@ -91,7 +91,7 @@
     - `apps/api/src/modules/channels/**`
   - Scope: L
 
-- [ ] Task F14: Replace conversation ownership checks with channel access checks
+- [x] Task F14: Replace conversation ownership checks with channel access checks
   - Acceptance:
     - Owners can still read/send.
     - Invited channel members with comment permission can send.
@@ -105,7 +105,7 @@
     - `apps/api/src/modules/channels/**`
   - Scope: L
 
-- [ ] Task F15: Add human author identity to messages
+- [x] Task F15: Add human author identity to messages
   - Acceptance:
     - New user-authored messages store the real `authorUserId`.
     - Message list returns author display data.
@@ -119,7 +119,7 @@
     - `packages/contracts/src/message.ts`
   - Scope: M
 
-- [ ] Task F16: Ensure AI dispatch respects active channel membership
+- [x] Task F16: Ensure AI dispatch respects active channel membership
   - Acceptance:
     - Removed AI 同事 is not targeted.
     - Explicit mention to missing AI 同事 returns a Chinese error.
@@ -134,7 +134,7 @@
 
 ## Phase F2: Member Panel And Invite UX
 
-- [ ] Task F20: Replace channel member panel with unified members panel
+- [x] Task F20: Replace channel member panel with unified members panel
   - Acceptance:
     - Panel shows human count, AI 同事 count, and total count.
     - Current user, real coworkers, pending users, and AI 同事 render in one panel.
@@ -147,7 +147,7 @@
     - `apps/web/src/features/chat/**`
   - Scope: M
 
-- [ ] Task F21: Add invite coworker UI
+- [x] Task F21: Add invite coworker UI
   - Acceptance:
     - User can search workspace members.
     - User can add one or more members to the current channel.
@@ -160,7 +160,7 @@
     - `apps/web/src/features/settings/**`
   - Scope: M
 
-- [ ] Task F22: Add external email invite UI
+- [x] Task F22: Add external email invite UI
   - Acceptance:
     - User can type an email in the same invite flow.
     - Pending invite appears in member panel.
@@ -171,7 +171,7 @@
     - `apps/web/src/features/channels/**`
   - Scope: M
 
-- [ ] Task F23: Add member remove and permission menu
+- [x] Task F23: Add member remove and permission menu
   - Acceptance:
     - Human member can be removed with confirmation.
     - Human member permission can be switched between read/comment.
@@ -187,7 +187,7 @@
 
 ## Phase F3: Human And AI Mentions
 
-- [ ] Task F30: Replace AI-only mention input with member-aware mention input
+- [x] Task F30: Replace AI-only mention input with member-aware mention input
   - Acceptance:
     - Mention picker lists humans and AI 同事.
     - Selected mentions become chips.
@@ -199,7 +199,7 @@
     - `packages/contracts/src/**`
   - Scope: M
 
-- [ ] Task F31: Store and validate human mentions
+- [x] Task F31: Store and validate human mentions
   - Acceptance:
     - `mentionedUserIds` is stored.
     - Mentioned humans must be active channel members.
@@ -211,7 +211,7 @@
     - `apps/api/src/modules/conversations/**`
   - Scope: M
 
-- [ ] Task F32: Create mention inbox events
+- [x] Task F32: Create mention inbox events
   - Acceptance:
     - Mentioned human receives an inbox item.
     - Mentioned user can route back to the channel message.
@@ -227,7 +227,7 @@
 
 ## Phase F4: Message Readability And Actions
 
-- [ ] Task F40: Add author presentation improvements
+- [x] Task F40: Add author presentation improvements
   - Acceptance:
     - Messages show author name, avatar/initial, timestamp, and date divider.
     - Consecutive messages from the same author can be visually grouped.
@@ -239,7 +239,7 @@
     - `apps/web/src/features/chat/**`
   - Scope: M
 
-- [ ] Task F41: Add compact message action menu
+- [x] Task F41: Add compact message action menu
   - Acceptance:
     - Pin and copy are available from a calmer action area.
     - Action menu is keyboard accessible.
@@ -250,7 +250,7 @@
     - `apps/web/src/features/chat/**`
   - Scope: M
 
-- [ ] Task F42: Add pinned-message drawer
+- [x] Task F42: Add pinned-message drawer
   - Acceptance:
     - Channel header or right panel can open pinned messages.
     - Pinned messages show author and jump-to-message action.
@@ -261,7 +261,7 @@
     - `apps/web/src/features/chat/**`
   - Scope: M
 
-- [ ] Task F43: Add channel search entry point
+- [x] Task F43: Add channel search entry point
   - Acceptance:
     - User can search channel messages.
     - Filters include author, pinned, date, and attachment placeholder.
@@ -276,7 +276,7 @@
 
 ## Phase F5: Realtime Collaboration Signals
 
-- [ ] Task F50: Add typing indicators
+- [x] Task F50: Add typing indicators
   - Acceptance:
     - Composer emits typing started/stopped.
     - Channel thread renders human and AI typing states.
@@ -289,7 +289,7 @@
     - `apps/web/src/features/chat/**`
   - Scope: M
 
-- [ ] Task F51: Add read receipts and unread counts
+- [x] Task F51: Add read receipts and unread counts
   - Acceptance:
     - Opening a channel can mark messages read.
     - Channel list shows unread count.
@@ -303,7 +303,7 @@
     - `apps/web/src/features/channels/**`
   - Scope: L
 
-- [ ] Task F52: Add per-channel notification preference placeholder
+- [x] Task F52: Add per-channel notification preference placeholder
   - Acceptance:
     - User can choose all messages, mentions only, or muted.
     - Preference affects unread/mention display only until push/email exists.
@@ -317,7 +317,7 @@
 
 ## Phase F6: Threads, Reactions, Files
 
-- [ ] Task F60: Add reply/thread model and drawer
+- [x] Task F60: Add reply/thread model and drawer
   - Acceptance:
     - User can reply to a message in a thread drawer.
     - Thread replies keep author identity.
@@ -331,7 +331,7 @@
     - `apps/web/src/features/chat/**`
   - Scope: L
 
-- [ ] Task F61: Add reactions
+- [x] Task F61: Add reactions
   - Acceptance:
     - User can add/remove a small set of reactions.
     - Reaction count is grouped by emoji.
@@ -345,7 +345,7 @@
     - `apps/web/src/features/chat/**`
   - Scope: M
 
-- [ ] Task F62: Add attachment upload in composer
+- [x] Task F62: Add attachment upload in composer
   - Acceptance:
     - User can attach a file to a message.
     - File appears in message and channel file tab.
@@ -362,7 +362,7 @@
 
 ## Phase F7: AI Collaboration Actions
 
-- [ ] Task F70: Add AI context actions from messages
+- [x] Task F70: Add AI context actions from messages
   - Acceptance:
     - User can select message context and ask AI 同事 to summarize, plan, review, or create task.
     - Removed/disabled AI 同事 cannot be selected.
@@ -377,7 +377,7 @@
     - `apps/web/src/features/channels/**`
   - Scope: L
 
-- [ ] Task F71: Add slash-style action suggestions
+- [x] Task F71: Add slash-style action suggestions
   - Acceptance:
     - Typing `/` shows customer-safe actions such as `总结`, `创建任务`, `生成计划`, `邀请同事`.
     - Suggestions do not expose runtime or provider names.
@@ -389,7 +389,7 @@
 
 ## Phase F8: Security, Tests, And Acceptance
 
-- [ ] Task F80: Add multi-user channel access acceptance tests
+- [x] Task F80: Add multi-user channel access acceptance tests
   - Acceptance:
     - Owner invites real coworker.
     - Coworker can read and comment.
@@ -404,7 +404,7 @@
     - `apps/web/src/**`
   - Scope: L
 
-- [ ] Task F81: Add AI membership dispatch acceptance tests
+- [x] Task F81: Add AI membership dispatch acceptance tests
   - Acceptance:
     - Active AI 同事 receives targeted dispatch.
     - Removed AI 同事 does not receive dispatch.
@@ -418,7 +418,7 @@
     - `tests/**`
   - Scope: M
 
-- [ ] Task F82: Update demo runbook for real channel collaboration
+- [x] Task F82: Update demo runbook for real channel collaboration
   - Acceptance:
     - Runbook shows adding a human coworker and AI 同事 into the same channel.
     - Runbook includes expected screenshots/states.

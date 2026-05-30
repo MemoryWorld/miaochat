@@ -13,6 +13,7 @@ import {
   type ArtifactUploadTarget
 } from "@agenthub/contracts";
 
+import { ChannelMembersService } from "../channels/channel-members.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { StorageService } from "./storage.service.js";
 
@@ -32,14 +33,21 @@ type ArtifactRow = {
 export class ArtifactsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(ChannelMembersService)
+    private readonly channelMembersService: ChannelMembersService,
     @Inject(StorageService) private readonly storageService: StorageService
   ) {}
 
-  async create(input: unknown, ownerUserId: string): Promise<Artifact> {
+  async create(input: unknown, actorUserId: string): Promise<Artifact> {
     const parsed = createArtifactInputSchema.parse(input);
     const workspaceId = parsed.workspaceId ?? "default-workspace";
 
-    await this.assertMessageExists(parsed.messageId, workspaceId, ownerUserId);
+    await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "send",
+      workspaceId
+    });
 
     try {
       const result = await this.database.execute<ArtifactRow>(sql`
@@ -87,8 +95,14 @@ export class ArtifactsService {
     }
   }
 
-  async list(input: unknown, ownerUserId: string): Promise<Artifact[]> {
+  async list(input: unknown, actorUserId: string): Promise<Artifact[]> {
     const parsed = artifactQuerySchema.parse(input);
+    const access = await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "read",
+      workspaceId: parsed.workspaceId
+    });
     const result = await this.database.execute<ArtifactRow>(sql`
       SELECT
         artifacts.created_at,
@@ -106,7 +120,7 @@ export class ArtifactsService {
         AND messages.workspace_id = artifacts.workspace_id
       WHERE artifacts.message_id = ${parsed.messageId}
         AND artifacts.workspace_id = ${parsed.workspaceId}
-        AND messages.owner_user_id = ${ownerUserId}
+        AND messages.owner_user_id = ${access.ownerUserId}
       ORDER BY artifacts.created_at ASC, artifacts.id ASC
     `);
 
@@ -115,12 +129,17 @@ export class ArtifactsService {
 
   async prepareUploadTarget(
     input: unknown,
-    ownerUserId: string
+    actorUserId: string
   ): Promise<ArtifactUploadTarget> {
     const parsed = prepareArtifactUploadInputSchema.parse(input);
     const workspaceId = parsed.workspaceId ?? "default-workspace";
 
-    await this.assertMessageExists(parsed.messageId, workspaceId, ownerUserId);
+    await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "send",
+      workspaceId
+    });
 
     return this.storageService.prepareArtifactUpload({
       ...parsed,
@@ -128,24 +147,44 @@ export class ArtifactsService {
     });
   }
 
-  private async assertMessageExists(
-    messageId: string,
-    workspaceId: string,
-    ownerUserId: string
-  ): Promise<void> {
-    const result = await this.database.execute<{ id: string }>(sql`
-      SELECT id
+  private async assertMessageAccess(input: {
+    actorUserId: string;
+    messageId: string;
+    mode: "read" | "send";
+    workspaceId: string;
+  }): Promise<{ ownerUserId: string }> {
+    const result = await this.database.execute<{
+      conversation_id: string;
+      owner_user_id: string;
+    }>(sql`
+      SELECT conversation_id, owner_user_id
       FROM messages
-      WHERE id = ${messageId}
-        AND workspace_id = ${workspaceId}
-        AND owner_user_id = ${ownerUserId}
+      WHERE id = ${input.messageId}
+        AND workspace_id = ${input.workspaceId}
+      LIMIT 1
     `);
+    const message = result.rows[0];
 
-    if (!result.rows[0]) {
+    if (!message) {
       throw new NotFoundException(
-        `Message ${messageId} was not found in workspace ${workspaceId}`
+        `Message ${input.messageId} was not found in workspace ${input.workspaceId}`
       );
     }
+
+    const access =
+      input.mode === "send"
+        ? await this.channelMembersService.assertCanSend({
+            actorUserId: input.actorUserId,
+            channelId: message.conversation_id,
+            workspaceId: input.workspaceId
+          })
+        : await this.channelMembersService.assertCanRead({
+            actorUserId: input.actorUserId,
+            channelId: message.conversation_id,
+            workspaceId: input.workspaceId
+          });
+
+    return { ownerUserId: access.ownerUserId };
   }
 }
 
