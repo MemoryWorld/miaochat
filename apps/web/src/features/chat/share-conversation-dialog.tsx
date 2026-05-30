@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-const apiBaseUrl = "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 
 type ShareEntry = {
   conversationId: string;
@@ -40,7 +41,7 @@ export function ShareConversationDialog({
         setShares((await response.json()) as ShareEntry[]);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to load shares.");
+      setError(cause instanceof Error ? cause.message : "无法加载共享列表。");
     }
   }
 
@@ -50,7 +51,7 @@ export function ShareConversationDialog({
       .map((entry) => entry.trim())
       .filter(Boolean);
     if (userIds.length === 0) {
-      setError("Provide at least one user id.");
+      setError("请至少填写一个用户 ID。");
       return;
     }
     setIsBusy(true);
@@ -69,12 +70,12 @@ export function ShareConversationDialog({
         const payload = (await response.json().catch(() => ({}))) as {
           message?: string;
         };
-        throw new Error(payload.message ?? `Share failed (${response.status}).`);
+        throw new Error(readApiErrorMessage(payload, `共享失败（${response.status}）。`));
       }
       setUserIdsRaw("");
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to share.");
+      setError(cause instanceof Error ? cause.message : "共享失败。");
     } finally {
       setIsBusy(false);
     }

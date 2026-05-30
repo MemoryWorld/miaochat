@@ -87,7 +87,7 @@ describe("AuthPanel", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,
-        "http://localhost:3001/auth/login",
+        "/api/auth/login",
         expect.objectContaining({
           body: JSON.stringify({
             email: "local.dev@example.com",

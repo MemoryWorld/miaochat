@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const apiBaseUrl = "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
 
 type MessageActionsMenuProps = {
   conversationId: string;
@@ -25,36 +25,36 @@ export function MessageActionsMenu({
   async function handleCopy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(messageContent);
-      setStatus("Copied to clipboard.");
+      setStatus("已复制。");
     } catch {
-      setStatus("Copy failed.");
+      setStatus("复制失败。");
     }
   }
 
   function handleQuote(): void {
     onQuote?.(`> ${messageContent.replace(/\n/g, "\n> ")}\n\n`);
-    setStatus("Quoted into composer.");
+    setStatus("已引用到输入框。");
   }
 
   async function handleRegenerate(): Promise<void> {
-    setStatus("Requesting regeneration…");
+    setStatus("正在请求重新生成...");
     try {
       const response = await fetch(
         `${apiBaseUrl}/messages/${encodeURIComponent(messageId)}/regenerate?workspaceId=${encodeURIComponent(workspaceId)}`,
         { credentials: "include", method: "POST" }
       );
       if (!response.ok) {
-        throw new Error(`Failed (${response.status}).`);
+        throw new Error(`请求失败（${response.status}）。`);
       }
-      setStatus("Regeneration queued.");
+      setStatus("已加入重新生成队列。");
     } catch (cause) {
-      setStatus(cause instanceof Error ? cause.message : "Regeneration failed.");
+      setStatus(cause instanceof Error ? cause.message : "重新生成失败。");
     }
   }
 
   function handleApplyDiff(): void {
     onApplyDiff?.();
-    setStatus("Diff applied.");
+    setStatus("已应用变更。");
   }
 
   return (

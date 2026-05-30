@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const apiBaseUrl = "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
 
 type AuditEvent = {
   action: string;
@@ -31,14 +31,14 @@ export function AccessReviewPanel({ conversationId }: AccessReviewPanelProps) {
           { credentials: "include" }
         );
         if (!response.ok) {
-          throw new Error(`Failed to load access review (${response.status}).`);
+          throw new Error(`加载访问审计失败（${response.status}）。`);
         }
         if (!cancelled) {
           setEvents((await response.json()) as AuditEvent[]);
         }
       } catch (cause) {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : "Failed to load.");
+          setError(cause instanceof Error ? cause.message : "加载失败。");
         }
       }
     }

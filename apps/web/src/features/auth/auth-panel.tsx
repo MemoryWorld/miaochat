@@ -3,8 +3,8 @@
 import { startTransition, useEffect, useState, type FormEvent } from "react";
 
 import { Button } from "../../components/ui/button";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 
 type AuthPanelProps = {
   onAuthenticated?: () => void;
@@ -274,10 +274,5 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 function readErrorMessage(payload: unknown, fallback: string): string {
-  return typeof payload === "object" &&
-    payload !== null &&
-    "message" in payload &&
-    typeof payload.message === "string"
-    ? payload.message
-    : fallback;
+  return readApiErrorMessage(payload, fallback);
 }

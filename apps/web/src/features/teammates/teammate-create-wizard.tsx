@@ -12,6 +12,8 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 import {
   builtInCodingTeammateTag,
   builtInCodingTeamTemplates
@@ -19,8 +21,6 @@ import {
 import { useSurfaceData } from "../workspace-shell/use-surface-data";
 import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 type WizardStepId =
   | "template"
@@ -587,16 +587,7 @@ function deriveSuggestedTools(templateId: string): string[] {
 }
 
 function readErrorMessage(payload: unknown, fallback: string): string {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "message" in payload &&
-    typeof (payload as { message?: unknown }).message === "string"
-  ) {
-    return (payload as { message: string }).message;
-  }
-
-  return fallback;
+  return readApiErrorMessage(payload, fallback);
 }
 
 function renderApprovalMode(mode: CreateCustomAgentInput["approvalMode"]): string {

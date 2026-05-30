@@ -79,7 +79,7 @@ describe("useConversationStream", () => {
 
     expect(MockEventSource.instances).toHaveLength(1);
     expect(MockEventSource.instances[0]?.url).toBe(
-      "http://localhost:3001/streams/conv_task_17?workspaceId=workspace_task_17"
+      "/api/streams/conv_task_17?workspaceId=workspace_task_17"
     );
     expect(MockEventSource.instances[0]?.init).toEqual({
       withCredentials: true

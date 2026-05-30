@@ -3,6 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@agenthub/contracts"],
+  async rewrites() {
+    return [
+      {
+        destination: `${process.env.API_PROXY_TARGET ?? "http://localhost:3001"}/:path*`,
+        source: "/api/:path*"
+      }
+    ];
+  },
   webpack: (config) => {
     config.resolve ??= {};
     config.resolve.extensionAlias = {

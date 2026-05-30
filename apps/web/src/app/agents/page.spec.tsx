@@ -60,7 +60,7 @@ function mockWorkspaceFetch(): void {
   fetchMock.mockImplementation(async (input) => {
     const url = String(input);
 
-    if (url === "http://localhost:3001/workspaces") {
+    if (url === "/api/workspaces") {
       return jsonResponse(
         [
           {

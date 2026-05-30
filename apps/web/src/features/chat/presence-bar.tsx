@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { PresenceSnapshot } from "@agenthub/contracts";
 
-const apiBaseUrl = "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
 
 type PresenceBarProps = {
   conversationId: string;

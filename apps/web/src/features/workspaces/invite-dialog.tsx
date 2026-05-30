@@ -8,7 +8,8 @@ import type {
   WorkspaceRole
 } from "@agenthub/contracts";
 
-const apiBaseUrl = "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 
 type InviteDialogProps = {
   workspaceId: string;
@@ -56,13 +57,13 @@ export function InviteDialog({ workspaceId, onClose }: InviteDialogProps) {
         );
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to load workspace data.");
+      setError(cause instanceof Error ? cause.message : "无法加载工作区数据。");
     }
   }
 
   async function handleInvite(): Promise<void> {
     if (email.trim().length === 0) {
-      setError("Email is required.");
+      setError("请填写邮箱。");
       return;
     }
 
@@ -84,7 +85,7 @@ export function InviteDialog({ workspaceId, onClose }: InviteDialogProps) {
         const payload = (await response.json().catch(() => ({}))) as {
           message?: string;
         };
-        throw new Error(payload.message ?? `Invitation failed (${response.status})`);
+        throw new Error(readApiErrorMessage(payload, `邀请失败（${response.status}）。`));
       }
 
       const issued = (await response.json()) as IssuedInvitationResponse;
@@ -92,7 +93,7 @@ export function InviteDialog({ workspaceId, onClose }: InviteDialogProps) {
       setEmail("");
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to send invitation.");
+      setError(cause instanceof Error ? cause.message : "无法发送邀请。");
     } finally {
       setIsInviting(false);
     }

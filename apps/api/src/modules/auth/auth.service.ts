@@ -190,7 +190,7 @@ export class AuthService {
         outcome: "failed",
         userId: row?.id ?? null
       });
-      throw new UnauthorizedException("Invalid email or password.");
+      throw new UnauthorizedException("邮箱或密码不正确。");
     }
 
     return this.database.withClient(async (client) => {
@@ -270,7 +270,7 @@ export class AuthService {
     const user = await this.getAuthenticatedUser(cookieHeader);
 
     if (!user) {
-      throw new UnauthorizedException("Authentication is required.");
+      throw new UnauthorizedException("请先登录后再继续操作。");
     }
 
     return user;

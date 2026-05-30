@@ -8,8 +8,8 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 
 type ValidationState =
   | { kind: "idle" }
@@ -331,16 +331,7 @@ function isValidationPayloadValid(payload: unknown): boolean {
 }
 
 function readErrorMessage(payload: unknown, fallback: string): string {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "message" in payload &&
-    typeof (payload as { message?: unknown }).message === "string"
-  ) {
-    return (payload as { message: string }).message;
-  }
-
-  return fallback;
+  return readApiErrorMessage(payload, fallback);
 }
 
 async function readJson(response: Response): Promise<unknown> {

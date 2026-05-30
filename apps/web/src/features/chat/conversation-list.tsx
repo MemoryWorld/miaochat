@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { Conversation } from "@agenthub/contracts";
 
-const apiBaseUrl = "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
 
 type ConversationListProps = {
   onSelect: (conversationId: string) => void;

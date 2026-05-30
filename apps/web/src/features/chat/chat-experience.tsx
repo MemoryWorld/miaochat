@@ -17,6 +17,8 @@ import {
 
 import { AppShell } from "../../components/app-shell";
 import { Badge } from "../../components/ui/badge";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 import {
   isBuiltInCodingTeammate
 } from "../agents/built-in-coding-team";
@@ -34,7 +36,6 @@ import { parseDeployCommand } from "./deploy-command";
 import { ChatThread } from "./chat-thread";
 import { useConversationStream } from "./use-conversation-stream";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 const timelineTabs = ["聊天", "文件", "置顶"] as const;
 const postSendRefreshDelaysMs = [1_200, 4_000, 8_000] as const;
 
@@ -242,7 +243,7 @@ export function ChatExperience() {
         startTransition(() => {
           setConversations([]);
           setSelectedConversationId(null);
-          setErrorMessage(readErrorMessage(payload, "Failed to load conversations."));
+          setErrorMessage(readErrorMessage(payload, "无法加载会话。"));
         });
         return;
       }
@@ -262,7 +263,7 @@ export function ChatExperience() {
       startTransition(() => {
         setConversations([]);
         setSelectedConversationId(null);
-        setErrorMessage("Failed to load conversations.");
+        setErrorMessage("无法加载会话。");
       });
     }
   }
@@ -279,7 +280,7 @@ export function ChatExperience() {
 
       if (!response.ok) {
         startTransition(() => {
-          setErrorMessage(readErrorMessage(payload, "Failed to load messages."));
+          setErrorMessage(readErrorMessage(payload, "无法加载消息。"));
         });
         return;
       }
@@ -297,7 +298,7 @@ export function ChatExperience() {
       await Promise.all(nextMessages.map((message) => loadArtifactsForMessage(message.id)));
     } catch {
       startTransition(() => {
-        setErrorMessage("Failed to load messages.");
+        setErrorMessage("无法加载消息。");
       });
     }
   }
@@ -399,7 +400,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Failed to load custom agents."));
+        throw new Error(readErrorMessage(payload, "无法加载 AI 同事。"));
       }
 
       const nextAgents = asArray<CustomAgent>(payload);
@@ -415,7 +416,7 @@ export function ChatExperience() {
         setHasLoadedCustomAgents(true);
       });
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to load custom agents."
+        error instanceof Error ? error.message : "无法加载 AI 同事。"
       );
       throw error;
     } finally {
@@ -444,7 +445,7 @@ export function ChatExperience() {
 
     if (!response.ok) {
       const payload = (await response.json()) as { message?: string };
-      throw new Error(payload.message ?? "Failed to create the conversation.");
+      throw new Error(readErrorMessage(payload, "创建会话失败。"));
     }
 
     const payload = (await response.json()) as Conversation;
@@ -470,7 +471,7 @@ export function ChatExperience() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to prepare a new conversation."
+        error instanceof Error ? error.message : "准备新会话失败。"
       );
     }
   }
@@ -490,7 +491,7 @@ export function ChatExperience() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to create the custom conversation."
+        error instanceof Error ? error.message : "创建自定义会话失败。"
       );
     } finally {
       setIsCreating(false);
@@ -521,7 +522,7 @@ export function ChatExperience() {
     const payload = await readJson(response);
 
     if (!response.ok) {
-      throw new Error(readErrorMessage(payload, "Failed to send the message."));
+      throw new Error(readErrorMessage(payload, "发送消息失败。"));
     }
 
     return payload as Message;
@@ -551,7 +552,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Failed to launch the coding workflow."));
+        throw new Error(readErrorMessage(payload, "启动编码工作流失败。"));
       }
 
       const created = payload as {
@@ -566,7 +567,7 @@ export function ChatExperience() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to launch the coding workflow."
+        error instanceof Error ? error.message : "启动编码工作流失败。"
       );
     } finally {
       setIsLaunchingCodingWorkflow(false);
@@ -603,7 +604,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Failed to update the workflow decision."));
+        throw new Error(readErrorMessage(payload, "更新工作流决策失败。"));
       }
 
       startTransition(() => {
@@ -612,7 +613,7 @@ export function ChatExperience() {
       await loadMessages(codingWorkflow.conversationId);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to update the workflow decision."
+        error instanceof Error ? error.message : "更新工作流决策失败。"
       );
     } finally {
       setIsDecisioningWorkflow(null);
@@ -651,13 +652,7 @@ export function ChatExperience() {
         const payload = await response.json();
 
         if (!response.ok) {
-          const message =
-            typeof payload === "object" &&
-            payload !== null &&
-            "message" in payload &&
-            typeof payload.message === "string"
-              ? payload.message
-              : "Failed to trigger the deploy workflow.";
+          const message = readErrorMessage(payload, "触发部署工作流失败。");
           throw new Error(message);
         }
 
@@ -685,7 +680,7 @@ export function ChatExperience() {
       schedulePostSendRefresh(selectedConversationId);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to send the message."
+        error instanceof Error ? error.message : "发送消息失败。"
       );
     } finally {
       setIsSending(false);
@@ -729,7 +724,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Failed to pin the selected message."));
+        throw new Error(readErrorMessage(payload, "置顶选中消息失败。"));
       }
 
       const parsed = payload as {
@@ -756,7 +751,7 @@ export function ChatExperience() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to pin the selected message."
+        error instanceof Error ? error.message : "置顶选中消息失败。"
       );
     } finally {
       setIsPinningMessageId(null);
@@ -1006,12 +1001,7 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 function readErrorMessage(payload: unknown, fallback: string): string {
-  return typeof payload === "object" &&
-    payload !== null &&
-    "message" in payload &&
-    typeof payload.message === "string"
-    ? payload.message
-    : fallback;
+  return readApiErrorMessage(payload, fallback);
 }
 
 function mergeMessages(

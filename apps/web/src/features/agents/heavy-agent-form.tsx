@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 import { ToolBindingPicker, type ToolBindingDraft } from "./tool-binding-picker";
-
-const apiBaseUrl = "http://localhost:3001";
 
 const availableTools = ["github", "shell", "browser", "filesystem"] as const;
 
@@ -45,7 +45,7 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
         const payload = (await response.json().catch(() => ({}))) as {
           message?: string;
         };
-        throw new Error(payload.message ?? `创建失败（${response.status}）。`);
+        throw new Error(readApiErrorMessage(payload, `创建失败（${response.status}）。`));
       }
       const created = (await response.json()) as { id: string };
       onCreated?.(created.id);

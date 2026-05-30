@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 import { streamEventSchema, type StreamEvent } from "@agenthub/contracts";
 
+import { buildApiUrl } from "../../lib/api-base-url";
+
 type UseConversationStreamInput = {
   baseUrl?: string;
   conversationId?: string | null;
@@ -42,14 +44,13 @@ export function useConversationStream(
     }
 
     const workspaceId = input.workspaceId ?? "default-workspace";
-    const url = new URL(
-      `/streams/${input.conversationId}`,
-      input.baseUrl ?? "http://localhost:3001"
-    );
+    const searchParams = new URLSearchParams({ workspaceId });
+    const url = `${buildApiUrl(
+      `/streams/${encodeURIComponent(input.conversationId)}`,
+      input.baseUrl
+    )}?${searchParams.toString()}`;
 
-    url.searchParams.set("workspaceId", workspaceId);
-
-    const eventSource = new EventSource(url.toString(), {
+    const eventSource = new EventSource(url, {
       withCredentials: true
     });
 

@@ -105,7 +105,7 @@ describe("ModelConnectionsPanel", () => {
       expect(screen.getAllByText("高性能").length).toBeGreaterThan(0);
     });
     expect(fetchMock).toHaveBeenLastCalledWith(
-      "http://localhost:3001/credentials/model-connections?workspaceId=workspace_1",
+      "/api/credentials/model-connections?workspaceId=workspace_1",
       { credentials: "include" }
     );
   });

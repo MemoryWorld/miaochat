@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChannelShell } from "./channel-shell";
 
 const fetchMock = vi.fn<typeof fetch>();
-const apiBaseUrl = "http://localhost:3001";
+const apiBaseUrl = "/api";
 
 class MockEventSource {
   static instances: MockEventSource[] = [];
@@ -532,7 +532,7 @@ describe("ChannelShell", () => {
     expect(await screen.findByText("已有历史消息")).toBeInTheDocument();
     expect(await screen.findByLabelText("消息内容")).toBeInTheDocument();
     expect(MockEventSource.instances[0]?.url).toBe(
-      "http://localhost:3001/streams/conv_phase_d?workspaceId=default-workspace"
+      "/api/streams/conv_phase_d?workspaceId=default-workspace"
     );
 
     MockEventSource.instances[0]?.emitOpen();
@@ -734,7 +734,7 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
     const queue = mapping[url];
 
     if (!queue || queue.length === 0) {
-      if (/^http:\/\/localhost:3001\/channels\/[^/]+\/members\?workspaceId=/.test(url)) {
+      if (/^\/api\/channels\/[^/]+\/members\?workspaceId=/.test(url)) {
         return jsonResponse(200, {
           aiCount: 0,
           channelId: url.split("/channels/")[1]?.split("/members")[0] ?? "channel",
@@ -745,7 +745,7 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
         });
       }
 
-      if (/^http:\/\/localhost:3001\/channels\/[^/]+\/read-state\?workspaceId=/.test(url)) {
+      if (/^\/api\/channels\/[^/]+\/read-state\?workspaceId=/.test(url)) {
         return jsonResponse(200, {
           channelId: url.split("/channels/")[1]?.split("/read-state")[0] ?? "channel",
           lastReadAt: null,
@@ -756,7 +756,7 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
         });
       }
 
-      if (/^http:\/\/localhost:3001\/artifacts\?messageId=/.test(url)) {
+      if (/^\/api\/artifacts\?messageId=/.test(url)) {
         return jsonResponse(200, []);
       }
 
@@ -764,7 +764,7 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
         return jsonResponse(200, []);
       }
 
-      if (/^http:\/\/localhost:3001\/streams\/[^/]+\/presence\?workspaceId=/.test(url)) {
+      if (/^\/api\/streams\/[^/]+\/presence\?workspaceId=/.test(url)) {
         return jsonResponse(200, {
           conversationId: "channel",
           participants: []

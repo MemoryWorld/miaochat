@@ -4,9 +4,8 @@ import { useState } from "react";
 
 import type { Artifact } from "@agenthub/contracts";
 
+import { apiBaseUrl } from "../../lib/api-base-url";
 import { CodeEditorOverlay } from "../artifacts/code-editor-overlay";
-
-const apiBaseUrl = "http://localhost:3001";
 
 type ArtifactEditDispatcherProps = {
   artifact: Artifact;
@@ -54,7 +53,7 @@ export function ArtifactEditDispatcher({
       );
 
       if (!revision.ok) {
-        throw new Error(`Failed to record revision (${revision.status}).`);
+        throw new Error(`记录版本失败（${revision.status}）。`);
       }
 
       const dispatch = await fetch(`${apiBaseUrl}/messages/send`, {
@@ -71,12 +70,12 @@ export function ArtifactEditDispatcher({
       });
 
       if (!dispatch.ok) {
-        throw new Error(`Failed to dispatch follow-up (${dispatch.status}).`);
+        throw new Error(`发送后续任务失败（${dispatch.status}）。`);
       }
 
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unknown error.");
+      setError(cause instanceof Error ? cause.message : "未知错误。");
     }
   }
 

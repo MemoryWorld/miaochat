@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-const apiBaseUrl = "http://localhost:3001";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 
 type AuditEvent = {
   action: string;
@@ -58,7 +59,7 @@ export function AuditLogView({ workspaceId }: AuditLogViewProps) {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { message?: string };
-        throw new Error(payload.message ?? `Failed to load audit log (${response.status}).`);
+        throw new Error(readApiErrorMessage(payload, `加载审计日志失败（${response.status}）。`));
       }
 
       const payload = (await response.json()) as AuditPage;
@@ -66,7 +67,7 @@ export function AuditLogView({ workspaceId }: AuditLogViewProps) {
       setCursor(payload.nextCursor);
       setHasMore(payload.nextCursor !== null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to load audit log.");
+      setError(cause instanceof Error ? cause.message : "加载审计日志失败。");
     } finally {
       setIsLoading(false);
     }

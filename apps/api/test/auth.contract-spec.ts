@@ -94,7 +94,7 @@ describe("auth api contract", () => {
     expect(loginResponse.headers["set-cookie"]).toBeUndefined();
     expect(loginResponse.body).toEqual(
       expect.objectContaining({
-        message: "Invalid email or password."
+        message: "邮箱或密码不正确。"
       })
     );
   });

@@ -25,6 +25,8 @@ import type {
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
+import { apiBaseUrl } from "../../lib/api-base-url";
+import { readApiErrorMessage } from "../../lib/api-errors";
 import { ChatComposer } from "../chat/chat-composer";
 import { ChatThread } from "../chat/chat-thread";
 import { CodingWorkflowPanel } from "../chat/coding-workflow-panel";
@@ -33,8 +35,6 @@ import { useConversationStream } from "../chat/use-conversation-stream";
 import { useSurfaceData } from "../workspace-shell/use-surface-data";
 import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 const channelTabs = [
   { id: "chat", label: "聊天" },
@@ -333,7 +333,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Failed to send the message."));
+        throw new Error(readErrorMessage(payload, "发送消息失败。"));
       }
 
       const message = payload as Message;
@@ -368,7 +368,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       }
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to send the message."
+        error instanceof Error ? error.message : "发送消息失败。"
       );
     } finally {
       setIsSending(false);
@@ -782,7 +782,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Failed to pin the selected message."));
+        throw new Error(readErrorMessage(payload, "置顶选中消息失败。"));
       }
 
       const parsed = payload as {
@@ -810,7 +810,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to pin the selected message."
+        error instanceof Error ? error.message : "置顶选中消息失败。"
       );
     } finally {
       setIsPinningMessageId(null);
@@ -1606,14 +1606,5 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 function readErrorMessage(payload: unknown, fallback: string): string {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "message" in payload &&
-    typeof (payload as { message?: unknown }).message === "string"
-  ) {
-    return (payload as { message: string }).message;
-  }
-
-  return fallback;
+  return readApiErrorMessage(payload, fallback);
 }

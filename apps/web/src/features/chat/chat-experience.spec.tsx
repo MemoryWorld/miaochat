@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatExperience } from "./chat-experience";
 
 const fetchMock = vi.fn<typeof fetch>();
-const apiBaseUrl = "http://localhost:3001";
+const apiBaseUrl = "/api";
 
 vi.mock("next/navigation", async () => {
   const actual = await vi.importActual<NextNavigationModule>("next/navigation");

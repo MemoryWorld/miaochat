@@ -82,7 +82,7 @@ describe("TeammateCreateWizard", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,
-        "http://localhost:3001/custom-agents",
+        "/api/custom-agents",
         expect.objectContaining({
           credentials: "include",
           method: "POST"
@@ -192,7 +192,7 @@ describe("TeammateCreateWizard", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         3,
-        "http://localhost:3001/conversations/conv_phase_d/teammates",
+        "/api/conversations/conv_phase_d/teammates",
         expect.objectContaining({
           credentials: "include",
           method: "POST"
