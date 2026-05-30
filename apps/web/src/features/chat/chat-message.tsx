@@ -14,7 +14,6 @@ type ChatMessageProps = {
   message: Message;
   onPin: () => void;
   onReply?: (message: Message) => void;
-  onToggleReaction?: (message: Message, emoji: string) => Promise<void>;
 };
 
 export function ChatMessage({
@@ -25,8 +24,7 @@ export function ChatMessage({
   isPinPending,
   message,
   onPin,
-  onReply,
-  onToggleReaction
+  onReply
 }: ChatMessageProps) {
   const isUser = message.role === "user";
 
@@ -102,20 +100,6 @@ export function ChatMessage({
         >
           回复
         </button>
-        {["👍", "✅", "👀"].map((entry) => (
-          <button
-            aria-pressed={hasCurrentUserReaction(message, entry)}
-            className={isUser ? darkActionClassName : lightActionClassName}
-            key={entry}
-            onClick={() => {
-              void onToggleReaction?.(message, entry);
-            }}
-            type="button"
-          >
-            {entry}
-            {renderReactionCount(message, entry)}
-          </button>
-        ))}
       </div>
       {message.threadReplyCount > 0 && onReply ? (
         <button
@@ -138,20 +122,6 @@ const darkThreadClassName =
   "mt-3 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/20";
 const lightThreadClassName =
   "mt-3 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50";
-
-function hasCurrentUserReaction(message: Message, emoji: string): boolean {
-  return Boolean(
-    (message.reactions ?? []).find(
-      (reaction) => reaction.emoji === emoji && reaction.reactedByCurrentUser
-    )
-  );
-}
-
-function renderReactionCount(message: Message, emoji: string): string {
-  const reaction = (message.reactions ?? []).find((entry) => entry.emoji === emoji);
-
-  return reaction && reaction.count > 0 ? ` ${reaction.count}` : "";
-}
 
 function formatMessageTime(value: Date): string {
   return new Intl.DateTimeFormat("zh-CN", {

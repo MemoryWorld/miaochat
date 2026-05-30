@@ -4,6 +4,8 @@ import { createAgentAdapter, type AgentExecutionMode } from "@agenthub/agent-ada
 import { decryptCredentialSecret } from "@agenthub/domain";
 import { type ClientConfig, Client } from "pg";
 
+import { ProviderCredentialError } from "./activity-errors.js";
+
 type PhaseARuntimeProvider = Extract<ProviderId, "deepseek" | "hermes" | "mock" | "openclaw">;
 
 type RuntimeCredentialRow = {
@@ -116,7 +118,7 @@ async function selectLatestByokCredential(input: {
 
     const row = result.rows[0];
     if (!row) {
-      throw new Error(
+      throw new ProviderCredentialError(
         `No valid BYOK credential found for provider ${input.provider} in workspace ${input.workspaceId}.`
       );
     }

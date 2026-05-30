@@ -44,6 +44,12 @@ type TeammateTemplate = {
   suggestedTools: string[];
 };
 
+type HarnessDesignOption = {
+  description: string;
+  id: string;
+  label: string;
+};
+
 const wizardSteps: Array<{ id: WizardStepId; label: string }> = [
   { id: "template", label: "模板" },
   { id: "identity", label: "身份" },
@@ -51,6 +57,54 @@ const wizardSteps: Array<{ id: WizardStepId; label: string }> = [
   { id: "capabilities", label: "能力" },
   { id: "advanced", label: "高级" },
   { id: "confirm", label: "确认" }
+];
+
+const harnessDesignOptions: HarnessDesignOption[] = [
+  {
+    description: "收到任务后先确认目标、边界、交付物和不做什么，避免跑偏。",
+    id: "task_boundary",
+    label: "任务边界"
+  },
+  {
+    description: "自动参考频道历史、置顶消息、工作区资料和自己的长期记忆。",
+    id: "context_pack",
+    label: "上下文资料包"
+  },
+  {
+    description: "只使用你开放的工具；涉及代码、命令、文件或外部服务时遵守权限。",
+    id: "tool_permissions",
+    label: "工具权限"
+  },
+  {
+    description: "高风险动作、不可逆动作和关键决策先向你确认。",
+    id: "approval_guardrail",
+    label: "审批护栏"
+  },
+  {
+    description: "关键步骤留下可回放记录，方便你知道它做了什么、为什么这样做。",
+    id: "work_log",
+    label: "过程记录"
+  },
+  {
+    description: "失败时说明原因、影响范围、下一次怎么重试或降级。",
+    id: "failure_recovery",
+    label: "失败恢复"
+  },
+  {
+    description: "交付前自检风险、测试方式、验收标准和下一步建议。",
+    id: "quality_gate",
+    label: "质量检查"
+  }
+];
+
+const defaultHarnessDesignOptionIds = [
+  "task_boundary",
+  "context_pack",
+  "tool_permissions",
+  "approval_guardrail",
+  "work_log",
+  "failure_recovery",
+  "quality_gate"
 ];
 
 const templateCatalog: TeammateTemplate[] = [
@@ -121,6 +175,9 @@ export function TeammateCreateWizard() {
   const [scopeDescription, setScopeDescription] = useState("");
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplate.id);
+  const [selectedHarnessOptionIds, setSelectedHarnessOptionIds] = useState<string[]>(
+    defaultHarnessDesignOptionIds
+  );
   const [selectedTools, setSelectedTools] = useState<string[]>(defaultTemplate.suggestedTools);
   const [selectedWorkMode, setSelectedWorkMode] = useState("编码");
   const [skillText, setSkillText] = useState(defaultTemplate.suggestedTags.join(", "));
@@ -180,6 +237,7 @@ export function TeammateCreateWizard() {
         approvalMode,
         avatarUrl: avatarUrl.length > 0 ? avatarUrl : null,
         capabilityTags: buildCapabilityTags({
+          selectedHarnessOptionIds,
           selectedTemplate,
           selectedTools,
           selectedWorkMode,
@@ -196,6 +254,7 @@ export function TeammateCreateWizard() {
           outputStyle,
           roleDescription,
           scopeDescription,
+          selectedHarnessOptionIds,
           selectedTemplate,
           selectedTools,
           selectedWorkMode,
@@ -456,6 +515,31 @@ export function TeammateCreateWizard() {
                 onChange={(event) => setOutputStyle(event.target.value)}
               />
             </label>
+            <fieldset className="grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
+              <legend className="px-1 text-sm font-semibold text-slate-700">协作护栏</legend>
+              <p className="m-0 text-sm leading-7 text-slate-600">
+                这些选项决定 AI 同事怎么接任务、带上下文、用工具、留记录和处理失败。
+              </p>
+              <div className="grid gap-3">
+                {harnessDesignOptions.map((option) => (
+                  <label key={option.id} className="grid gap-1 rounded-2xl bg-white px-3 py-2 text-sm text-slate-700">
+                    <span className="flex items-center gap-2 font-semibold">
+                      <input
+                        checked={selectedHarnessOptionIds.includes(option.id)}
+                        onChange={() =>
+                          setSelectedHarnessOptionIds((current) => toggleValue(current, option.id))
+                        }
+                        type="checkbox"
+                      />
+                      {option.label}
+                    </span>
+                    <span className="pl-6 text-xs leading-6 text-slate-500">
+                      {option.description}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           </section>
         ) : null}
 
@@ -473,6 +557,7 @@ export function TeammateCreateWizard() {
               <MetaBlock label="审批方式" value={renderApprovalMode(approvalMode)} />
               <MetaBlock label="模型偏好" value={renderModelProfile(modelProfileId)} />
               <MetaBlock label="工具" value={selectedTools.join("、") || "暂不开放工具"} />
+              <MetaBlock label="协作护栏" value={renderHarnessDesignSummary(selectedHarnessOptionIds)} />
               <MetaBlock label="能力标签" value={skillText || "未填写"} />
             </dl>
             {disabledReason ? (
@@ -526,6 +611,7 @@ function MetaBlock({ label, value }: { label: string; value: string }) {
 }
 
 function buildCapabilityTags(input: {
+  selectedHarnessOptionIds: string[];
   selectedTemplate: TeammateTemplate;
   selectedTools: string[];
   selectedWorkMode: string;
@@ -541,6 +627,10 @@ function buildCapabilityTags(input: {
       ...input.selectedTemplate.suggestedTags,
       ...input.selectedTools,
       ...customTags,
+      ...input.selectedHarnessOptionIds.flatMap((optionId) => {
+        const option = harnessDesignOptions.find((entry) => entry.id === optionId);
+        return option ? [option.label] : [];
+      }),
       input.selectedWorkMode,
       input.selectedTemplate.recommended ? builtInCodingTeammateTag : "custom-teammate"
     ])
@@ -553,6 +643,7 @@ function buildSystemPrompt(input: {
   outputStyle: string;
   roleDescription: string;
   scopeDescription: string;
+  selectedHarnessOptionIds: string[];
   selectedTemplate: TeammateTemplate;
   selectedTools: string[];
   selectedWorkMode: string;
@@ -564,11 +655,34 @@ function buildSystemPrompt(input: {
     `角色定位：${input.roleDescription || input.selectedTemplate.mission}`,
     `范围边界：${input.scopeDescription || "暂未明确，先按用户请求协作。"}`,
     `可用工具：${input.selectedTools.join("、") || "暂不开放工具"}`,
+    `协作护栏：${formatHarnessDesignForPrompt(input.selectedHarnessOptionIds)}`,
     `记忆方式：${renderMemoryMode(input.memoryMode)}`,
     `审批方式：${renderApprovalMode(input.approvalMode)}`,
     `输出风格：${input.outputStyle}`,
     "如果任务超出职责边界，请先澄清再行动。"
   ].join("\n\n");
+}
+
+function formatHarnessDesignForPrompt(selectedOptionIds: string[]): string {
+  const selectedOptions = harnessDesignOptions.filter((option) =>
+    selectedOptionIds.includes(option.id)
+  );
+
+  if (selectedOptions.length === 0) {
+    return "用户未选择额外护栏，仍需遵守平台默认安全规则。";
+  }
+
+  return selectedOptions
+    .map((option) => `${option.label}：${option.description}`)
+    .join("；");
+}
+
+function renderHarnessDesignSummary(selectedOptionIds: string[]): string {
+  const labels = harnessDesignOptions
+    .filter((option) => selectedOptionIds.includes(option.id))
+    .map((option) => option.label);
+
+  return labels.length > 0 ? labels.join("、") : "使用默认安全规则";
 }
 
 function deriveSuggestedTools(templateId: string): string[] {

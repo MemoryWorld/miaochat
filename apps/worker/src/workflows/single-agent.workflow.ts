@@ -8,7 +8,18 @@ import type {
 const { executeDirectAgentActivity } = proxyActivities<{
   executeDirectAgentActivity: typeof executeDirectAgentActivityFn;
 }>({
-  startToCloseTimeout: "1 minute"
+  retry: {
+    backoffCoefficient: 2,
+    initialInterval: "500ms",
+    maximumAttempts: 5,
+    maximumInterval: "15s",
+    nonRetryableErrorTypes: [
+      "BadRequestException",
+      "ProviderCredentialError",
+      "ZodError"
+    ]
+  },
+  startToCloseTimeout: "5 minutes"
 });
 
 export type SingleAgentWorkflowInput = {

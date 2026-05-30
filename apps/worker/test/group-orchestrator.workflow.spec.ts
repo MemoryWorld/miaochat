@@ -41,6 +41,18 @@ describe("groupOrchestratorWorkflow", () => {
     const { groupOrchestratorWorkflow } = await import(
       "../src/workflows/group-orchestrator.workflow.js"
     );
+    expect(proxyActivitiesMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        retry: expect.objectContaining({
+          maximumAttempts: 5,
+          nonRetryableErrorTypes: expect.arrayContaining([
+            "ProviderCredentialError"
+          ])
+        }),
+        startToCloseTimeout: "5 minutes"
+      })
+    );
     const result = await groupOrchestratorWorkflow({
       conversationId: "conv_group_1",
       message: "Plan the next release slice",

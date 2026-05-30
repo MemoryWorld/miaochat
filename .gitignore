@@ -16,3 +16,4 @@ db/schema.js.map
 db/schema.d.ts
 db/schema.d.ts.map
 harness/
+claude-code-main/

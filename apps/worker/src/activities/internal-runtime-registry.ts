@@ -1,4 +1,3 @@
-import type { AgentAdapter } from "@agenthub/agent-sdk";
 import type { RuntimeBackend } from "@agenthub/contracts";
 import type { AgentExecutionMode } from "@agenthub/agent-adapters";
 

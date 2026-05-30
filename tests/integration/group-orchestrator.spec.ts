@@ -67,7 +67,7 @@ describe("group orchestrator integration", () => {
     process.env.WORKER_TASK_QUEUE = previousWorkerTaskQueue;
   });
 
-  it("aggregates untargeted group replies and narrows dispatch when the user mentions one member", async () => {
+  it("persists individual group replies and narrows dispatch when the user mentions one member", async () => {
     const conversationResponse = await fetch(`${baseUrl}/conversations`, {
       body: JSON.stringify({
         agentIds: [agentIds.hermes, agentIds.codex],
@@ -139,21 +139,25 @@ describe("group orchestrator integration", () => {
           "orchestrator.aggregated"
         ]);
 
-        const untargetedMessages = await waitForMessages(baseUrl, conversationId, 2, authCookie);
+        const untargetedMessages = await waitForMessages(baseUrl, conversationId, 3, authCookie);
 
         expect(untargetedMessages.map((message) => message.role)).toEqual([
           "user",
+          "assistant",
           "assistant"
         ]);
-        expect(untargetedMessages[1]?.content).toContain("[Hermes Planner]");
-        expect(untargetedMessages[1]?.content).toContain("[Codex Builder]");
-        expect(untargetedMessages[1]?.content).toContain(
+        const hermesUntargetedMessage = untargetedMessages.find(
+          (message) => message.sourceAgentId === agentIds.hermes
+        );
+        const codexUntargetedMessage = untargetedMessages.find(
+          (message) => message.sourceAgentId === agentIds.codex
+        );
+        expect(hermesUntargetedMessage?.content).toContain(
           "[mock-group:agent_group_orchestrator_mock_hermes]"
         );
-        expect(untargetedMessages[1]?.content).toContain(
+        expect(codexUntargetedMessage?.content).toContain(
           "[mock-group:agent_group_mock_codex]"
         );
-        expect(untargetedMessages[1]?.sourceAgentId).toBeNull();
 
         const targetedSendResponse = await fetch(`${baseUrl}/messages/send`, {
           body: JSON.stringify({
@@ -188,21 +192,20 @@ describe("group orchestrator integration", () => {
           "orchestrator.aggregated"
         ]);
 
-        const targetedMessages = await waitForMessages(baseUrl, conversationId, 4, authCookie);
-        const latestAssistantMessage = targetedMessages[3];
+        const targetedMessages = await waitForMessages(baseUrl, conversationId, 5, authCookie);
+        const latestAssistantMessage = targetedMessages[4];
 
         expect(targetedMessages.map((message) => message.role)).toEqual([
           "user",
           "assistant",
+          "assistant",
           "user",
           "assistant"
         ]);
-        expect(latestAssistantMessage?.content).toContain("[Codex Builder]");
         expect(latestAssistantMessage?.content).toContain(
           "[mock-group:agent_group_mock_codex]"
         );
-        expect(latestAssistantMessage?.content).not.toContain("[Hermes Planner]");
-        expect(latestAssistantMessage?.sourceAgentId).toBeNull();
+        expect(latestAssistantMessage?.sourceAgentId).toBe(agentIds.codex);
       } finally {
         worker.shutdown();
         await streamReader?.cancel();

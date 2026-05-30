@@ -109,6 +109,68 @@ describe("ModelConnectionsPanel", () => {
       { credentials: "include" }
     );
   });
+
+  it("lets users delete an existing model connection after confirmation", async () => {
+    const confirmMock = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirmMock);
+
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: "conn_old",
+            kind: "deepseek_api",
+            label: "DeepSeek 旧连接",
+            model: "deepseek-chat",
+            preset: "balanced",
+            status: "valid",
+            workspaceId: "workspace_1"
+          },
+          {
+            id: "conn_active",
+            kind: "deepseek_api",
+            label: "DeepSeek 当前连接",
+            model: "deepseek-chat",
+            preset: "powerful",
+            status: "valid",
+            workspaceId: "workspace_1"
+          }
+        ], 200)
+      )
+      .mockResolvedValueOnce(jsonResponse({ deleted: true, id: "conn_old", workspaceId: "workspace_1" }, 200))
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: "conn_active",
+            kind: "deepseek_api",
+            label: "DeepSeek 当前连接",
+            model: "deepseek-chat",
+            preset: "powerful",
+            status: "valid",
+            workspaceId: "workspace_1"
+          }
+        ], 200)
+      );
+
+    render(<ModelConnectionsPanel workspaceId="workspace_1" />);
+
+    expect(await screen.findByText("DeepSeek 旧连接")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除 DeepSeek 旧连接" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/credentials/conn_old?workspaceId=workspace_1", {
+        credentials: "include",
+        method: "DELETE"
+      });
+    });
+    expect(confirmMock).toHaveBeenCalledWith(
+      "确定删除这个模型连接吗？删除后，使用该连接的 AI 同事需要重新选择可用连接。"
+    );
+    await waitFor(() => {
+      expect(screen.queryByText("DeepSeek 旧连接")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("DeepSeek 当前连接")).toBeInTheDocument();
+  });
 });
 
 function jsonResponse(body: unknown, status: number): Response {

@@ -1,6 +1,7 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
 import type { ProviderId } from "@agenthub/contracts";
 
+import { toTemporalActivityFailure } from "./activity-errors.js";
 import { createPhaseARuntimeExecution } from "./provider-runtime.js";
 
 export type ExecuteDirectAgentActivityInput = {
@@ -16,20 +17,24 @@ export type ExecuteDirectAgentActivityInput = {
 export async function executeDirectAgentActivity(
   input: ExecuteDirectAgentActivityInput
 ): Promise<AgentExecutionResult> {
-  const runtime = await createPhaseARuntimeExecution({
-    executionMode: "direct",
-    ownerUserId: input.ownerUserId,
-    provider: input.provider,
-    workspaceId: input.workspaceId
-  });
+  try {
+    const runtime = await createPhaseARuntimeExecution({
+      executionMode: "direct",
+      ownerUserId: input.ownerUserId,
+      provider: input.provider,
+      workspaceId: input.workspaceId
+    });
 
-  return runtime.adapter.execute({
-    agentId: input.agentId,
-    context: input.context,
-    conversationId: input.conversationId,
-    credentialId: runtime.credentialId,
-    message: input.message,
-    provider: runtime.provider,
-    workspaceId: input.workspaceId
-  });
+    return await runtime.adapter.execute({
+      agentId: input.agentId,
+      context: input.context,
+      conversationId: input.conversationId,
+      credentialId: runtime.credentialId,
+      message: input.message,
+      provider: runtime.provider,
+      workspaceId: input.workspaceId
+    });
+  } catch (error) {
+    throw toTemporalActivityFailure(error);
+  }
 }

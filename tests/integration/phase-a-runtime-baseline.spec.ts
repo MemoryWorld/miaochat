@@ -302,7 +302,7 @@ describe("Phase A runtime baseline integration", () => {
         workspaceId
       });
       const groupEvents = await readEvents(groupStream.reader, 7);
-      const groupMessages = await waitForMessages(baseUrl, groupConversationId, 2, authCookie);
+      const groupMessages = await waitForMessages(baseUrl, groupConversationId, 3, authCookie);
 
       expect(
         groupEvents
@@ -314,11 +314,10 @@ describe("Phase A runtime baseline integration", () => {
         "orchestrator.running",
         "orchestrator.aggregated"
       ]);
-      expect(groupMessages[1]?.content).toContain("[Hermes Planner]");
       expect(groupMessages[1]?.content).toContain("Hermes says ready");
-      expect(groupMessages[1]?.content).toContain("[OpenClaw Builder]");
-      expect(groupMessages[1]?.content).toContain("OpenClaw says ready");
-      expect(groupMessages[1]?.sourceAgentId).toBeNull();
+      expect(groupMessages[1]?.sourceAgentId).toBe(agentIds.hermes);
+      expect(groupMessages[2]?.content).toContain("OpenClaw says ready");
+      expect(groupMessages[2]?.sourceAgentId).toBe(agentIds.openclaw);
 
       await groupStream.reader.cancel();
       worker.shutdown();

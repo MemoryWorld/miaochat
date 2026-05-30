@@ -28,7 +28,7 @@ export function WorkspaceSwitcher({
       </label>
       <select
         aria-label="Active workspace"
-        className="block max-w-full truncate rounded-full border border-slate-200 bg-white/90 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-sky-300"
+        className="block w-[calc(100%-0.25rem)] -translate-x-0.5 truncate rounded-full border border-slate-200 bg-white/90 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-sky-300"
         disabled={isLoading || workspaces.length === 0}
         id="workspace-switcher-select"
         onChange={(event) => onSelect(event.target.value)}

@@ -30,6 +30,11 @@ import { readApiErrorMessage } from "../../lib/api-errors";
 import { ChatComposer } from "../chat/chat-composer";
 import { ChatThread } from "../chat/chat-thread";
 import { CodingWorkflowPanel } from "../chat/coding-workflow-panel";
+import {
+  createPendingAssistantMessage,
+  shouldClearLiveAssistantMessage,
+  type LiveAssistantMessage
+} from "../chat/live-assistant-message";
 import { PresenceBar } from "../chat/presence-bar";
 import { useConversationStream } from "../chat/use-conversation-stream";
 import { useSurfaceData } from "../workspace-shell/use-surface-data";
@@ -40,7 +45,7 @@ const channelTabs = [
   { id: "chat", label: "聊天" },
   { id: "files", label: "文件" }
 ] as const;
-const postSendRefreshDelaysMs = [1_200, 4_000, 8_000] as const;
+const postSendRefreshDelaysMs = [1_200, 4_000, 8_000, 15_000, 30_000, 65_000, 90_000] as const;
 
 type ChannelShellProps = {
   channelId: string;
@@ -60,10 +65,8 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
   const [memberActionError, setMemberActionError] = useState<string | null>(null);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
-  const [liveAssistantMessage, setLiveAssistantMessage] = useState<{
-    content: string;
-    id: string;
-  } | null>(null);
+  const [liveAssistantMessage, setLiveAssistantMessage] =
+    useState<LiveAssistantMessage | null>(null);
   const [threadDrawer, setThreadDrawer] = useState<{
     error: string | null;
     isLoading: boolean;
@@ -176,7 +179,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
   useEffect(() => {
     setTimelineMessages(messages.data);
     setLiveAssistantMessage((current) =>
-      current && messages.data.some((message) => message.id === current.id) ? null : current
+      shouldClearLiveAssistantMessage(current, messages.data) ? null : current
     );
     void refreshArtifactsForMessages(messages.data);
   }, [messages.data]);
@@ -360,6 +363,9 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
           );
         } else {
           setTimelineMessages((current) => [...current, message]);
+          if (shouldExpectAssistantReply()) {
+            setLiveAssistantMessage(createPendingAssistantMessage(message.id));
+          }
         }
       });
       schedulePostSendRefresh();
@@ -382,6 +388,10 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       mentionedAgentIds: availableAiMembers[0] ? [availableAiMembers[0].teammateId] : [],
       mentionedUserIds: []
     });
+  }
+
+  function shouldExpectAssistantReply(): boolean {
+    return availableAiMembers.length > 0 || channelParticipants.length > 0;
   }
 
   async function handleInviteHumanMembers(input: {
@@ -527,49 +537,6 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     } finally {
       setMemberActionId(null);
     }
-  }
-
-  async function handleToggleReaction(message: Message, emoji: string): Promise<void> {
-    if (!activeWorkspaceId) {
-      return;
-    }
-
-    const response = await fetch(
-      `${apiBaseUrl}/messages/${encodeURIComponent(message.id)}/reactions`,
-      {
-        body: JSON.stringify({
-          emoji,
-          workspaceId: activeWorkspaceId
-        }),
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        method: "POST"
-      }
-    );
-    const payload = await readJson(response);
-
-    if (!response.ok) {
-      setErrorMessage(readErrorMessage(payload, "更新回应失败。"));
-      return;
-    }
-
-    const updated = payload as Message;
-    setTimelineMessages((current) =>
-      current.map((entry) => (entry.id === updated.id ? updated : entry))
-    );
-    setThreadDrawer((current) =>
-      current
-        ? {
-            ...current,
-            parent: current.parent.id === updated.id ? updated : current.parent,
-            replies: current.replies.map((entry) =>
-              entry.id === updated.id ? updated : entry
-            )
-          }
-        : current
-    );
   }
 
   async function handleOpenThread(message: Message): Promise<void> {
@@ -1026,7 +993,6 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
               messages={displayedMessages}
               onPinMessage={handlePinMessage}
               onReplyMessage={handleOpenThread}
-              onToggleReaction={handleToggleReaction}
               resolveAuthorLabel={resolveMessageAuthorLabel}
               statusEvents={statusEvents}
             />
@@ -1038,7 +1004,6 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                 onClose={() => setThreadDrawer(null)}
                 onPinMessage={handlePinMessage}
                 onSendReply={handleSendThreadReply}
-                onToggleReaction={handleToggleReaction}
                 resolveAuthorLabel={resolveMessageAuthorLabel}
                 thread={threadDrawer}
               />
@@ -1111,7 +1076,6 @@ function ThreadDrawer({
   onClose,
   onPinMessage,
   onSendReply,
-  onToggleReaction,
   resolveAuthorLabel,
   thread
 }: {
@@ -1126,7 +1090,6 @@ function ThreadDrawer({
     mentionedAgentIds: string[];
     mentionedUserIds: string[];
   }) => Promise<void>;
-  onToggleReaction: (message: Message, emoji: string) => Promise<void>;
   resolveAuthorLabel: (message: Message) => string | undefined;
   thread: {
     error: string | null;
@@ -1169,7 +1132,6 @@ function ThreadDrawer({
             liveAssistantMessage={null}
             messages={threadMessages}
             onPinMessage={onPinMessage}
-            onToggleReaction={onToggleReaction}
             resolveAuthorLabel={resolveAuthorLabel}
             statusEvents={[]}
           />

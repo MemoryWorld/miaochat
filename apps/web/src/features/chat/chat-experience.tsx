@@ -34,15 +34,15 @@ import { ChatComposer } from "./chat-composer";
 import { CodingWorkflowPanel } from "./coding-workflow-panel";
 import { parseDeployCommand } from "./deploy-command";
 import { ChatThread } from "./chat-thread";
+import {
+  createPendingAssistantMessage,
+  shouldClearLiveAssistantMessage,
+  type LiveAssistantMessage
+} from "./live-assistant-message";
 import { useConversationStream } from "./use-conversation-stream";
 
 const timelineTabs = ["聊天", "文件", "置顶"] as const;
-const postSendRefreshDelaysMs = [1_200, 4_000, 8_000] as const;
-
-type LiveAssistantMessage = {
-  content: string;
-  id: string;
-};
+const postSendRefreshDelaysMs = [1_200, 4_000, 8_000, 15_000, 30_000, 65_000, 90_000] as const;
 
 export function ChatExperience() {
   const {
@@ -291,7 +291,7 @@ export function ChatExperience() {
         setErrorMessage(null);
         setMessages((current) => mergeMessages(current, nextMessages, conversationId));
         setLiveAssistantMessage((current) =>
-          current && nextMessages.some((message) => message.id === current.id) ? null : current
+          shouldClearLiveAssistantMessage(current, nextMessages) ? null : current
         );
       });
 
@@ -676,6 +676,9 @@ export function ChatExperience() {
 
       startTransition(() => {
         setMessages((current) => [...current, message]);
+        if ((selectedConversation?.participants.length ?? 0) > 0) {
+          setLiveAssistantMessage(createPendingAssistantMessage(message.id));
+        }
       });
       schedulePostSendRefresh(selectedConversationId);
     } catch (error) {

@@ -76,6 +76,8 @@ describe("TeammateCreateWizard", () => {
     fireEvent.change(screen.getByLabelText("模型偏好"), {
       target: { value: "fast" }
     });
+    expect(screen.getByText("协作护栏")).toBeInTheDocument();
+    expect(screen.getByText("任务边界")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "6. 确认" }));
     fireEvent.click(screen.getByRole("button", { name: "创建 AI 同事" }));
 
@@ -102,6 +104,10 @@ describe("TeammateCreateWizard", () => {
     });
     expect(String(requestBody.systemPrompt)).toContain("默认工作模式：编码");
     expect(String(requestBody.systemPrompt)).toContain("默认加入 ship 和 release 两个频道");
+    expect(String(requestBody.systemPrompt)).toContain("协作护栏：任务边界");
+    expect(requestBody.capabilityTags).toEqual(
+      expect.arrayContaining(["任务边界", "上下文资料包", "过程记录"])
+    );
   });
 
   it("prefills fields from the custom template without exposing runtime choices", async () => {

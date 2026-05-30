@@ -21,7 +21,6 @@ type ChatThreadProps = {
   messages: Message[];
   onPinMessage: (messageId: string) => Promise<void>;
   onReplyMessage?: (message: Message) => void;
-  onToggleReaction?: (message: Message, emoji: string) => Promise<void>;
   resolveAuthorLabel?: (message: Message) => string | undefined;
   statusEvents: OrchestratorStatusEventPayload[];
 };
@@ -35,7 +34,6 @@ export function ChatThread({
   messages,
   onPinMessage,
   onReplyMessage,
-  onToggleReaction,
   resolveAuthorLabel,
   statusEvents
 }: ChatThreadProps) {
@@ -118,7 +116,6 @@ export function ChatThread({
                 void onPinMessage(message.id);
               }}
               onReply={onReplyMessage}
-              onToggleReaction={onToggleReaction}
             />
           </div>
         );
@@ -145,7 +142,13 @@ export function ChatThread({
           >
             AI 同事
           </div>
-          <div style={{ lineHeight: 1.7 }}>{liveAssistantMessage.content}</div>
+          <div style={{ lineHeight: 1.7 }}>
+            {liveAssistantMessage.content.trim().length > 0 ? (
+              liveAssistantMessage.content
+            ) : (
+              <TypingIndicator />
+            )}
+          </div>
           <div
             style={{
               color: "#175cd3",
@@ -153,11 +156,31 @@ export function ChatThread({
               marginTop: "0.5rem"
             }}
           >
-            正在通过实时流返回内容
+            {liveAssistantMessage.content.trim().length > 0
+              ? "正在通过实时流返回内容"
+              : "AI 同事正在处理你的消息"}
           </div>
         </article>
       ) : null}
     </section>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <span className="inline-flex items-center gap-1 text-sm font-semibold text-slate-600">
+      <span className="sr-only">AI 同事正在输入</span>
+      {[0, 1, 2].map((index) => (
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 animate-pulse rounded-full bg-slate-500"
+          key={index}
+          style={{
+            animationDelay: `${index * 120}ms`
+          }}
+        />
+      ))}
+    </span>
   );
 }
 

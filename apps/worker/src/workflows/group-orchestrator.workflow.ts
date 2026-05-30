@@ -40,10 +40,11 @@ const { dispatchAgentActivity } = proxyActivities<{
     nonRetryableErrorTypes: [
       "BadRequestException",
       "MockDispatchExecutionError",
+      "ProviderCredentialError",
       "ZodError"
     ]
   },
-  startToCloseTimeout: "1 minute"
+  startToCloseTimeout: "5 minutes"
 });
 
 export type GroupOrchestratorWorkflowInput = {

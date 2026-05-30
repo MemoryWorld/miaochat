@@ -158,18 +158,23 @@ describe("group failure integration", () => {
           }
         });
 
-        const messages = await waitForMessages(baseUrl, conversationId, 2, authCookie);
-        const assistantMessage = messages[1];
+        const messages = await waitForMessages(baseUrl, conversationId, 3, authCookie);
+        const successfulAssistantMessage = messages[1];
+        const failureNoticeMessage = messages[2];
 
         expect(messages.map((message) => message.role)).toEqual([
           "user",
+          "assistant",
           "assistant"
         ]);
-        expect(assistantMessage?.content).toContain("[Hermes Planner]");
-        expect(assistantMessage?.content).toContain("Partial failure");
-        expect(assistantMessage?.content).toContain("Failure Scout");
-        expect(assistantMessage?.content).toContain("Timeout Watcher");
-        expect(assistantMessage?.sourceAgentId).toBeNull();
+        expect(successfulAssistantMessage?.content).toContain(
+          "[mock-group:agent_group_partial_mock_hermes]"
+        );
+        expect(successfulAssistantMessage?.sourceAgentId).toBe(agentIds.hermes);
+        expect(failureNoticeMessage?.content).toContain("部分 AI 同事暂时没有完成回复");
+        expect(failureNoticeMessage?.content).toContain("Failure Scout");
+        expect(failureNoticeMessage?.content).toContain("Timeout Watcher");
+        expect(failureNoticeMessage?.sourceAgentId).toBeNull();
       } finally {
         worker.shutdown();
         await streamReader?.cancel();

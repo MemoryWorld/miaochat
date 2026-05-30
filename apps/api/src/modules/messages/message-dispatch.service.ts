@@ -16,6 +16,7 @@ import {
   type StreamEvent
 } from "@agenthub/contracts";
 import { mapToPublicError } from "@agenthub/domain";
+import type { OrchestratorState } from "@agenthub/domain/orchestration";
 import { Client, Connection } from "@temporalio/client";
 import { z } from "zod";
 
@@ -270,6 +271,7 @@ export class MessageDispatchService implements OnModuleDestroy {
         workflowId: `group-orchestrator:${input.conversationId}:${randomUUID()}`
       })) as {
         finalContent: string;
+        state: OrchestratorState;
         streamEvents: StreamEvent[];
       };
       const assistantMessageId = randomUUID();
@@ -290,14 +292,27 @@ export class MessageDispatchService implements OnModuleDestroy {
         });
       }
 
-      await this.messagesService.createAssistantMessage({
-        content: execution.finalContent,
-        conversationId: input.conversationId,
-        id: assistantMessageId,
-        ownerUserId: input.ownerUserId,
-        sourceAgentId: null,
-        workspaceId: input.workspaceId
-      });
+      for (const result of execution.state.results) {
+        await this.messagesService.createAssistantMessage({
+          content: result.finalContent,
+          conversationId: input.conversationId,
+          id: randomUUID(),
+          ownerUserId: input.ownerUserId,
+          sourceAgentId: result.agentId,
+          workspaceId: input.workspaceId
+        });
+      }
+
+      if (execution.state.failures.length > 0) {
+        await this.messagesService.createAssistantMessage({
+          content: formatGroupFailureNotice(execution.state),
+          conversationId: input.conversationId,
+          id: randomUUID(),
+          ownerUserId: input.ownerUserId,
+          sourceAgentId: null,
+          workspaceId: input.workspaceId
+        });
+      }
 
       this.metrics.incrementCounter("provider_dispatch_success_total", {
         mode: "group",
@@ -379,6 +394,24 @@ export class MessageDispatchService implements OnModuleDestroy {
     // The dispatch routine already records metrics and logs failures internally.
     void dispatchPromise.catch(() => {});
   }
+}
+
+function formatGroupFailureNotice(state: OrchestratorState): string {
+  if (state.results.length === 0) {
+    return [
+      "这次协作没有 AI 同事完成回复。",
+      ...state.failures.map(
+        (failure) => `- ${failure.agentName}：${failure.detail}`
+      )
+    ].join("\n");
+  }
+
+  return [
+    "部分 AI 同事暂时没有完成回复，已先展示完成同事的结果。",
+    ...state.failures.map(
+      (failure) => `- ${failure.agentName}：${failure.detail}`
+    )
+  ].join("\n");
 }
 
 function resolveTargetAgents(

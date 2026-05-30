@@ -23,6 +23,7 @@ export const dispatchRetryPolicy: ActivityRetryPolicy = {
   nonRetryableErrorTypes: [
     "BadRequestException",
     "MockDispatchExecutionError",
+    "ProviderCredentialError",
     "ZodError"
   ]
 };

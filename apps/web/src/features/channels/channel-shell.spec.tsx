@@ -553,6 +553,7 @@ describe("ChannelShell", () => {
       );
     });
     expect(await screen.findByText("请开始执行下一步。")).toBeInTheDocument();
+    expect(await screen.findByText("AI 同事正在处理你的消息")).toBeInTheDocument();
 
     MockEventSource.instances[0]?.emitMessage({
       kind: "conversation.message.started",

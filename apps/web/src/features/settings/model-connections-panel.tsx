@@ -27,6 +27,7 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
   const [apiKey, setApiKey] = useState("");
   const [connections, setConnections] = useState<ModelConnection[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [deletingConnectionId, setDeletingConnectionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [label, setLabel] = useState("DeepSeek 工作区连接");
@@ -167,6 +168,39 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
     }
   }
 
+  async function handleDeleteConnection(connection: ModelConnection): Promise<void> {
+    const confirmed = window.confirm(
+      "确定删除这个模型连接吗？删除后，使用该连接的 AI 同事需要重新选择可用连接。"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingConnectionId(connection.id);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/credentials/${encodeURIComponent(connection.id)}?workspaceId=${encodeURIComponent(workspaceId)}`,
+        {
+          credentials: "include",
+          method: "DELETE"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "删除模型连接失败。"));
+      }
+
+      await loadConnections();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "删除模型连接失败。");
+    } finally {
+      setDeletingConnectionId(null);
+    }
+  }
+
   return (
     <div className="grid gap-5">
       <section className="grid gap-4 rounded-[28px] border border-slate-200 bg-white/85 p-5">
@@ -264,11 +298,24 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
               key={connection.id}
               className="grid gap-3 rounded-[24px] border border-slate-200 bg-white/85 p-4"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <strong className="text-slate-950">{connection.label}</strong>
-                <Badge tone={connection.status === "valid" ? "primary" : "muted"}>
-                  {renderConnectionStatus(connection.status)}
-                </Badge>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <strong className="min-w-0 break-words text-slate-950">{connection.label}</strong>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={connection.status === "valid" ? "primary" : "muted"}>
+                    {renderConnectionStatus(connection.status)}
+                  </Badge>
+                  <Button
+                    aria-label={`删除 ${connection.label}`}
+                    className="border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 disabled:text-red-300"
+                    disabled={deletingConnectionId === connection.id}
+                    onClick={() => void handleDeleteConnection(connection)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {deletingConnectionId === connection.id ? "删除中..." : "删除"}
+                  </Button>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
                 <span className="rounded-full bg-slate-100 px-3 py-1">{connection.model}</span>

@@ -9,6 +9,7 @@ import {
   getWorkerMetrics,
   getWorkerTracer
 } from "../observability/observability.js";
+import { toTemporalActivityFailure } from "./activity-errors.js";
 import { maybeThrowMockDispatchFailure } from "./failure-handling.activity.js";
 import { createPhaseARuntimeExecution } from "./provider-runtime.js";
 
@@ -75,7 +76,8 @@ export async function dispatchAgentActivity(
       provider: input.provider,
       workspaceId: input.workspaceId
     });
-    span.fail(error);
-    throw error;
+    const activityFailure = toTemporalActivityFailure(error);
+    span.fail(activityFailure);
+    throw activityFailure;
   }
 }
