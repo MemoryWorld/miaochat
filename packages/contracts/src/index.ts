@@ -2,6 +2,7 @@ export * from "./activity.js";
 export * from "./approval.js";
 export * from "./artifact.js";
 export * from "./artifact-revision.js";
+export * from "./channel-member.js";
 export * from "./conversation.js";
 export * from "./coding-workflow.js";
 export * from "./credential.js";

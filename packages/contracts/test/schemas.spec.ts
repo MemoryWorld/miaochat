@@ -8,6 +8,7 @@ import {
   buildInitialCodingTaskSnapshotForRoles,
   calculateCodingWorkflowAgentProgress,
   buildBuiltInActorProfile,
+  channelMemberListSchema,
   conversationSchema,
   createArtifactInputSchema,
   createConversationInputSchema,
@@ -23,6 +24,7 @@ import {
   hasCodingWorkflowExecutor,
   inboxItemSchema,
   memoryRecordSchema,
+  messageSchema,
   normalizeRecommendedRoleIds,
   prepareArtifactUploadInputSchema,
   skillBindingSchema,
@@ -136,6 +138,66 @@ describe("@agenthub/contracts", () => {
     });
 
     expect(parsed.kind).toBe("conversation.message.delta");
+  });
+
+  it("supports unified channel members and human-authored messages", () => {
+    const members = channelMemberListSchema.parse({
+      aiCount: 1,
+      channelId: "conv_1",
+      humanCount: 2,
+      members: [
+        {
+          displayName: "你",
+          kind: "human",
+          memberId: "human:user_owner",
+          permission: "manage",
+          role: "owner",
+          status: "active",
+          userId: "user_owner"
+        },
+        {
+          displayName: "张三",
+          kind: "human",
+          memberId: "human:user_zhang",
+          permission: "comment",
+          role: "member",
+          status: "active",
+          userId: "user_zhang"
+        },
+        {
+          displayName: "软件工程师",
+          kind: "ai",
+          memberId: "ai:agent_engineer",
+          permission: "comment",
+          role: "ai_teammate",
+          status: "available",
+          teammateId: "agent_engineer"
+        }
+      ],
+      totalCount: 3,
+      workspaceId: "workspace_1"
+    });
+    const message = messageSchema.parse({
+      author: {
+        displayName: "张三",
+        kind: "human",
+        userId: "user_zhang"
+      },
+      authorUserId: "user_zhang",
+      content: "请 @软件工程师 看一下这个方案。",
+      conversationId: "conv_1",
+      createdAt: new Date().toISOString(),
+      id: "msg_1",
+      mentionedAgentIds: ["agent_engineer"],
+      mentionedUserIds: ["user_owner"],
+      ownerUserId: "user_owner",
+      role: "user",
+      workspaceId: "workspace_1"
+    });
+
+    expect(members.totalCount).toBe(3);
+    expect(message.author?.kind).toBe("human");
+    expect(message.mentionedUserIds).toEqual(["user_owner"]);
   });
 
   it("supports structured orchestrator status events", () => {
