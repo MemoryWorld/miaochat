@@ -492,6 +492,27 @@ export class ChannelMembersService {
     return access;
   }
 
+  async wasRemovedHumanMember(input: {
+    actorUserId: string;
+    channelId: string;
+    workspaceId: string;
+  }): Promise<boolean> {
+    const channel = await this.loadChannel(input.channelId, input.workspaceId);
+
+    if (channel.owner_user_id === input.actorUserId) {
+      return false;
+    }
+
+    const membership = await this.channelMembersRepository.findHumanMembership({
+      channelId: channel.id,
+      userId: input.actorUserId,
+      workspaceId: channel.workspace_id,
+      workspaceOwnerUserId: channel.owner_user_id
+    });
+
+    return membership?.status === "removed";
+  }
+
   async resolveMentionedUserIds(input: {
     actorUserId: string;
     channelId: string;

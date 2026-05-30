@@ -54,10 +54,11 @@ export class HermesAdapter implements AgentAdapter {
     const requestBody: HermesRequestBody = {
       agentId: request.agentId,
       conversationId: request.conversationId,
-      pinnedMessages: buildPromptMessages(request.message, request.context?.pinnedMessages).slice(
-        0,
-        -1
-      ),
+      pinnedMessages: buildPromptMessages(
+        request.message,
+        request.context?.pinnedMessages,
+        request.instructions
+      ).slice(0, -1),
       prompt: request.message,
       workspaceId: request.workspaceId
     };

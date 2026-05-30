@@ -24,11 +24,15 @@ const { executeDirectAgentActivity } = proxyActivities<{
 
 export type SingleAgentWorkflowInput = {
   agentId: string;
+  agentName?: string;
   conversationId: string;
   context?: AgentExecutionContext;
   message: string;
   ownerUserId: string;
+  outputStyle?: string | null;
   provider: ProviderId;
+  scopeDescription?: string | null;
+  systemPrompt?: string | null;
   workspaceId: string;
 };
 

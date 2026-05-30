@@ -29,13 +29,20 @@ describe("groupOrchestratorWorkflow", () => {
           agentId: string;
           agentName: string;
           message: string;
+          systemPrompt?: string | null;
           provider: "mock";
-        }) => ({
-          agentId: input.agentId,
-          agentName: input.agentName,
-          finalContent: `[mock-group:${input.agentId}] ${input.message}`,
-          provider: input.provider
-        })
+        }) => {
+          if (input.agentId === "agent_hermes") {
+            expect(input.systemPrompt).toBe("先提交计划再进入执行。");
+          }
+
+          return {
+            agentId: input.agentId,
+            agentName: input.agentName,
+            finalContent: `[mock-group:${input.agentId}] ${input.message}`,
+            provider: input.provider
+          };
+        }
       });
 
     const { groupOrchestratorWorkflow } = await import(
@@ -60,7 +67,8 @@ describe("groupOrchestratorWorkflow", () => {
         {
           agentId: "agent_hermes",
           agentName: "Hermes Planner",
-          provider: "mock"
+          provider: "mock",
+          systemPrompt: "先提交计划再进入执行。"
         },
         {
           agentId: "agent_codex",

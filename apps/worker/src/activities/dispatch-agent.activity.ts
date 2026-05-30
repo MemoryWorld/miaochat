@@ -9,6 +9,7 @@ import {
   getWorkerMetrics,
   getWorkerTracer
 } from "../observability/observability.js";
+import { buildAgentHarnessInstructions } from "./agent-harness-instructions.js";
 import { toTemporalActivityFailure } from "./activity-errors.js";
 import { maybeThrowMockDispatchFailure } from "./failure-handling.activity.js";
 import { createPhaseARuntimeExecution } from "./provider-runtime.js";
@@ -49,6 +50,13 @@ export async function dispatchAgentActivity(
       context: input.context,
       conversationId: input.conversationId,
       credentialId: runtime.credentialId,
+      instructions: buildAgentHarnessInstructions({
+        agentName: input.agentName,
+        mode: "group",
+        outputStyle: input.outputStyle,
+        scopeDescription: input.scopeDescription,
+        systemPrompt: input.systemPrompt
+      }),
       message: input.message,
       provider: runtime.provider,
       workspaceId: input.workspaceId

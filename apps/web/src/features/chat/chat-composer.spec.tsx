@@ -65,4 +65,11 @@ describe("ChatComposer", () => {
       });
     });
   });
+
+  it("uses the workspace button style for file attachments while keeping the input accessible", () => {
+    render(<ChatComposer onSend={async () => undefined} />);
+
+    expect(screen.getByText("选择文件")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择文件")).toHaveAttribute("type", "file");
+  });
 });

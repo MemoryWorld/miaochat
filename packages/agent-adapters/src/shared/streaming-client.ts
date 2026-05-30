@@ -20,12 +20,19 @@ export type StreamingClientOptions = {
 
 export function buildPromptMessages(
   message: string,
-  pinnedMessages: AgentPinnedMessage[] = []
+  pinnedMessages: AgentPinnedMessage[] = [],
+  instructions?: string
 ): Array<{ content: string; role: "assistant" | "system" | "user" }> {
   const promptMessages: Array<{
     content: string;
     role: "assistant" | "system" | "user";
   }> = [];
+
+  const trimmedInstructions = instructions?.trim();
+
+  if (trimmedInstructions) {
+    promptMessages.push({ content: trimmedInstructions, role: "system" });
+  }
 
   for (const pinned of pinnedMessages) {
     promptMessages.push({ content: pinned.content, role: pinned.role });

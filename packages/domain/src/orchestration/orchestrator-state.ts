@@ -15,7 +15,10 @@ export type OrchestratorStatus =
 export type OrchestratorTarget = {
   agentId: string;
   agentName: string;
+  outputStyle?: string | null;
   provider: ProviderId;
+  scopeDescription?: string | null;
+  systemPrompt?: string | null;
 };
 
 export type OrchestratorResult = OrchestratorTarget & {

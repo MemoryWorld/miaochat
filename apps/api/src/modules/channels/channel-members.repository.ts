@@ -253,6 +253,50 @@ export class ChannelMembersRepository {
     return result.rows[0] ?? null;
   }
 
+  async findHumanMembership(input: {
+    channelId: string;
+    userId: string;
+    workspaceId: string;
+    workspaceOwnerUserId: string;
+  }): Promise<ChannelHumanMemberRow | null> {
+    const result = await this.database.query<ChannelHumanMemberRow>(
+      `
+        SELECT
+          channel_user_memberships.created_at,
+          channel_user_memberships.id,
+          channel_user_memberships.invited_email,
+          channel_user_memberships.joined_at,
+          channel_user_memberships.last_read_at,
+          channel_user_memberships.last_read_message_id,
+          channel_user_memberships.notification_preference,
+          channel_user_memberships.permission,
+          channel_user_memberships.role,
+          channel_user_memberships.status,
+          channel_user_memberships.user_id,
+          users.display_name,
+          users.email,
+          NULL::timestamptz AS last_active_at
+        FROM channel_user_memberships
+        LEFT JOIN users
+          ON users.id = channel_user_memberships.user_id
+        WHERE channel_user_memberships.workspace_owner_user_id = $1
+          AND channel_user_memberships.workspace_id = $2
+          AND channel_user_memberships.channel_id = $3
+          AND channel_user_memberships.user_id = $4
+        ORDER BY channel_user_memberships.updated_at DESC
+        LIMIT 1
+      `,
+      [
+        input.workspaceOwnerUserId,
+        input.workspaceId,
+        input.channelId,
+        input.userId
+      ]
+    );
+
+    return result.rows[0] ?? null;
+  }
+
   async upsertActiveHumanMember(input: {
     channelId: string;
     invitedByUserId: string;

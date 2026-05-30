@@ -32,7 +32,10 @@ import { PinMessageService } from "./pin-message.service.js";
 const resolvedConversationAgentSchema = z.object({
   agentId: z.string().min(1),
   agentName: z.string().min(1),
-  provider: z.custom<ProviderId>((value) => typeof value === "string" && value.length > 0)
+  outputStyle: z.string().min(1).nullable().optional(),
+  provider: z.custom<ProviderId>((value) => typeof value === "string" && value.length > 0),
+  scopeDescription: z.string().nullable().optional(),
+  systemPrompt: z.string().min(1).nullable().optional()
 });
 
 const resolvedConversationSchema = z.object({
@@ -124,10 +127,14 @@ export class MessageDispatchService implements OnModuleDestroy {
       this.runDetachedDispatch(
         this.dispatchDirectAssistantReply({
           agentId: directAgent.agentId,
+          agentName: directAgent.agentName,
           conversationId: parsed.conversationId,
           message: parsed.content,
           ownerUserId: sendAccess.ownerUserId,
+          outputStyle: directAgent.outputStyle,
           provider: directAgent.provider,
+          scopeDescription: directAgent.scopeDescription,
+          systemPrompt: directAgent.systemPrompt,
           workspaceId: parsed.workspaceId
         })
       );
@@ -151,10 +158,14 @@ export class MessageDispatchService implements OnModuleDestroy {
 
   private async dispatchDirectAssistantReply(input: {
     agentId: string;
+    agentName: string;
     conversationId: string;
     message: string;
     ownerUserId: string;
+    outputStyle?: string | null;
     provider: ProviderId;
+    scopeDescription?: string | null;
+    systemPrompt?: string | null;
     workspaceId: string;
   }): Promise<void> {
     const span = this.traceRecorder.startSpan("provider.dispatch.direct", {
@@ -235,7 +246,7 @@ export class MessageDispatchService implements OnModuleDestroy {
     message: string;
     ownerUserId: string;
     targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
-      workspaceId: string;
+    workspaceId: string;
   }): Promise<void> {
     const providerLabel = summarizeProviders(input.targets);
     const span = this.traceRecorder.startSpan("provider.dispatch.group", {
@@ -384,7 +395,10 @@ export class MessageDispatchService implements OnModuleDestroy {
       agents: result.map((row) => ({
         agentId: row.agent_id,
         agentName: row.agent_name,
-        provider: row.provider
+        outputStyle: row.output_style,
+        provider: row.provider,
+        scopeDescription: row.scope_description,
+        systemPrompt: row.system_prompt
       })),
       mode: result[0]?.mode
     });

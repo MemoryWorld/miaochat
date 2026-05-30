@@ -206,6 +206,50 @@ describe("group orchestrator integration", () => {
           "[mock-group:agent_group_mock_codex]"
         );
         expect(latestAssistantMessage?.sourceAgentId).toBe(agentIds.codex);
+
+        let expectedMessageCount = 5;
+        const designQuestions = [
+          "长程任务的上下文交接怎么设计？",
+          "工具执行权限和失败回滚怎么设计？",
+          "多 Agent 评审闭环怎么设计？"
+        ];
+
+        for (const question of designQuestions) {
+          const designSendResponse = await fetch(`${baseUrl}/messages/send`, {
+            body: JSON.stringify({
+              content: question,
+              conversationId,
+              role: "user",
+              workspaceId
+            }),
+            headers: {
+              "Content-Type": "application/json",
+              cookie: authCookie
+            },
+            method: "POST"
+          });
+
+          expect(designSendResponse.status).toBe(202);
+          await readEvents(streamReader!, 7);
+          expectedMessageCount += 3;
+
+          const designMessages = await waitForMessages(
+            baseUrl,
+            conversationId,
+            expectedMessageCount,
+            authCookie
+          );
+          const latestReplies = designMessages.slice(-2);
+
+          expect(latestReplies.map((message) => message.role)).toEqual([
+            "assistant",
+            "assistant"
+          ]);
+          expect(new Set(latestReplies.map((message) => message.sourceAgentId))).toEqual(
+            new Set([agentIds.hermes, agentIds.codex])
+          );
+          expect(latestReplies.every((message) => message.content.includes(question))).toBe(true);
+        }
       } finally {
         worker.shutdown();
         await streamReader?.cancel();

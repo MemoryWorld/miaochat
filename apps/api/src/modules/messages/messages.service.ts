@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException
@@ -24,7 +25,10 @@ import {
   type ChannelAccess
 } from "../channels/channel-members.service.js";
 import { GroupMembersService } from "../conversations/group-members.service.js";
-import { DatabaseService } from "../database/database.service.js";
+import {
+  DatabaseService,
+  type DatabaseExecutor
+} from "../database/database.service.js";
 import { MessagesRepository, type MessageRow } from "./messages.repository.js";
 
 type CreateStoredMessageInput = {
@@ -207,7 +211,7 @@ export class MessagesService {
 
   async list(input: unknown): Promise<Message[]> {
     const parsed = messageHistoryQuerySchema.parse(input);
-    const access = await this.channelMembersService.assertCanRead({
+    const access = await this.resolveReadAccessOrNotFound({
       actorUserId: parsed.ownerUserId,
       channelId: parsed.conversationId,
       workspaceId: parsed.workspaceId
@@ -240,11 +244,15 @@ export class MessagesService {
       );
     }
 
-    await this.channelMembersService.assertCanSend({
+    const access = await this.resolveReadAccessOrNotFound({
       actorUserId: ownerUserId,
       channelId: target.conversation_id,
       workspaceId: parsedWorkspaceId
     });
+
+    if (access.permission === "read") {
+      throw new ForbiddenException("你在这个频道里只有只读权限，不能固定消息。");
+    }
 
     return this.database.transaction(async (tx) => {
       const messageRow = await this.messagesRepository.pinMessage(
@@ -382,7 +390,7 @@ export class MessagesService {
     conversationId: string,
     workspaceId: string,
     ownerUserId: string,
-    executor?: import("../database/database.service.js").DatabaseExecutor
+    executor?: DatabaseExecutor
   ): Promise<void> {
     const updatedCount = await this.messagesRepository.touchConversation(
       conversationId,
@@ -395,6 +403,28 @@ export class MessagesService {
       throw new NotFoundException(
         `Conversation ${conversationId} was not found in workspace ${workspaceId}`
       );
+    }
+  }
+
+  private async resolveReadAccessOrNotFound(input: {
+    actorUserId: string;
+    channelId: string;
+    workspaceId: string;
+  }): Promise<ChannelAccess> {
+    try {
+      return await this.channelMembersService.assertCanRead(input);
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        const wasRemoved = await this.channelMembersService.wasRemovedHumanMember(input);
+
+        if (wasRemoved) {
+          throw error;
+        }
+
+        throw new NotFoundException("频道不存在或已不可用。");
+      }
+
+      throw error;
     }
   }
 

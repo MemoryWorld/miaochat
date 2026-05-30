@@ -15,11 +15,13 @@ describe("singleAgentWorkflow", () => {
   });
 
   it("allows real model streaming to run longer than one minute without infinite credential retries", async () => {
+    const executeDirectAgentActivity = vi.fn(async () => ({
+      finalContent: "ok",
+      streamEvents: []
+    }));
+
     proxyActivitiesMock.mockReturnValueOnce({
-      executeDirectAgentActivity: async () => ({
-        finalContent: "ok",
-        streamEvents: []
-      })
+      executeDirectAgentActivity
     });
 
     const { singleAgentWorkflow } = await import(
@@ -41,9 +43,11 @@ describe("singleAgentWorkflow", () => {
     await expect(
       singleAgentWorkflow({
         agentId: "agent_1",
+        agentName: "软件工程师",
         conversationId: "conv_1",
         message: "hello",
         ownerUserId: "user_1",
+        systemPrompt: "负责实现和测试。",
         provider: "deepseek",
         workspaceId: "workspace_1"
       })
@@ -51,5 +55,11 @@ describe("singleAgentWorkflow", () => {
       finalContent: "ok",
       streamEvents: []
     });
+    expect(executeDirectAgentActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: "软件工程师",
+        systemPrompt: "负责实现和测试。"
+      })
+    );
   });
 });

@@ -52,7 +52,10 @@ export type ResolvedConversationAgentRow = {
   agent_id: string;
   agent_name: string;
   mode: "direct" | "group";
+  output_style: string;
   provider: ProviderId;
+  scope_description: string | null;
+  system_prompt: string;
 };
 
 type CustomAgentRow = {
@@ -541,7 +544,10 @@ export class ConversationsRepository {
         conversation_agents.agent_id,
         conversation_agents.agent_name,
         conversations.mode,
-        custom_agents.provider
+        custom_agents.output_style,
+        custom_agents.provider,
+        custom_agents.scope_description,
+        custom_agents.system_prompt
       FROM conversations
       INNER JOIN conversation_agents
         ON conversation_agents.conversation_id = conversations.id

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import type { ChannelMember, ConversationAgentMember } from "@agenthub/contracts";
 
@@ -31,6 +31,7 @@ export function ChatComposer({
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const fileInputId = useId();
   const mentionMembers = members ?? participants.map(mapParticipantToMember);
   const showActionSuggestions = content.trimStart().startsWith("/");
 
@@ -140,18 +141,29 @@ export function ChatComposer({
           </div>
         </div>
       ) : null}
-      <label className="grid gap-2 text-sm font-semibold text-slate-600">
-        附件
+      <div className="grid gap-2">
+        <span className="text-sm font-semibold text-slate-600">附件</span>
+        <label
+          className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          htmlFor={fileInputId}
+        >
+          <span>选择文件</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+            {attachments.length > 0 ? `${attachments.length} 个文件` : "支持多选"}
+          </span>
+        </label>
         <input
-          className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          aria-label="选择文件"
+          className="sr-only"
           disabled={disabled}
+          id={fileInputId}
           multiple
           onChange={(event) => {
             setAttachments(Array.from(event.target.files ?? []));
           }}
           type="file"
         />
-      </label>
+      </div>
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {attachments.map((file) => (

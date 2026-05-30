@@ -15,6 +15,7 @@ export type AgentExecutionRequest = {
   conversationId: string;
   context?: AgentExecutionContext;
   credentialId?: string;
+  instructions?: string;
   message: string;
   provider: ProviderId;
   workspaceId: string;

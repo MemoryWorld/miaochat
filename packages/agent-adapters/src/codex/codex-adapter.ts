@@ -56,7 +56,11 @@ export class CodexAdapter implements AgentAdapter {
     const requestBody: CodexRequestBody = {
       agent_id: request.agentId,
       conversation_id: request.conversationId,
-      messages: buildPromptMessages(request.message, request.context?.pinnedMessages),
+      messages: buildPromptMessages(
+        request.message,
+        request.context?.pinnedMessages,
+        request.instructions
+      ),
       model: this.model,
       stream: true,
       workspace_id: request.workspaceId

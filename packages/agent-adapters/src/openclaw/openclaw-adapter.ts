@@ -55,7 +55,11 @@ export class OpenClawAdapter implements AgentAdapter {
     const requestBody: OpenClawRequestBody = {
       agentId: request.agentId,
       conversationId: request.conversationId,
-      messages: buildPromptMessages(request.message, request.context?.pinnedMessages),
+      messages: buildPromptMessages(
+        request.message,
+        request.context?.pinnedMessages,
+        request.instructions
+      ),
       stream: true,
       workspaceId: request.workspaceId
     };

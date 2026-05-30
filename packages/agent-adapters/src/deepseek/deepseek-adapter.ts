@@ -58,7 +58,11 @@ export class DeepSeekAdapter implements AgentAdapter {
     const response = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
       ...jsonRequestInit({
         body: {
-          messages: buildPromptMessages(request.message, request.context?.pinnedMessages),
+          messages: buildPromptMessages(
+            request.message,
+            request.context?.pinnedMessages,
+            request.instructions
+          ),
           model,
           stream: true
         },
