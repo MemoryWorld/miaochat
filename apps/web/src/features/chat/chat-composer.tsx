@@ -70,14 +70,14 @@ export function ChatComposer({
           gap: "0.4rem"
         }}
       >
-        Message
+        消息内容
         <textarea
           id="chat-composer-input"
           disabled={disabled}
           onChange={(event) => {
             setContent(event.target.value);
           }}
-          placeholder="Ask the mock builder to work on the next step."
+          placeholder="请告诉 AI 同事下一步需要推进什么。"
           rows={3}
           value={content}
           style={{
@@ -95,7 +95,7 @@ export function ChatComposer({
           style={buttonStyle}
           type="submit"
         >
-          Send message
+          发送消息
         </button>
       </div>
     </form>

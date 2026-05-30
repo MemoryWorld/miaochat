@@ -1,15 +1,6 @@
 import type { ReactNode } from "react";
 import { isValidElement } from "react";
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("next/font/google", () => ({
-  IBM_Plex_Mono: () => ({
-    variable: "font-mono"
-  }),
-  Space_Grotesk: () => ({
-    variable: "font-sans"
-  })
-}));
+import { describe, expect, it } from "vitest";
 
 import RootLayout from "./layout";
 

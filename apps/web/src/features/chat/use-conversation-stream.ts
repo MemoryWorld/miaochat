@@ -49,7 +49,9 @@ export function useConversationStream(
 
     url.searchParams.set("workspaceId", workspaceId);
 
-    const eventSource = new EventSource(url.toString());
+    const eventSource = new EventSource(url.toString(), {
+      withCredentials: true
+    });
 
     setState({
       connectionState: "connecting",
@@ -88,8 +90,8 @@ export function useConversationStream(
     eventSource.onerror = () => {
       setState((current) => ({
         ...current,
-        connectionState: "error",
-        errorMessage: "Conversation stream disconnected."
+        connectionState: "connecting",
+        errorMessage: null
       }));
     };
 

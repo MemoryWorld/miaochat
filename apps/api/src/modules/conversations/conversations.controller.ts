@@ -119,6 +119,23 @@ export class ConversationsController {
     return this.conversationsService.restore(parsed, user.id, conversationId);
   }
 
+  @Post(":conversationId/teammates")
+  async addTeammate(
+    @Param("conversationId") conversationId: string,
+    @Body() input: unknown,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const workspaceId = workspaceIdSchema.parse(
+      input && typeof input === "object"
+        ? (input as { workspaceId?: string }).workspaceId ?? "default-workspace"
+        : "default-workspace"
+    );
+    await this.permissionGuard.assert(user.id, workspaceId, "conversation.update");
+    await this.permissionGuard.assert(user.id, workspaceId, "custom_agent.manage");
+    return this.conversationsService.addTeammate(conversationId, input, user.id);
+  }
+
   @Post(":conversationId/shares")
   async share(
     @Param("conversationId") conversationId: string,

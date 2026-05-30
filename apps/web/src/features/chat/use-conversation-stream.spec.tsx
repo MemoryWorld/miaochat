@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -11,12 +13,14 @@ class MockEventSource {
   static instances: MockEventSource[] = [];
 
   readonly close = vi.fn();
+  readonly init: EventSourceInit | undefined;
   readonly url: string;
   onerror: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   onopen: ((event: Event) => void) | null = null;
 
-  constructor(url: string) {
+  constructor(url: string, init?: EventSourceInit) {
+    this.init = init;
     this.url = url;
     MockEventSource.instances.push(this);
   }
@@ -77,6 +81,9 @@ describe("useConversationStream", () => {
     expect(MockEventSource.instances[0]?.url).toBe(
       "http://localhost:3001/streams/conv_task_17?workspaceId=workspace_task_17"
     );
+    expect(MockEventSource.instances[0]?.init).toEqual({
+      withCredentials: true
+    });
 
     MockEventSource.instances[0]?.emitOpen();
 
@@ -104,5 +111,24 @@ describe("useConversationStream", () => {
     view.unmount();
 
     expect(MockEventSource.instances[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats transient stream errors as reconnecting instead of surfacing a hard error state", async () => {
+    render(
+      <StreamProbe
+        conversationId="conv_task_18"
+        workspaceId="workspace_task_18"
+      />
+    );
+
+    MockEventSource.instances[0]?.emitOpen();
+    await screen.findByText("state:open");
+
+    MockEventSource.instances[0]?.emitError();
+
+    await waitFor(() => {
+      expect(screen.getByText("state:connecting")).toBeInTheDocument();
+    });
+    expect(screen.getByText("error:none")).toBeInTheDocument();
   });
 });

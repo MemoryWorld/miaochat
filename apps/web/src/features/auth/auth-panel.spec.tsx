@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -30,9 +32,9 @@ describe("AuthPanel", () => {
 
     render(<AuthPanel />);
 
-    expect(await screen.findByRole("button", { name: "Log in" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
-    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(screen.getByLabelText("邮箱")).toBeInTheDocument();
+    expect(screen.getByLabelText("密码")).toBeInTheDocument();
   });
 
   it("logs in with credentials and exposes a logout action after success", async () => {
@@ -70,17 +72,17 @@ describe("AuthPanel", () => {
 
     render(<AuthPanel onAuthenticated={onAuthenticated} />);
 
-    fireEvent.change(await screen.findByLabelText("Email"), {
+    fireEvent.change(await screen.findByLabelText("邮箱"), {
       target: {
         value: "local.dev@example.com"
       }
     });
-    fireEvent.change(screen.getByLabelText("Password"), {
+    fireEvent.change(screen.getByLabelText("密码"), {
       target: {
         value: "LocalDev!123"
       }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
@@ -100,7 +102,7 @@ describe("AuthPanel", () => {
       );
     });
 
-    expect(await screen.findByRole("button", { name: "Log out" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "退出登录" })).toBeInTheDocument();
     expect(screen.getByText("local.dev@example.com")).toBeInTheDocument();
     expect(onAuthenticated).toHaveBeenCalledTimes(1);
   });

@@ -12,6 +12,7 @@ import { StructuredLogger } from "../../observability/structured-logger.service.
 const quotaProviderSchema = z.enum([
   "claude-code",
   "codex",
+  "deepseek",
   "hermes",
   "openclaw"
 ]);
@@ -68,6 +69,10 @@ const defaultPolicies: Record<QuotaProvider, QuotaPolicy> = {
     periodMs: 30 * 24 * 60 * 60 * 1_000
   },
   codex: {
+    limit: 1_000,
+    periodMs: 30 * 24 * 60 * 60 * 1_000
+  },
+  deepseek: {
     limit: 1_000,
     periodMs: 30 * 24 * 60 * 60 * 1_000
   },

@@ -215,6 +215,21 @@ export class ConversationsRepository {
     return result.rows;
   }
 
+  async listWorkspaceAgentNames(
+    workspaceId: string,
+    ownerUserId: string,
+    executor?: DatabaseExecutor
+  ): Promise<string[]> {
+    const result = await this.resolveExecutor(executor).execute<{ name: string }>(sql`
+      SELECT name
+      FROM custom_agents
+      WHERE workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+    `);
+
+    return result.rows.map((row) => row.name);
+  }
+
   async updateConversation(
     conversationId: string,
     workspaceId: string,
@@ -252,15 +267,71 @@ export class ConversationsRepository {
     return result.rows[0] ?? null;
   }
 
+  async findConversation(
+    conversationId: string,
+    workspaceId: string,
+    ownerUserId: string,
+    executor?: DatabaseExecutor
+  ): Promise<ConversationRow | null> {
+    const result = await this.resolveExecutor(executor).execute<ConversationRow>(sql`
+      SELECT
+        archived_at,
+        id,
+        is_pinned,
+        mode,
+        owner_user_id,
+        pinned_message_ids,
+        title,
+        updated_at,
+        workspace_id
+      FROM conversations
+      WHERE id = ${conversationId}
+        AND workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+    `);
+
+    return result.rows[0] ?? null;
+  }
+
+  async updateConversationMode(
+    conversationId: string,
+    workspaceId: string,
+    ownerUserId: string,
+    mode: Conversation["mode"],
+    executor?: DatabaseExecutor
+  ): Promise<ConversationRow | null> {
+    const result = await this.resolveExecutor(executor).execute<ConversationRow>(sql`
+      UPDATE conversations
+      SET mode = ${mode}, updated_at = now()
+      WHERE id = ${conversationId}
+        AND workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+      RETURNING
+        archived_at,
+        id,
+        is_pinned,
+        mode,
+        owner_user_id,
+        pinned_message_ids,
+        title,
+        updated_at,
+        workspace_id
+    `);
+
+    return result.rows[0] ?? null;
+  }
+
   async listConversationParticipants(
     conversationId: string,
-    workspaceId: string
+    workspaceId: string,
+    executor?: DatabaseExecutor
   ): Promise<ConversationAgentRow[]> {
-    const result = await this.database.execute<ConversationAgentRow>(sql`
+    const result = await this.resolveExecutor(executor).execute<ConversationAgentRow>(sql`
       SELECT conversation_id, agent_id, agent_name
       FROM conversation_agents
       WHERE conversation_id = ${conversationId}
         AND workspace_id = ${workspaceId}
+      ORDER BY agent_id ASC
     `);
 
     return result.rows;

@@ -14,7 +14,7 @@ export function HomePageClient() {
   if (!isReady) {
     return (
       <div className="grid min-h-screen place-items-center px-6 py-10 text-sm text-slate-600">
-        Loading workspace...
+        正在进入工作空间...
       </div>
     );
   }

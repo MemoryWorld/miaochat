@@ -5,6 +5,7 @@ import { workspaceIdSchema } from "./conversation.js";
 const pooledProviderSchema = z.enum([
   "claude-code",
   "codex",
+  "deepseek",
   "hermes",
   "openclaw"
 ]);

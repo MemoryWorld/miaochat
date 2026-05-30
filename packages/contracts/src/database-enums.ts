@@ -3,6 +3,7 @@ import { z } from "zod";
 export const providerIdSchema = z.enum([
   "claude-code",
   "codex",
+  "deepseek",
   "hermes",
   "mock",
   "openclaw"

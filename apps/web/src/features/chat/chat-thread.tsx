@@ -20,6 +20,7 @@ type ChatThreadProps = {
   } | null;
   messages: Message[];
   onPinMessage: (messageId: string) => Promise<void>;
+  resolveAuthorLabel?: (message: Message) => string | undefined;
   statusEvents: OrchestratorStatusEventPayload[];
 };
 
@@ -31,6 +32,7 @@ export function ChatThread({
   liveAssistantMessage,
   messages,
   onPinMessage,
+  resolveAuthorLabel,
   statusEvents
 }: ChatThreadProps) {
   const hasPersistedLiveMessage =
@@ -50,7 +52,7 @@ export function ChatThread({
           fontSize: "0.92rem"
         }}
       >
-        Stream state: {connectionState}
+        流状态：{formatConnectionState(connectionState)}
       </div>
       {statusEvents.map((event, index) => (
         <SystemStatusCard
@@ -75,11 +77,12 @@ export function ChatThread({
             padding: "1rem 1.1rem"
           }}
         >
-          No messages yet. Send the first prompt to start the mock slice.
+          当前频道还没有消息。发送第一条消息，开始和 AI 同事一起推进工作。
         </div>
       ) : null}
       {messages.map((message) => (
         <ChatMessage
+          authorLabel={resolveAuthorLabel?.(message)}
           artifacts={artifactsByMessageId[message.id] ?? []}
           isPinDisabled={isPinningMessageId !== null && isPinningMessageId !== message.id}
           isPinPending={isPinningMessageId === message.id}
@@ -110,7 +113,7 @@ export function ChatThread({
               textTransform: "uppercase"
             }}
           >
-            assistant
+            AI 同事
           </div>
           <div style={{ lineHeight: 1.7 }}>{liveAssistantMessage.content}</div>
           <div
@@ -120,10 +123,25 @@ export function ChatThread({
               marginTop: "0.5rem"
             }}
           >
-            Streaming via SSE
+            正在通过实时流返回内容
           </div>
         </article>
       ) : null}
     </section>
   );
+}
+
+function formatConnectionState(
+  state: ChatThreadProps["connectionState"]
+): "空闲" | "连接中" | "连接失败" | "已连接" {
+  switch (state) {
+    case "connecting":
+      return "连接中";
+    case "error":
+      return "连接失败";
+    case "open":
+      return "已连接";
+    case "idle":
+      return "空闲";
+  }
 }

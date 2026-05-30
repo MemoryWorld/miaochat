@@ -2,86 +2,73 @@
 
 ## Product Summary
 
-Miaochat is an IM-shaped multi-agent workspace. Users interact with AI agents
-as if they were chat contacts, switching between direct conversations and
-group conversations while preserving context, artifacts, and follow-up actions
-inside the message timeline.
+Miaochat is an IM-shaped AI teammate workspace. Users choose what they want to
+do, select or customize AI 同事, approve important plans, and keep execution
+history, files, tasks, calendar events, and recovery actions inside the same
+workspace.
 
-The product goal is not "one more chat box." It is a coordination surface for
-task execution across multiple agent runtimes with explicit artifact review,
-context pinning, and operator-visible failure states.
+The product goal is not another chat box. It is a coordination surface where AI
+同事 can plan, execute, review, and verify work while the user keeps control at
+key decision points.
 
 ## Target Users
 
-- Individual builders who switch between multiple AI tools during one task
-- Small engineering or product teams that want one shared interaction model
-  across heterogeneous agent providers
-- Power users who need both lightweight saved agents and deeper tool/runtime
-  extensibility
+- Individual builders who want one place to manage coding work with AI 同事.
+- Small teams that need shared visibility into AI-assisted planning and
+  execution.
+- Power users who want custom AI teammates without learning internal execution
+  details.
 
 ## Core User Flows
 
-### 1. Setup And BYOK
+### 1. Model Connection
 
-- User opens `/setup`
-- User selects a provider
-- User validates and binds a provider credential
-- The credential becomes available for later conversations inside the active
-  workspace
+- User opens settings.
+- User adds a DeepSeek model connection.
+- The app validates the key with the model service.
+- The connection becomes available to AI 同事 inside the active workspace.
 
-### 2. Direct Conversation
+### 2. Coding Work Mode
 
-- User creates a conversation with a single agent
-- The agent streams a response into the timeline
-- The user iterates on the task with preserved history and pinned context
+- User chooses `编码`.
+- The system recommends a teammate set.
+- The user can remove or customize teammates.
+- A plan is submitted first and waits for approval before execution.
 
-### 3. Group Collaboration
+### 3. Workspace Timeline
 
-- User creates a group conversation or `@` mentions agents
-- The orchestrator coordinates sub-agents
-- The timeline reflects partial progress, degraded states, and the final
-  merged response
+- AI 同事 write updates into the channel timeline.
+- Failures expose retry, details, model connection, and recovery-task actions.
+- History persists after refresh.
 
-### 4. Artifact Review
+### 4. Operational Tools
 
-- Agent responses can include attachments, previews, diffs, and deploy status
-  cards
-- The user reviews artifacts inline without leaving the conversation
+- Inbox handles approvals, mentions, failures, tasks, calendar updates, and
+  connection alerts.
+- Tasks support search, filters, list, and board views.
+- Calendar supports month, week, and day views.
+- Channels support search, filters, sorting, and shortcut actions.
 
 ## Product Principles
 
-- Chat-first: conversations are the primary unit of work
-- Provider-agnostic: agent adapters normalize runtime differences
-- Artifact-visible: outputs must be inspectable in the timeline
-- Failure-explicit: orchestration errors are surfaced, not hidden
-- Evolutionary scope: Release 1 focuses on the web workflow while preserving
-  room for deploy, desktop, mobile, and platform-managed credentials
+- Workspace-first: every action belongs to the active workspace.
+- AI-teammate language: users interact with role names and responsibilities.
+- Plan-before-execution: risky work waits for user approval.
+- Failure-explicit: failed activity must be recoverable.
+- Secret-safe: API Keys are accepted in settings and never shown again.
 
-## Release 1 Surface
+## Current Surface
 
-- Web chat experience
-- Direct and group conversations
-- Context pinning
-- Lightweight custom agents
-- Artifact cards
-- BYOK setup flow
-- Real-provider acceptance infrastructure
-
-## Deferred Capability Map
-
-- Deploy pipeline and preview URLs: implemented foundation, still gated behind
-  acceptance hardening
-- Desktop shell and local agent supervision: implemented foundation, not part
-  of Release 1 sign-off
-- Mobile review and approval shell: implemented foundation, not part of
-  Release 1 sign-off
-- Rich code editing / version history / fine-grained artifact editing: later
-  product phases
+- Web workspace shell.
+- Model connection settings.
+- Coding work mode with recommended AI 同事.
+- Channel timeline and recovery actions.
+- Inbox, tasks, calendar, channels, members, billing, and capability management
+  skeletons.
 
 ## Success Criteria
 
-- A user can bind credentials, start conversations, and get context-aware
-  responses from multiple provider families
-- Group orchestration is observable and degrades cleanly
-- Artifact review happens inside the message timeline
-- The repo contains auditable specs, plans, tasks, and release evidence
+- A user can add a DeepSeek connection.
+- A user can launch a coding workflow with selected AI 同事.
+- The workflow produces plan, approval, execution, review, and test evidence.
+- Core workspace pages expose real actions rather than product explanation.

@@ -103,7 +103,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Unable to log in."));
+        throw new Error(readErrorMessage(payload, "登录失败，请检查邮箱和密码。"));
       }
 
       const nextUser = readAuthUser(payload);
@@ -116,7 +116,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
     } catch (error) {
       startTransition(() => {
         setUser(null);
-        setErrorMessage(error instanceof Error ? error.message : "Unable to log in.");
+        setErrorMessage(error instanceof Error ? error.message : "登录失败，请稍后再试。");
       });
     } finally {
       setIsSubmitting(false);
@@ -135,7 +135,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Unable to log out."));
+        throw new Error(readErrorMessage(payload, "退出登录失败，请稍后再试。"));
       }
 
       startTransition(() => {
@@ -145,7 +145,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
       onLoggedOut?.();
     } catch (error) {
       startTransition(() => {
-        setErrorMessage(error instanceof Error ? error.message : "Unable to log out.");
+        setErrorMessage(error instanceof Error ? error.message : "退出登录失败，请稍后再试。");
       });
     } finally {
       setIsSubmitting(false);
@@ -156,13 +156,13 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
     <section className="mt-5 rounded-[24px] border border-slate-200 bg-white/75 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="m-0 text-base font-semibold text-slate-950">Session</h2>
+          <h2 className="m-0 text-base font-semibold text-slate-950">身份与会话</h2>
           <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-            {user ? "Manage the current local session." : "Sign in to unlock the local workspace."}
+            {user ? "当前身份已经连接到本地工作区。" : "登录后即可进入当前中文工作区并继续协作。"}
           </p>
         </div>
         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-          {isLoadingSession ? "Checking" : user ? "Signed in" : "Signed out"}
+          {isLoadingSession ? "检查中" : user ? "已登录" : "未登录"}
         </span>
       </div>
       {errorMessage ? (
@@ -179,13 +179,13 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
             onClick={() => void handleLogout()}
             variant="outline"
           >
-            Log out
+            退出登录
           </Button>
         </div>
       ) : (
         <form className="mt-4 grid gap-3" onSubmit={(event) => void handleLogin(event)}>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            Email
+            邮箱
             <input
               autoComplete="email"
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-normal text-slate-950 outline-none transition focus:border-sky-300"
@@ -199,7 +199,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
             />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            Password
+            密码
             <input
               autoComplete="current-password"
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-normal text-slate-950 outline-none transition focus:border-sky-300"
@@ -218,7 +218,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
             }
             type="submit"
           >
-            Log in
+            登录
           </Button>
         </form>
       )}

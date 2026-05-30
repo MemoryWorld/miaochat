@@ -3,6 +3,7 @@ import type { ProviderId } from "@agenthub/contracts";
 
 import { ClaudeCodeAdapter } from "./claude-code/claude-code-adapter.js";
 import { CodexAdapter } from "./codex/codex-adapter.js";
+import { DeepSeekAdapter } from "./deepseek/deepseek-adapter.js";
 import { HermesAdapter } from "./hermes/hermes-adapter.js";
 import { MockDirectAdapter } from "./mock/direct-adapter.js";
 import { MockGroupAdapter } from "./mock/group-adapter.js";
@@ -13,6 +14,7 @@ export * from "./claude-code/claude-code-adapter.js";
 export * from "./claude-code/claude-code-types.js";
 export * from "./codex/codex-adapter.js";
 export * from "./codex/codex-types.js";
+export * from "./deepseek/deepseek-adapter.js";
 export * from "./hermes/hermes-adapter.js";
 export * from "./hermes/hermes-types.js";
 export * from "./mock/direct-adapter.js";
@@ -41,6 +43,8 @@ export function createAgentAdapter(input: CreateAgentAdapterInput): AgentAdapter
       return new OpenClawAdapter(requireStreamingClientOptions(input));
     case "codex":
       return new CodexAdapter(requireStreamingClientOptions(input));
+    case "deepseek":
+      return new DeepSeekAdapter(requireStreamingClientOptions(input));
     case "claude-code":
       return new ClaudeCodeAdapter(requireStreamingClientOptions(input));
   }

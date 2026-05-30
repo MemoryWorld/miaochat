@@ -88,6 +88,42 @@ export class CredentialsController {
     return this.credentialsService.list(workspaceId, user.id);
   }
 
+  @Get("/model-connections")
+  async listModelConnections(
+    @Query() query: Record<string, string | undefined>,
+    @Headers("cookie") cookieHeader?: string
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const { workspaceId } = parseWorkspaceQuery(query);
+    await this.permissionGuard.assert(user.id, workspaceId, "credential.read");
+    return this.credentialsService.listModelConnections(workspaceId, user.id);
+  }
+
+  @Post("/model-connections/validate")
+  @HttpCode(200)
+  async validateModelConnection(
+    @Body() input: unknown,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const workspaceId =
+      (input as { workspaceId?: string } | null)?.workspaceId ?? "default-workspace";
+    await this.permissionGuard.assert(user.id, workspaceId, "credential.manage");
+    return this.credentialsService.validateModelConnection(input);
+  }
+
+  @Post("/model-connections")
+  async createModelConnection(
+    @Body() input: unknown,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const workspaceId =
+      (input as { workspaceId?: string } | null)?.workspaceId ?? "default-workspace";
+    await this.permissionGuard.assert(user.id, workspaceId, "credential.manage");
+    return this.credentialsService.createModelConnection(input, user.id);
+  }
+
   @Delete(":credentialId")
   @HttpCode(200)
   async revoke(

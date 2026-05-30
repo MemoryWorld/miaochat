@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 
 import {
   conversationSchema,
   createConversationInputSchema,
+  createChannelTeammateInputSchema,
   workspaceIdSchema,
+  type CustomAgent,
   type Conversation,
   type ConversationAgentMember
 } from "@agenthub/contracts";
@@ -15,11 +17,14 @@ import {
   ConversationsRepository,
   type ConversationRow
 } from "./conversations.repository.js";
+import { CustomAgentsService } from "../custom-agents/custom-agents.service.js";
 
 @Injectable()
 export class ConversationsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(CustomAgentsService)
+    private readonly customAgentsService: CustomAgentsService,
     @Inject(ConversationsRepository)
     private readonly conversationsRepository: ConversationsRepository
   ) {}
@@ -103,6 +108,94 @@ export class ConversationsService {
     );
   }
 
+  async addTeammate(
+    conversationId: string,
+    input: unknown,
+    ownerUserId: string
+  ): Promise<{ agent: CustomAgent; conversation: Conversation }> {
+    const parsed = createChannelTeammateInputSchema.parse(input);
+    const workspaceId = workspaceIdSchema.parse(parsed.workspaceId ?? "default-workspace");
+
+    return this.database.transaction(async (tx) => {
+      const conversation = await this.conversationsRepository.findConversation(
+        conversationId,
+        workspaceId,
+        ownerUserId,
+        tx
+      );
+
+      if (!conversation) {
+        throw new NotFoundException(`Conversation ${conversationId} was not found.`);
+      }
+
+      const workspaceAgentNames = await this.conversationsRepository.listWorkspaceAgentNames(
+        workspaceId,
+        ownerUserId,
+        tx
+      );
+      const currentParticipants =
+        await this.conversationsRepository.listConversationParticipants(
+          conversationId,
+          workspaceId,
+          tx
+        );
+      const agentName = resolveAvailableTeammateName(parsed.teammate.name, [
+        ...workspaceAgentNames,
+        ...currentParticipants.map((participant) => participant.agent_name)
+      ]);
+
+      const agent = await this.customAgentsService.create(
+        {
+          ...parsed.teammate,
+          name: agentName,
+          provider: "deepseek",
+          workspaceId
+        },
+        ownerUserId,
+        tx
+      );
+
+      await this.conversationsRepository.insertConversationAgents(
+        conversationId,
+        workspaceId,
+        [
+          {
+            agentId: agent.id,
+            agentName: agent.name
+          }
+        ],
+        tx
+      );
+
+      const participants = await this.conversationsRepository.listConversationParticipants(
+        conversationId,
+        workspaceId,
+        tx
+      );
+      const participantMembers = participants.map((row) => ({
+        agentId: row.agent_id,
+        agentName: row.agent_name
+      }));
+      const nextMode: Conversation["mode"] =
+        participantMembers.length > 1 ? "group" : "direct";
+      const updatedConversation =
+        conversation.mode === nextMode
+          ? conversation
+          : await this.conversationsRepository.updateConversationMode(
+              conversationId,
+              workspaceId,
+              ownerUserId,
+              nextMode,
+              tx
+            );
+
+      return {
+        agent,
+        conversation: mapConversationRow(updatedConversation ?? conversation, participantMembers)
+      };
+    });
+  }
+
   async setPinned(
     workspaceId: string,
     ownerUserId: string,
@@ -175,15 +268,15 @@ function buildConversationTitle(
   participants: ConversationAgentMember[]
 ): string {
   if (mode === "direct" && participants[0]) {
-    return `${participants[0].agentName} session`;
+    return `${participants[0].agentName}频道`;
   }
 
   if (participants.length === 0) {
-    return "New conversation";
+    return "新频道";
   }
 
   const participantNames = participants.slice(0, 2).map((entry) => entry.agentName);
-  return `${participantNames.join(" + ")} group`;
+  return `${participantNames.join(" + ")}协作频道`;
 }
 
 function mapConversationRow(
@@ -206,4 +299,31 @@ function mapConversationRow(
     updatedAt: row.updated_at,
     workspaceId: row.workspace_id
   });
+}
+
+function resolveAvailableTeammateName(
+  requestedName: string,
+  occupiedNames: string[]
+): string {
+  const maxNameLength = 80;
+  const baseName = requestedName.trim();
+  const occupiedNameSet = new Set(
+    occupiedNames.map((name) => name.trim()).filter((name) => name.length > 0)
+  );
+
+  if (!occupiedNameSet.has(baseName)) {
+    return baseName;
+  }
+
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const suffixText = String(suffix);
+    const candidate = `${baseName.slice(0, maxNameLength - suffixText.length)}${suffixText}`;
+
+    if (!occupiedNameSet.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const fallbackSuffix = String(Date.now());
+  return `${baseName.slice(0, maxNameLength - fallbackSuffix.length)}${fallbackSuffix}`;
 }

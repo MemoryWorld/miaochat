@@ -58,11 +58,11 @@ export function NewConversationDialog({
           gap: "0.75rem",
           justifyContent: "space-between"
         }}
-      >
+        >
         <div>
-          <strong style={{ color: "#101828" }}>Custom agent conversations</strong>
+          <strong style={{ color: "#101828" }}>AI 同事协作</strong>
           <div style={{ color: "#475467", fontSize: "0.9rem", marginTop: "0.2rem" }}>
-            Start a direct session from a saved custom agent.
+            从已保存的 AI 同事身份发起一条新的协作频道，适合快速单人协作或临时补位。
           </div>
         </div>
         <button
@@ -75,7 +75,7 @@ export function NewConversationDialog({
           style={secondaryButtonStyle}
           type="button"
         >
-          {isOpen ? "Close" : "New conversation"}
+          {isOpen ? "关闭" : "新建协作"}
         </button>
       </div>
 
@@ -97,20 +97,20 @@ export function NewConversationDialog({
         >
           {isLoading ? (
             <p style={{ color: "#475467", lineHeight: 1.6, margin: 0 }}>
-              Loading saved custom agents...
+              正在加载已保存的 AI 同事...
             </p>
           ) : agents.length === 0 ? (
             <p style={{ color: "#475467", lineHeight: 1.6, margin: 0 }}>
-              No custom agents are available yet. Create one from{" "}
+              还没有可用的 AI 同事。请先前往{" "}
               <a href="/agents" style={{ color: "#0b6eff" }}>
-                the agents workspace
+                AI 同事页面
               </a>
-              .
+              创建一个身份。
             </p>
           ) : (
             <>
               <label htmlFor="new-conversation-agent" style={fieldLabelStyle}>
-                Agent
+                AI 同事
                 <select
                   id="new-conversation-agent"
                   onChange={(event) => {
@@ -121,18 +121,21 @@ export function NewConversationDialog({
                 >
                   {agents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
-                      {agent.name} · {agent.provider}
+                      {agent.name}
                     </option>
                   ))}
                 </select>
               </label>
+              <p style={{ color: "#475467", lineHeight: 1.6, margin: 0 }}>
+                如果你要启动完整的编码团队，请回到首页使用“启动编码工作流”。
+              </p>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button
                   disabled={!selectedAgentId || busy}
                   style={primaryButtonStyle}
                   type="submit"
                 >
-                  Create conversation
+                  创建频道
                 </button>
               </div>
             </>

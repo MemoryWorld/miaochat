@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module.js";
+import { CustomAgentsModule } from "../custom-agents/custom-agents.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { WorkspacesModule } from "../workspaces/workspaces.module.js";
 import { ConversationAccessService } from "./conversation-access.service.js";
@@ -12,7 +13,7 @@ import { GroupMembersService } from "./group-members.service.js";
 
 @Module({
   controllers: [ConversationsController],
-  imports: [AuthModule, DatabaseModule, WorkspacesModule],
+  imports: [AuthModule, CustomAgentsModule, DatabaseModule, WorkspacesModule],
   exports: [
     ConversationAccessService,
     ConversationSharesService,

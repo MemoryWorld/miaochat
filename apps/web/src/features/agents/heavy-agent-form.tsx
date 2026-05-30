@@ -8,13 +8,6 @@ const apiBaseUrl = "http://localhost:3001";
 
 const availableTools = ["github", "shell", "browser", "filesystem"] as const;
 
-const supportedProviders = [
-  "claude-code",
-  "codex",
-  "hermes",
-  "openclaw"
-] as const;
-
 type HeavyAgentFormProps = {
   onCreated?: (agentId: string) => void;
   workspaceId: string;
@@ -22,7 +15,6 @@ type HeavyAgentFormProps = {
 
 export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) {
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<(typeof supportedProviders)[number]>("codex");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [bindings, setBindings] = useState<ToolBindingDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +22,7 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
 
   async function handleSubmit(): Promise<void> {
     if (!name.trim() || !systemPrompt.trim()) {
-      setError("Name and system prompt are required.");
+      setError("请填写 AI 同事名称和职责说明。");
       return;
     }
     setBusy(true);
@@ -40,7 +32,7 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
         body: JSON.stringify({
           capabilityTags: [],
           name: name.trim(),
-          provider,
+          provider: "deepseek",
           systemPrompt: systemPrompt.trim(),
           toolBindings: bindings,
           workspaceId
@@ -53,7 +45,7 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
         const payload = (await response.json().catch(() => ({}))) as {
           message?: string;
         };
-        throw new Error(payload.message ?? `Failed (${response.status}).`);
+        throw new Error(payload.message ?? `创建失败（${response.status}）。`);
       }
       const created = (await response.json()) as { id: string };
       onCreated?.(created.id);
@@ -61,7 +53,7 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
       setSystemPrompt("");
       setBindings([]);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to register heavy agent.");
+      setError(cause instanceof Error ? cause.message : "创建 AI 同事失败。");
     } finally {
       setBusy(false);
     }
@@ -76,34 +68,18 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
       }}
     >
       <label>
-        Name
+        AI 同事名称
         <input
-          aria-label="Heavy agent name"
+          aria-label="AI 同事名称"
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
       </label>
       <label>
-        Provider
-        <select
-          aria-label="Heavy agent provider"
-          value={provider}
-          onChange={(event) =>
-            setProvider(event.target.value as (typeof supportedProviders)[number])
-          }
-        >
-          {supportedProviders.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        System prompt
+        职责说明
         <textarea
-          aria-label="Heavy agent system prompt"
+          aria-label="职责说明"
           value={systemPrompt}
           onChange={(event) => setSystemPrompt(event.target.value)}
         />
@@ -115,7 +91,7 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
       />
       {error ? <p role="alert">{error}</p> : null}
       <button type="submit" disabled={busy}>
-        {busy ? "Registering…" : "Register heavy agent"}
+        {busy ? "创建中..." : "创建 AI 同事"}
       </button>
     </form>
   );

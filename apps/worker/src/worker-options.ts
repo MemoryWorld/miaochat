@@ -37,6 +37,10 @@ const awaitableActivities = {
     const { executeDirectAgentActivity } = await import("./activities/index.js");
     return executeDirectAgentActivity(input as never);
   },
+  executeInternalRuntimeAgentActivity: async (input: unknown) => {
+    const { executeInternalRuntimeAgentActivity } = await import("./activities/index.js");
+    return executeInternalRuntimeAgentActivity(input as never);
+  },
   dispatchAgentActivity: async (input: unknown) => {
     const { dispatchAgentActivity } = await import("./activities/index.js");
     return dispatchAgentActivity(input as never);

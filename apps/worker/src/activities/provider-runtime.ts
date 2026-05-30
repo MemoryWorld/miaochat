@@ -4,7 +4,7 @@ import { createAgentAdapter, type AgentExecutionMode } from "@agenthub/agent-ada
 import { decryptCredentialSecret } from "@agenthub/domain";
 import { type ClientConfig, Client } from "pg";
 
-type PhaseARuntimeProvider = Extract<ProviderId, "hermes" | "mock" | "openclaw">;
+type PhaseARuntimeProvider = Extract<ProviderId, "deepseek" | "hermes" | "mock" | "openclaw">;
 
 type RuntimeCredentialRow = {
   encrypted_secret: string;
@@ -77,13 +77,14 @@ export async function createPhaseARuntimeExecution(input: {
 export function assertPhaseARuntimeProvider(provider: ProviderId): PhaseARuntimeProvider {
   switch (provider) {
     case "mock":
+    case "deepseek":
     case "hermes":
     case "openclaw":
       return provider;
     case "codex":
     case "claude-code":
       throw new Error(
-        `Provider ${provider} is outside the Phase A Hermes/OpenClaw runtime baseline.`
+        `Provider ${provider} is outside the current AI colleague runtime baseline.`
       );
   }
 }

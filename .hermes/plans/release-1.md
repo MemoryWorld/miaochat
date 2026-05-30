@@ -14,8 +14,11 @@
 
 - Branch: `feat/post-release-1-tasks-37-57`
 - No release tags yet
-- `contracts` and `config` packages: tests pass individually
-- `observability-errors` and `observability-otel`: **BROKEN** — missing `vitest.config.ts`, no test files, no `node_modules`
+- **Phase 1: COMPLETE** — All package builds and tests pass
+  - `observability-errors`: vitest config + 8 smoke tests ✅
+  - `observability-otel`: vitest config + 5 smoke tests ✅
+  - All other packages: builds + tests pass ✅
+- `api#test`: 13 test files fail due to missing PostgreSQL/Redis (expected — infra-dependent)
 - Hardening items H-05 through H-10: checked off
 - Functional, real-provider, load, and observability checklist items: all unchecked
 

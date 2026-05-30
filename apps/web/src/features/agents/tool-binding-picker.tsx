@@ -47,9 +47,9 @@ export function ToolBindingPicker({
 
   return (
     <fieldset data-testid="tool-binding-picker">
-      <legend>Tool bindings</legend>
+      <legend>能力绑定</legend>
       <select
-        aria-label="Available tools"
+        aria-label="可用能力"
         value={pendingTool}
         onChange={(event) => setPendingTool(event.target.value)}
       >
@@ -60,14 +60,14 @@ export function ToolBindingPicker({
         ))}
       </select>
       <button type="button" onClick={addBinding}>
-        Add tool
+        添加能力
       </button>
       <ul>
         {bindings.map((binding, index) => (
           <li key={binding.name} data-binding-name={binding.name}>
             <strong>{binding.name}</strong>
             <select
-              aria-label={`Runtime for ${binding.name}`}
+              aria-label={`${binding.name} 的绑定方式`}
               value={binding.runtime}
               onChange={(event) =>
                 updateBinding(index, {
@@ -75,12 +75,12 @@ export function ToolBindingPicker({
                 })
               }
             >
-              <option value="server_registration">server_registration</option>
-              <option value="config_file">config_file</option>
+              <option value="server_registration">工作区注册</option>
+              <option value="config_file">配置文件</option>
             </select>
             {binding.runtime === "config_file" ? (
               <input
-                aria-label={`Config path for ${binding.name}`}
+                aria-label={`${binding.name} 的配置路径`}
                 type="text"
                 value={binding.configPath ?? ""}
                 onChange={(event) =>
@@ -89,7 +89,7 @@ export function ToolBindingPicker({
               />
             ) : null}
             <button type="button" onClick={() => removeBinding(index)}>
-              Remove
+              移除
             </button>
           </li>
         ))}

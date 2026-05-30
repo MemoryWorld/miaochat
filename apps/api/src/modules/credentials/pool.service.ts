@@ -22,6 +22,7 @@ import { StructuredLogger } from "../../observability/structured-logger.service.
 import { DatabaseService } from "../database/database.service.js";
 import { validateClaudeCodeCredential } from "./providers/claude-code-validator.js";
 import { validateCodexCredential } from "./providers/codex-validator.js";
+import { validateDeepSeekCredential } from "./providers/deepseek-validator.js";
 import { validateHermesCredential } from "./providers/hermes-validator.js";
 import { validateOpenClawCredential } from "./providers/openclaw-validator.js";
 
@@ -251,6 +252,8 @@ export class CredentialPoolService {
         return validateClaudeCodeCredential(payload);
       case "codex":
         return validateCodexCredential(payload);
+      case "deepseek":
+        return validateDeepSeekCredential(payload);
       case "hermes":
         return validateHermesCredential(payload);
       case "openclaw":

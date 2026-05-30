@@ -43,6 +43,17 @@ export function SystemStatusCard({ event }: SystemStatusCardProps) {
       >
         {formatStatusHeading(event.label)}
       </div>
+      {event.activeAgentName ? (
+        <div
+          style={{
+            color: "#344054",
+            fontSize: "0.82rem",
+            marginBottom: "0.35rem"
+          }}
+        >
+          当前处理：{event.activeAgentName}
+        </div>
+      ) : null}
       <div
         style={{
           color: "#101828",
@@ -84,5 +95,24 @@ function buildFallbackSummary(event: OrchestratorStatusEventPayload): string {
 }
 
 function formatStatusHeading(label: OrchestratorStatusEventPayload["label"]): string {
-  return label.replace("orchestrator.", "Orchestrator ").replace(/_/g, " ");
+  switch (label) {
+    case "coding.plan_pending_approval":
+      return "计划待确认";
+    case "coding.plan_revision_requested":
+      return "计划已回修";
+    case "coding.plan_rejected":
+      return "计划已拒绝";
+    case "coding.execution_started":
+      return "执行阶段";
+    case "coding.review_started":
+      return "评审阶段";
+    case "coding.qa_started":
+      return "测试阶段";
+    case "coding.awaiting_user_confirmation":
+      return "等待用户确认";
+    case "coding.completed":
+      return "工作流完成";
+    default:
+      return label.replace("orchestrator.", "Orchestrator ").replace(/_/g, " ");
+  }
 }

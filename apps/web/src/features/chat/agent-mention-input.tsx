@@ -33,7 +33,7 @@ export function AgentMentionInput({
           fontWeight: 600
         }}
       >
-        Target an agent
+        选择协作对象
       </div>
       <div
         style={{

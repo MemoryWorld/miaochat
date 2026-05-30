@@ -8,6 +8,12 @@
     --background: 210 45% 98%;
     --border: 212 28% 88%;
     --card: 0 0% 100%;
+    --font-mono:
+      "IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", "Cascadia Mono",
+      "Roboto Mono", monospace;
+    --font-sans:
+      "Avenir Next", "Segoe UI Variable", "PingFang SC", "Hiragino Sans GB",
+      "Noto Sans SC", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
     --foreground: 222 47% 11%;
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
@@ -32,7 +38,7 @@
       radial-gradient(circle at right 20%, rgba(249, 115, 22, 0.12), transparent 26%),
       linear-gradient(180deg, #f8fbff 0%, #edf3f8 100%);
     color: hsl(var(--foreground));
-    font-family: var(--font-sans), system-ui, sans-serif;
+    font-family: var(--font-sans);
     text-rendering: optimizeLegibility;
   }
 
@@ -43,7 +49,7 @@
   code,
   pre,
   textarea {
-    font-family: var(--font-mono), monospace;
+    font-family: var(--font-mono);
   }
 
   ::selection {

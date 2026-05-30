@@ -182,4 +182,216 @@ describe("conversations and messages api", () => {
       pinnedMessageIds: [messageId]
     });
   });
+
+  it("uses channel wording for generated direct and group titles", async () => {
+    const directResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        agentIds: [agentIds.hermes],
+        mode: "direct",
+        workspaceId
+      },
+      url: "/conversations"
+    });
+
+    expect(directResponse.statusCode).toBe(201);
+    expect(directResponse.json()).toMatchObject({
+      mode: "direct",
+      title: "Conversation Hermes频道"
+    });
+
+    const groupResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        agentIds: [agentIds.hermes, agentIds.codex],
+        mode: "group",
+        workspaceId
+      },
+      url: "/conversations"
+    });
+
+    expect(groupResponse.statusCode).toBe(201);
+    expect(groupResponse.json()).toMatchObject({
+      mode: "group",
+      title: "Conversation Hermes + Conversation Codex协作频道"
+    });
+  });
+
+  it("respects explicit conversation titles", async () => {
+    const response = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        agentIds: [agentIds.hermes],
+        mode: "direct",
+        title: "Release planning",
+        workspaceId
+      },
+      url: "/conversations"
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      mode: "direct",
+      title: "Release planning"
+    });
+  });
+
+  it("creates and binds a new teammate to the current channel", async () => {
+    const conversationResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        agentIds: [agentIds.hermes],
+        mode: "direct",
+        workspaceId
+      },
+      url: "/conversations"
+    });
+    const conversationId = conversationResponse.json().id as string;
+
+    const addResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        teammate: {
+          approvalMode: "balanced",
+          avatarUrl: null,
+          capabilityTags: ["测试", "频道"],
+          memoryMode: "workspace_plus_teammate",
+          modelProfileId: "balanced",
+          name: `频道测试同事 ${Date.now()}`,
+          outputStyle: "先给结论，再列出验证步骤。",
+          scopeDescription: "只处理当前频道中的验证任务。",
+          systemPrompt: "你是当前频道中的测试同事。",
+          toolBindings: []
+        },
+        workspaceId
+      },
+      url: `/conversations/${conversationId}/teammates`
+    });
+
+    expect(addResponse.statusCode).toBe(201);
+    expect(addResponse.json()).toMatchObject({
+      agent: {
+        provider: "deepseek",
+        workspaceId
+      },
+      conversation: {
+        id: conversationId,
+        mode: "group",
+        workspaceId
+      }
+    });
+    expect(addResponse.json().conversation.participants).toEqual(
+      expect.arrayContaining([
+        {
+          agentId: agentIds.hermes,
+          agentName: "Conversation Hermes"
+        },
+        {
+          agentId: addResponse.json().agent.id,
+          agentName: addResponse.json().agent.name
+        }
+      ])
+    );
+
+    const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "GET",
+      url: `/conversations?workspaceId=${workspaceId}`
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()[0]).toMatchObject({
+      id: conversationId,
+      mode: "group"
+    });
+    expect(listResponse.json()[0].participants).toEqual(
+      expect.arrayContaining([
+        {
+          agentId: addResponse.json().agent.id,
+          agentName: addResponse.json().agent.name
+        }
+      ])
+    );
+  });
+
+  it("adds a numeric suffix when the requested teammate name already exists in the channel", async () => {
+    const conversationResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        agentIds: [agentIds.hermes],
+        mode: "direct",
+        workspaceId
+      },
+      url: "/conversations"
+    });
+    const conversationId = conversationResponse.json().id as string;
+
+    const addResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        teammate: {
+          approvalMode: "balanced",
+          avatarUrl: null,
+          capabilityTags: ["计划"],
+          memoryMode: "workspace_plus_teammate",
+          modelProfileId: "balanced",
+          name: "Conversation Hermes",
+          outputStyle: "先给结论，再列出计划。",
+          scopeDescription: "补充当前频道中的规划工作。",
+          systemPrompt: "你是当前频道中的规划同事。",
+          toolBindings: []
+        },
+        workspaceId
+      },
+      url: `/conversations/${conversationId}/teammates`
+    });
+
+    expect(addResponse.statusCode).toBe(201);
+    expect(addResponse.json()).toMatchObject({
+      agent: {
+        name: "Conversation Hermes1",
+        provider: "deepseek",
+        workspaceId
+      },
+      conversation: {
+        id: conversationId,
+        mode: "group"
+      }
+    });
+    expect(addResponse.json().conversation.participants).toEqual(
+      expect.arrayContaining([
+        {
+          agentId: agentIds.hermes,
+          agentName: "Conversation Hermes"
+        },
+        {
+          agentId: addResponse.json().agent.id,
+          agentName: "Conversation Hermes1"
+        }
+      ])
+    );
+  });
 });

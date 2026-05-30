@@ -2,70 +2,63 @@
 
 ## Objective
 
-Deliver a `3` minute product demo that proves the Release 1 web experience and
-shows the multi-agent coordination story clearly.
+Deliver a `3` minute Chinese product demo that shows Miaochat as a workspace
+where users connect a model, choose AI 同事, and complete one coding workflow in
+a single timeline.
 
 ## Pre-Demo Setup
 
-- Staging web and API are reachable
-- At least one working credential is bound for each provider that will be shown
-- One direct conversation and one group conversation are pre-seeded as backup
-- Artifact preview and deploy-status examples are available in existing
-  conversations in case live generation is slow
-
-## Phase A Baseline Variant
-
-If the demo is being recorded against the current `Phase A` milestone instead of
-the final four-provider Release 1 target:
-
-- Use `Hermes` for the direct-conversation segment.
-- Use a mixed `Hermes + OpenClaw` group conversation for the orchestration
-  segment.
-- Call out explicitly that `Codex`, `Claude Code`, staging acceptance, load
-  validation, and the final sign-off remain deferred.
+- Local web, API, worker, and database are reachable.
+- A demo user can log in.
+- The active workspace has one valid DeepSeek model connection.
+- The coding work mode has at least one AI 同事 selected.
+- A recovery path is ready if live model latency is unstable.
 
 ## Timeline
 
-### 0:00-0:25 — Product Framing
+### 0:00-0:25 — Workspace Framing
 
-- Introduce Miaochat as a multi-agent collaboration workspace
-- Show the conversation list and active workspace selector
+- Show the compact workspace shell.
+- Show the active workspace selector.
+- Explain that the user works with AI 同事, not with backend tools.
 
-### 0:25-0:55 — BYOK Setup
+### 0:25-0:55 — Model Connection
 
-- Open `/setup`
-- Select `Hermes` or `OpenClaw`
-- Validate and bind a credential
-- Call out that the same setup flow is already smoke-tested for both baseline
-  providers in Phase A
+- Open settings.
+- Show `模型连接`.
+- Validate or show an already-saved DeepSeek connection.
+- State that the API Key is stored server-side and is never displayed again.
 
-### 0:55-1:35 — Direct Conversation
+### 0:55-1:35 — Coding Work Mode
 
-- Create a new direct conversation
-- Send a prompt
-- Show streaming output and persisted history after refresh
+- Open the workbench.
+- Choose `编码`.
+- Review the recommended AI 同事 set.
+- Remove or keep teammates as needed, then start the work.
 
-### 1:35-2:15 — Group Orchestration
+### 1:35-2:20 — Plan, Approval, Execution
 
-- Open a group conversation
-- Mention or select multiple agents
-- Show partial progress / failure visibility and the aggregated result
+- Show the technical lead submitting a plan first.
+- Approve the plan.
+- Show implementation, review, and testing updates in the same timeline.
+- If a model call fails, show retry, details, model connection, and recovery
+  task actions.
 
-### 2:15-2:45 — Artifact Review
+### 2:20-2:45 — Workspace Tools
 
-- Open an attachment, preview, diff, or deploy-status card
-- Show how review stays inside the chat timeline
+- Open inbox, tasks, calendar, and channels briefly.
+- Show filters, primary actions, and context continuity.
 
 ### 2:45-3:00 — Close
 
-- Summarize provider breadth, orchestration, and artifact visibility
-- Mention deferred platform surfaces: desktop, mobile, deeper deploy workflows
+- Summarize the closed loop: connect model, select AI 同事, approve plan, execute,
+  review, and verify.
+- Mention that future model options can be added without changing the customer
+  workflow.
 
 ## Recording Notes
 
-- Prefer one continuous take with browser zoom set so the left rail and main
-  timeline are both readable
-- If live provider latency is unstable, keep a pre-seeded conversation ready
-  and narrate that the same flow was already exercised in acceptance tests
-- Keep terminal footage out of frame unless explicitly showing provider or
-  staging evidence
+- Use Chinese copy in the browser.
+- Keep terminal output out of frame unless showing a verification command.
+- If live execution stalls, use seeded timeline evidence and state that the same
+  flow is covered by integration tests.

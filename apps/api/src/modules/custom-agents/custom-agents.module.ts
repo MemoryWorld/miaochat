@@ -9,6 +9,7 @@ import { CustomAgentsService } from "./custom-agents.service.js";
 @Module({
   controllers: [CustomAgentsController],
   imports: [AuthModule, DatabaseModule, WorkspacesModule],
+  exports: [CustomAgentsService],
   providers: [CustomAgentsService]
 })
 export class CustomAgentsModule {}

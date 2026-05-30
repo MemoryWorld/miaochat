@@ -4,7 +4,9 @@ import type {
 } from "@agenthub/contracts";
 import {
   credentialSourceSchema,
+  createModelConnectionInputSchema,
   createProviderCredentialInputSchema,
+  modelConnectionSchema,
   providerCredentialSchema
 } from "@agenthub/contracts";
 import { z } from "zod";
@@ -24,6 +26,7 @@ export const workspaceQuerySchema = z.object({
 const credentialModeProviderSchema = z.enum([
   "claude-code",
   "codex",
+  "deepseek",
   "hermes",
   "openclaw"
 ]);
@@ -45,6 +48,7 @@ export type CredentialIdParams = z.infer<typeof credentialIdParamsSchema>;
 export type CredentialMode = z.infer<typeof credentialModeSchema>;
 export type CredentialModeInput = z.infer<typeof credentialModeInputSchema>;
 export type CredentialMetadata = z.infer<typeof credentialMetadataSchema>;
+export type ModelConnectionMetadata = z.infer<typeof modelConnectionSchema>;
 export type WorkspaceQuery = z.infer<typeof workspaceQuerySchema>;
 
 export type CredentialValidationResponse = {
@@ -61,6 +65,10 @@ export type RevokeCredentialResponse = {
 
 export function parseCredentialCreateInput(input: unknown): CredentialCreateInput {
   return createProviderCredentialInputSchema.parse(input);
+}
+
+export function parseModelConnectionInput(input: unknown) {
+  return createModelConnectionInputSchema.parse(input);
 }
 
 export function parseCredentialIdParams(input: unknown): CredentialIdParams {
@@ -86,6 +94,21 @@ export function toCredentialMetadata(
     provider: credential.provider,
     providerAccountId: credential.providerAccountId,
     validationState: credential.validationState,
+    workspaceId: credential.workspaceId
+  });
+}
+
+export function toModelConnectionMetadata(
+  credential: CredentialMetadata,
+  preset: ModelConnectionMetadata["preset"]
+): ModelConnectionMetadata {
+  return modelConnectionSchema.parse({
+    id: credential.id,
+    kind: "deepseek_api",
+    label: credential.label,
+    model: credential.providerAccountId,
+    preset,
+    status: credential.validationState,
     workspaceId: credential.workspaceId
   });
 }

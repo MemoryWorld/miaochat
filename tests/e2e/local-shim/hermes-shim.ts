@@ -107,7 +107,7 @@ function handleStream(request: IncomingMessage, response: ServerResponse): void 
 
     const child = spawn(
       CLI_BIN,
-      ["chat", "-Q", "-q", prompt, ...(PROVIDER ? ["--provider", PROVIDER] : []), ...(MODEL ? ["-m", MODEL] : [])],
+      ["chat", "-Q", "--max-turns", "1", "--accept-hooks", "-q", prompt, ...(PROVIDER ? ["--provider", PROVIDER] : []), ...(MODEL ? ["-m", MODEL] : [])],
       { stdio: ["ignore", "pipe", "pipe"] }
     );
 

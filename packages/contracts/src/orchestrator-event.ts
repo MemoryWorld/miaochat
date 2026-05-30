@@ -1,8 +1,21 @@
 import { z } from "zod";
 
 import { providerIdSchema } from "./database-enums.js";
+import {
+  codingWorkflowApprovalStateSchema,
+  codingWorkflowStateSchema,
+  codingWorkflowTaskSchema
+} from "./coding-workflow.js";
 
 export const orchestratorStatusLabelSchema = z.enum([
+  "coding.awaiting_user_confirmation",
+  "coding.completed",
+  "coding.execution_started",
+  "coding.plan_pending_approval",
+  "coding.plan_rejected",
+  "coding.plan_revision_requested",
+  "coding.qa_started",
+  "coding.review_started",
   "orchestrator.aggregated",
   "orchestrator.dispatched",
   "orchestrator.partial_failure",
@@ -30,12 +43,17 @@ export const orchestratorStatusStateSchema = z.enum([
 ]);
 
 export const orchestratorStatusEventPayloadSchema = z.object({
+  activeAgentName: z.string().min(1).optional(),
+  approvalState: codingWorkflowApprovalStateSchema.optional(),
   failures: z.array(orchestratorFailureSchema).default([]),
   label: orchestratorStatusLabelSchema,
   state: orchestratorStatusStateSchema,
   successfulAgentCount: z.number().int().nonnegative(),
   summary: z.string().min(1).optional(),
-  totalAgentCount: z.number().int().positive()
+  taskSnapshot: z.array(codingWorkflowTaskSchema).optional(),
+  totalAgentCount: z.number().int().positive(),
+  workflowId: z.string().min(1).optional(),
+  workflowState: codingWorkflowStateSchema.optional()
 });
 
 export type OrchestratorFailure = z.infer<typeof orchestratorFailureSchema>;

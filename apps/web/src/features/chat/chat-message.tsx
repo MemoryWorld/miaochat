@@ -6,6 +6,7 @@ import { ArtifactCard } from "../artifacts/artifact-card";
 import { PinMessageAction } from "./pin-message-action";
 
 type ChatMessageProps = {
+  authorLabel?: string;
   artifacts: Artifact[];
   isPinPending: boolean;
   isPinDisabled: boolean;
@@ -14,6 +15,7 @@ type ChatMessageProps = {
 };
 
 export function ChatMessage({
+  authorLabel,
   artifacts,
   isPinDisabled,
   isPinPending,
@@ -44,7 +46,7 @@ export function ChatMessage({
           textTransform: "uppercase"
         }}
       >
-        {message.role}
+        {authorLabel ?? message.role}
       </div>
       <div style={{ lineHeight: 1.7 }}>{message.content}</div>
       {artifacts.length > 0 ? (

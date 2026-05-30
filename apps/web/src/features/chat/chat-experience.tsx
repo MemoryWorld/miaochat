@@ -3,28 +3,40 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 
 import {
+  type CodingWorkflowDecision,
+  type CodingWorkflowDetail,
   deployCommandResultSchema,
   type Artifact,
   type Conversation,
   type CustomAgent,
   type DeployCommandResult,
   type Message,
+  type ModelConnection,
   type OrchestratorStatusEventPayload
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import {
+  isBuiltInCodingTeammate
+} from "../agents/built-in-coding-team";
 import { AuthPanel } from "../auth/auth-panel";
 import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
 import { NewConversationDialog } from "../conversations/new-conversation-dialog";
+import {
+  WorkModeLauncher,
+  type CodingWorkflowDraft
+} from "../workmodes/work-mode-launcher";
 import { ChatComposer } from "./chat-composer";
+import { CodingWorkflowPanel } from "./coding-workflow-panel";
 import { parseDeployCommand } from "./deploy-command";
 import { ChatThread } from "./chat-thread";
 import { useConversationStream } from "./use-conversation-stream";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const timelineTabs = ["聊天", "文件", "置顶"] as const;
+const postSendRefreshDelaysMs = [1_200, 4_000, 8_000] as const;
 
 type LiveAssistantMessage = {
   content: string;
@@ -41,8 +53,11 @@ export function ChatExperience() {
   } = useActiveWorkspace();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [customAgents, setCustomAgents] = useState<CustomAgent[]>([]);
+  const [modelConnections, setModelConnections] = useState<ModelConnection[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [hasLoadedCustomAgents, setHasLoadedCustomAgents] = useState(false);
+  const [isLaunchingCodingWorkflow, setIsLaunchingCodingWorkflow] = useState(false);
   const [isLoadingCustomAgents, setIsLoadingCustomAgents] = useState(false);
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [isPinningMessageId, setIsPinningMessageId] = useState<string | null>(null);
@@ -54,8 +69,14 @@ export function ChatExperience() {
   const [artifactsByMessageId, setArtifactsByMessageId] = useState<
     Record<string, Artifact[]>
   >({});
+  const [codingWorkflow, setCodingWorkflow] = useState<CodingWorkflowDetail | null>(null);
+  const [isDecisioningWorkflow, setIsDecisioningWorkflow] =
+    useState<CodingWorkflowDecision | null>(null);
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const postSendRefreshTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const processedStreamEventCountRef = useRef(0);
+  const isWorkspaceReady = !isLoadingWorkspaces && Boolean(workspaceId);
 
   const stream = useConversationStream({
     conversationId: selectedConversationId,
@@ -63,8 +84,13 @@ export function ChatExperience() {
   });
 
   useEffect(() => {
+    if (!isWorkspaceReady) {
+      return;
+    }
+
     void loadConversations();
-  }, [workspaceId]);
+    void loadModelConnections();
+  }, [isWorkspaceReady, workspaceId]);
 
   useEffect(() => {
     setSelectedConversationId(null);
@@ -73,23 +99,35 @@ export function ChatExperience() {
     setLiveAssistantMessage(null);
     setDeployments([]);
     setCustomAgents([]);
+    setCodingWorkflow(null);
+    setHasLoadedCustomAgents(false);
+    setIsDecisioningWorkflow(null);
+    setIsLoadingWorkflow(false);
+    setModelConnections([]);
+    clearPostSendRefreshTimers();
     processedStreamEventCountRef.current = 0;
   }, [workspaceId]);
 
   useEffect(() => {
-    if (!selectedConversationId) {
+    if (!isWorkspaceReady || !selectedConversationId) {
       setMessages([]);
       setArtifactsByMessageId({});
+      setCodingWorkflow(null);
       setLiveAssistantMessage(null);
       setDeployments([]);
+      clearPostSendRefreshTimers();
       processedStreamEventCountRef.current = 0;
       return;
     }
 
+    clearPostSendRefreshTimers();
     processedStreamEventCountRef.current = 0;
     setDeployments([]);
     void loadMessages(selectedConversationId);
-  }, [selectedConversationId]);
+    void loadCodingWorkflow(selectedConversationId);
+  }, [isWorkspaceReady, selectedConversationId]);
+
+  useEffect(() => () => clearPostSendRefreshTimers(), []);
 
   useEffect(() => {
     if (!selectedConversationId) {
@@ -131,22 +169,67 @@ export function ChatExperience() {
         }
 
         if (event.kind === "conversation.message.completed") {
+          clearPostSendRefreshTimers();
           setLiveAssistantMessage({
             content: event.payload.finalContent,
             id: event.payload.messageId
           });
           void loadMessages(selectedConversationId);
+          return;
+        }
+
+        if (
+          event.kind === "conversation.status" &&
+          event.payload.workflowId
+        ) {
+          setCodingWorkflow((current) => {
+            if (!current || current.id !== event.payload.workflowId) {
+              return current;
+            }
+
+            return {
+              ...current,
+              approvalState: event.payload.approvalState ?? current.approvalState,
+              state: event.payload.workflowState ?? current.state,
+              taskSnapshot: event.payload.taskSnapshot ?? current.taskSnapshot
+            };
+          });
         }
       });
     }
   }, [selectedConversationId, stream.events]);
 
   const conversationList = Array.isArray(conversations) ? conversations : [];
+  const hasReadyModelConnection = modelConnections.some(
+    (connection) => connection.status === "valid"
+  );
+  const codingEligibleCustomAgents = customAgents.filter(
+    (agent) => !isBuiltInCodingTeammate(agent)
+  );
   const selectedConversation =
     conversationList.find((conversation) => conversation.id === selectedConversationId) ?? null;
   const statusEvents = stream.events.flatMap((event) =>
     event.kind === "conversation.status" ? [event.payload as OrchestratorStatusEventPayload] : []
   );
+
+  useEffect(() => {
+    if (
+      !hasReadyModelConnection ||
+      hasLoadedCustomAgents ||
+      !isWorkspaceReady ||
+      isLoadingCustomAgents
+    ) {
+      return;
+    }
+
+    void loadCustomAgents().catch(() => {});
+  }, [
+    hasLoadedCustomAgents,
+    hasReadyModelConnection,
+    isLoadingCustomAgents,
+    isWorkspaceReady,
+    workspaceId
+  ]);
 
   async function loadConversations(): Promise<void> {
     try {
@@ -219,6 +302,41 @@ export function ChatExperience() {
     }
   }
 
+  async function loadCodingWorkflow(conversationId: string): Promise<void> {
+    setIsLoadingWorkflow(true);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/coding-workflows?conversationId=${conversationId}&workspaceId=${workspaceId}`,
+        {
+          credentials: "include"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        startTransition(() => {
+          setCodingWorkflow(null);
+        });
+        return;
+      }
+
+      startTransition(() => {
+        setCodingWorkflow(
+          payload && typeof payload === "object" && !Array.isArray(payload)
+            ? (payload as CodingWorkflowDetail)
+            : null
+        );
+      });
+    } catch {
+      startTransition(() => {
+        setCodingWorkflow(null);
+      });
+    } finally {
+      setIsLoadingWorkflow(false);
+    }
+  }
+
   async function loadArtifactsForMessage(messageId: string): Promise<void> {
     try {
       const response = await fetch(
@@ -245,7 +363,33 @@ export function ChatExperience() {
     }
   }
 
-  async function loadCustomAgents(): Promise<void> {
+  async function loadModelConnections(): Promise<void> {
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/credentials/model-connections?workspaceId=${workspaceId}`,
+        { credentials: "include" }
+      );
+
+      if (!response.ok) {
+        startTransition(() => {
+          setModelConnections([]);
+        });
+        return;
+      }
+
+      const payload = await readJson(response);
+
+      startTransition(() => {
+        setModelConnections(asArray<ModelConnection>(payload));
+      });
+    } catch {
+      startTransition(() => {
+        setModelConnections([]);
+      });
+    }
+  }
+
+  async function loadCustomAgents(): Promise<CustomAgent[]> {
     setIsLoadingCustomAgents(true);
 
     try {
@@ -258,23 +402,37 @@ export function ChatExperience() {
         throw new Error(readErrorMessage(payload, "Failed to load custom agents."));
       }
 
+      const nextAgents = asArray<CustomAgent>(payload);
+
       startTransition(() => {
-        setCustomAgents(asArray<CustomAgent>(payload));
+        setCustomAgents(nextAgents);
+        setHasLoadedCustomAgents(true);
       });
+
+      return nextAgents;
     } catch (error) {
+      startTransition(() => {
+        setHasLoadedCustomAgents(true);
+      });
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to load custom agents."
       );
+      throw error;
     } finally {
       setIsLoadingCustomAgents(false);
     }
   }
 
-  async function createConversation(agentIds: string[]): Promise<void> {
+  async function createConversation(input: {
+    agentIds: string[];
+    mode: "direct" | "group";
+    title?: string;
+  }): Promise<Conversation> {
     const response = await fetch(`${apiBaseUrl}/conversations`, {
       body: JSON.stringify({
-        agentIds,
-        mode: "direct",
+        agentIds: input.agentIds,
+        mode: input.mode,
+        title: input.title,
         workspaceId
       }),
       credentials: "include",
@@ -295,20 +453,25 @@ export function ChatExperience() {
       setConversations((current) => [payload, ...current]);
       setSelectedConversationId(payload.id);
     });
+
+    return payload;
   }
 
   async function handleCreateConversation(): Promise<void> {
     setErrorMessage(null);
-    setIsCreating(true);
 
     try {
-      await createConversation(["agent_mock"]);
+      if (customAgents.length === 0) {
+        await loadCustomAgents();
+      }
+
+      startTransition(() => {
+        setIsNewConversationOpen(true);
+      });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to create the mock conversation."
+        error instanceof Error ? error.message : "Failed to prepare a new conversation."
       );
-    } finally {
-      setIsCreating(false);
     }
   }
 
@@ -317,7 +480,10 @@ export function ChatExperience() {
     setIsCreating(true);
 
     try {
-      await createConversation([agentId]);
+      await createConversation({
+        agentIds: [agentId],
+        mode: "direct"
+      });
 
       startTransition(() => {
         setIsNewConversationOpen(false);
@@ -328,6 +494,126 @@ export function ChatExperience() {
       );
     } finally {
       setIsCreating(false);
+    }
+  }
+
+  async function sendUserMessage(input: {
+    content: string;
+    conversationId: string;
+    mentionedAgentIds: string[];
+  }): Promise<Message> {
+    const response = await fetch(`${apiBaseUrl}/messages/send`, {
+      body: JSON.stringify({
+        content: input.content,
+        conversationId: input.conversationId,
+        mentionedAgentIds: input.mentionedAgentIds,
+        role: "user",
+        workspaceId
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      throw new Error(readErrorMessage(payload, "Failed to send the message."));
+    }
+
+    return payload as Message;
+  }
+
+  async function handleLaunchCodingWorkflow(draft: CodingWorkflowDraft): Promise<void> {
+    setErrorMessage(null);
+    setIsLaunchingCodingWorkflow(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/coding-workflows`, {
+        body: JSON.stringify({
+          deadline: draft.deadline || undefined,
+          extraAgentIds: draft.extraAgentIds,
+          goal: draft.goal,
+          priority: draft.priority,
+          recommendedRoleIds: draft.recommendedRoleIds,
+          repoContext: draft.repoContext || undefined,
+          workspaceId
+        }),
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "Failed to launch the coding workflow."));
+      }
+
+      const created = payload as {
+        conversation: Conversation;
+        workflow: CodingWorkflowDetail;
+      };
+
+      startTransition(() => {
+        setCodingWorkflow(created.workflow);
+        setConversations((current) => [created.conversation, ...current]);
+        setSelectedConversationId(created.conversation.id);
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to launch the coding workflow."
+      );
+    } finally {
+      setIsLaunchingCodingWorkflow(false);
+    }
+  }
+
+  async function handleWorkflowDecision(input: {
+    decision: CodingWorkflowDecision;
+    note: string;
+  }): Promise<void> {
+    if (!codingWorkflow) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsDecisioningWorkflow(input.decision);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/coding-workflows/${codingWorkflow.id}/decisions`,
+        {
+          body: JSON.stringify({
+            decision: input.decision,
+            note: input.note || undefined,
+            workspaceId
+          }),
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "Failed to update the workflow decision."));
+      }
+
+      startTransition(() => {
+        setCodingWorkflow(payload as CodingWorkflowDetail);
+      });
+      await loadMessages(codingWorkflow.conversationId);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to update the workflow decision."
+      );
+    } finally {
+      setIsDecisioningWorkflow(null);
     }
   }
 
@@ -382,31 +668,16 @@ export function ChatExperience() {
         return;
       }
 
-      const response = await fetch(`${apiBaseUrl}/messages/send`, {
-        body: JSON.stringify({
-          content: input.content,
-          conversationId: selectedConversationId,
-          mentionedAgentIds: input.mentionedAgentIds,
-          role: "user",
-          workspaceId
-        }),
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        method: "POST"
+      const message = await sendUserMessage({
+        content: input.content,
+        conversationId: selectedConversationId,
+        mentionedAgentIds: input.mentionedAgentIds
       });
-      const payload = await readJson(response);
-
-      if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "Failed to send the message."));
-      }
-
-      const message = payload as Message;
 
       startTransition(() => {
         setMessages((current) => [...current, message]);
       });
+      schedulePostSendRefresh(selectedConversationId);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to send the message."
@@ -414,6 +685,22 @@ export function ChatExperience() {
     } finally {
       setIsSending(false);
     }
+  }
+
+  function clearPostSendRefreshTimers(): void {
+    for (const timer of postSendRefreshTimersRef.current) {
+      clearTimeout(timer);
+    }
+    postSendRefreshTimersRef.current = [];
+  }
+
+  function schedulePostSendRefresh(conversationId: string): void {
+    clearPostSendRefreshTimers();
+    postSendRefreshTimersRef.current = postSendRefreshDelaysMs.map((delay) =>
+      setTimeout(() => {
+        void loadMessages(conversationId);
+      }, delay)
+    );
   }
 
   async function handlePinMessage(messageId: string): Promise<void> {
@@ -477,122 +764,193 @@ export function ChatExperience() {
     });
     void refreshWorkspaces();
     void loadConversations();
+    void loadModelConnections();
   }
 
   function handleLoggedOut(): void {
     startTransition(() => {
       setArtifactsByMessageId({});
+      setCodingWorkflow(null);
       setConversations([]);
       setCustomAgents([]);
+      setHasLoadedCustomAgents(false);
       setDeployments([]);
       setErrorMessage(null);
+      setIsDecisioningWorkflow(null);
       setLiveAssistantMessage(null);
       setMessages([]);
+      setModelConnections([]);
       setSelectedConversationId(null);
     });
     void refreshWorkspaces();
   }
 
+  function resolveMessageAuthorLabel(message: Message): string | undefined {
+    if (message.role === "user") {
+      return "你";
+    }
+
+    if (message.role === "system") {
+      return "系统";
+    }
+
+    if (!message.sourceAgentId) {
+      return "AI 同事";
+    }
+
+    const teammate =
+      codingWorkflow?.teammates.find((entry) => entry.agentId === message.sourceAgentId) ??
+      selectedConversation?.participants.find(
+        (entry) => entry.agentId === message.sourceAgentId
+      );
+
+    if (!teammate) {
+      return "AI 同事";
+    }
+
+    return "name" in teammate ? teammate.name : teammate.agentName;
+  }
+
   return (
     <AppShell
-      sidebar={
-        <>
-          <Badge className="mb-3" tone="primary">
-            Chat Workspace
-          </Badge>
-          <h1 className="mt-0 text-3xl font-semibold tracking-tight text-slate-950">
-            AgentHub
-          </h1>
+      workspaceSlot={
+        <WorkspaceSwitcher
+          activeWorkspaceId={workspaceId}
+          isLoading={isLoadingWorkspaces}
+          onSelect={selectWorkspace}
+          workspaces={workspaces}
+        />
+      }
+    >
+      <section className="grid gap-6">
+        <div className="mb-5 flex flex-col justify-between gap-4 border-b border-slate-200/80 pb-5 xl:flex-row xl:items-start">
+          <div>
+            <h2 className="m-0 text-2xl font-semibold text-slate-950">
+              {selectedConversation ? `# ${selectedConversation.title}` : "频道时间线"}
+            </h2>
+            <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
+              {selectedConversation
+                ? "继续在这个频道里推进任务。消息、状态变化和产物都会沿着同一条时间线持续写回。"
+                : hasReadyModelConnection
+                  ? "先选择一个已有频道，或通过“启动编码工作流”拉起默认 AI 团队。"
+                  : "先在设置中完成模型连接，再进入频道开始协作。"}
+            </p>
+          </div>
+          <div className="grid gap-2 text-right">
+            <div className="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500">
+              流：{formatStreamState(stream.connectionState)}
+            </div>
+          </div>
+        </div>
+        <section className="grid gap-5 rounded-[28px] border border-slate-200 bg-slate-50/80 p-5 shadow-sm">
+          <div className="grid gap-2">
+            <Badge tone="primary">协作入口</Badge>
+            <h3 className="m-0 text-xl font-semibold text-slate-950">
+              在同一个窗口里启动协作、选择频道并继续推进工作
+            </h3>
+            <p className="mb-0 text-sm leading-7 text-slate-600">
+              登录状态、工作模式启动器、新建协作和频道列表都放在这里，避免把首页拆成额外的中间栏。
+            </p>
+          </div>
           <AuthPanel
             onAuthenticated={handleAuthenticated}
             onLoggedOut={handleLoggedOut}
           />
-          <WorkspaceSwitcher
-            activeWorkspaceId={workspaceId}
-            isLoading={isLoadingWorkspaces}
-            onSelect={selectWorkspace}
-            workspaces={workspaces}
+          <WorkModeLauncher
+            canStartCoding={hasReadyModelConnection}
+            customAgents={codingEligibleCustomAgents}
+            isLaunching={isLaunchingCodingWorkflow}
+            isLoadingCustomAgents={isLoadingCustomAgents}
+            onLaunchCoding={handleLaunchCodingWorkflow}
           />
-          <p className="text-sm leading-7 text-slate-600">
-            Release 1 keeps the mock direct path for smoke checks, while custom agents
-            can now be created separately and selected for new sessions.
-          </p>
-          <a
-            className="inline-flex items-center text-sm font-semibold text-sky-700 no-underline transition hover:text-sky-600"
-            href="/agents"
-          >
-            Open agents workspace
-          </a>
-          <Button
-            className="mt-2"
-            disabled={isCreating}
-            onClick={() => {
-              void handleCreateConversation();
-            }}
-            type="button"
-          >
-            Start mock conversation
-          </Button>
-          <NewConversationDialog
-            agents={customAgents}
-            busy={isCreating}
-            isLoading={isLoadingCustomAgents}
-            isOpen={isNewConversationOpen}
-            onCreate={handleCreateCustomConversation}
-            onOpen={async () => {
-              if (customAgents.length === 0) {
-                await loadCustomAgents();
-              }
-            }}
-            onToggleOpen={setIsNewConversationOpen}
-          />
-          <div className="mt-4 grid gap-2.5">
-            {conversationList.map((conversation) => (
-              <button
-                key={conversation.id}
-                onClick={() => {
-                  setSelectedConversationId(conversation.id);
-                }}
-                className={`grid gap-1 rounded-3xl border bg-white/80 px-4 py-3 text-left transition hover:bg-white ${
-                  conversation.id === selectedConversationId
-                    ? "border-sky-200"
-                    : "border-slate-200"
-                }`}
-                type="button"
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="m-0 text-lg font-semibold text-slate-950">频道列表</h3>
+                <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
+                  选择一个已有频道，或新建一条协作继续推进任务、文件和审批。
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+                {conversationList.length} 条
+              </span>
+            </div>
+            {hasReadyModelConnection ? (
+              <NewConversationDialog
+                agents={customAgents}
+                busy={isCreating}
+                isLoading={isLoadingCustomAgents}
+                isOpen={isNewConversationOpen}
+                onCreate={handleCreateCustomConversation}
+                onOpen={handleCreateConversation}
+                onToggleOpen={setIsNewConversationOpen}
+              />
+            ) : (
+              <a
+                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-900 no-underline transition hover:bg-white"
+                href="/settings?section=model-connections"
               >
-                <strong className="text-slate-950">{conversation.title}</strong>
-                <span className="text-xs text-slate-500">
-                  {conversation.participants.map((entry) => entry.agentName).join(", ")}
-                </span>
-              </button>
-            ))}
-            {conversationList.length === 0 ? (
-              <p className="mb-0 text-sm leading-7 text-slate-600">
-                No conversations yet. Start the seeded mock direct conversation first.
-              </p>
-            ) : null}
+                添加模型连接
+              </a>
+            )}
+            <div className="grid gap-2.5">
+              {conversationList.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  onClick={() => {
+                    setSelectedConversationId(conversation.id);
+                  }}
+                  className={`grid gap-1 rounded-3xl border bg-white/90 px-4 py-3 text-left transition hover:bg-white ${
+                    conversation.id === selectedConversationId
+                      ? "border-sky-200 ring-2 ring-sky-100"
+                      : "border-slate-200"
+                  }`}
+                  type="button"
+                >
+                  <strong className="text-slate-950"># {conversation.title}</strong>
+                  <span className="text-xs text-slate-500">
+                    {conversation.participants.map((entry) => entry.agentName).join(", ")}
+                  </span>
+                </button>
+              ))}
+              {conversationList.length === 0 ? (
+                <p className="mb-0 text-sm leading-7 text-slate-600">
+                  {hasReadyModelConnection
+                    ? "当前还没有频道。先新建一条与 AI 同事的协作，再把任务、文件和置顶内容逐步沉淀进来。"
+                    : "当前工作区还没有可用模型连接。先去设置完成连接，再开始新的频道协作。"}
+                </p>
+              ) : null}
+            </div>
           </div>
-        </>
-      }
-    >
-      <section>
-        <div className="mb-4 flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
-          <div>
-            <h2 className="m-0 text-2xl font-semibold text-slate-950">
-              {selectedConversation?.title ?? "Conversation Viewport"}
-            </h2>
-            <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              {selectedConversation
-                ? "Send one message to exercise the single-agent mock worker path."
-                : "Create the mock conversation to activate the chat thread and SSE stream."}
-            </p>
-          </div>
-          <div className="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500">
-            {stream.connectionState}
-          </div>
+        </section>
+        <div className="mb-5 flex flex-wrap gap-2">
+          {timelineTabs.map((tab, index) => (
+            <button
+              key={tab}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                index === 0
+                  ? "bg-slate-950 text-white"
+                  : "border border-slate-200 bg-white/80 text-slate-600"
+              }`}
+              type="button"
+            >
+              {tab}
+            </button>
+          ))}
         </div>
         {errorMessage ? (
           <p className="mt-0 text-sm font-medium text-red-700">{errorMessage}</p>
+        ) : null}
+        {selectedConversationId && isLoadingWorkflow ? (
+          <p className="mt-0 text-sm text-slate-500">正在加载当前频道的工作流状态...</p>
+        ) : null}
+        {codingWorkflow ? (
+          <CodingWorkflowPanel
+            busyDecision={isDecisioningWorkflow}
+            messages={messages}
+            onDecision={handleWorkflowDecision}
+            workflow={codingWorkflow}
+          />
         ) : null}
         <ChatThread
           artifactsByMessageId={artifactsByMessageId}
@@ -602,6 +960,7 @@ export function ChatExperience() {
           liveAssistantMessage={liveAssistantMessage}
           messages={messages}
           onPinMessage={handlePinMessage}
+          resolveAuthorLabel={resolveMessageAuthorLabel}
           statusEvents={statusEvents}
         />
         <ChatComposer
@@ -612,6 +971,21 @@ export function ChatExperience() {
       </section>
     </AppShell>
   );
+}
+
+function formatStreamState(
+  state: "connecting" | "error" | "idle" | "open"
+): "空闲" | "连接中" | "连接失败" | "已连接" {
+  switch (state) {
+    case "connecting":
+      return "连接中";
+    case "error":
+      return "连接失败";
+    case "open":
+      return "已连接";
+    case "idle":
+      return "空闲";
+  }
 }
 
 function asArray<T>(payload: unknown): T[] {

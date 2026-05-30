@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm";
 
 import type {
   CreateProviderCredentialInput,
+  ModelConnectionPreset,
   ProviderCredential
 } from "@agenthub/contracts";
 import { CredentialService, type CredentialRepository } from "@agenthub/domain";
@@ -18,18 +19,22 @@ import type {
   CredentialModeInput,
   CredentialMetadata,
   CredentialValidationResponse,
+  ModelConnectionMetadata,
   RevokeCredentialResponse
 } from "./dto.js";
 import {
   credentialModeSchema,
   parseCredentialModeInput,
+  parseModelConnectionInput,
   parseCredentialCreateInput,
-  toCredentialMetadata
+  toCredentialMetadata,
+  toModelConnectionMetadata
 } from "./dto.js";
 import { QuotaService } from "../quota/quota.service.js";
 import { CredentialPoolService } from "./pool.service.js";
 import { validateClaudeCodeCredential } from "./providers/claude-code-validator.js";
 import { validateCodexCredential } from "./providers/codex-validator.js";
+import { validateDeepSeekCredential } from "./providers/deepseek-validator.js";
 import { validateHermesCredential } from "./providers/hermes-validator.js";
 import { validateOpenClawCredential } from "./providers/openclaw-validator.js";
 
@@ -38,6 +43,7 @@ type CredentialRow = {
   encrypted_secret: string;
   id: string;
   label: string;
+  model_connection_preset: ModelConnectionPreset | null;
   owner_user_id: string;
   provider: ProviderCredential["provider"];
   provider_account_id: string;
@@ -83,6 +89,7 @@ class PostgresCredentialRepository implements CredentialRepository {
         credential_source,
         encrypted_secret,
         label,
+        model_connection_preset,
         owner_user_id,
         provider,
         provider_account_id,
@@ -100,6 +107,7 @@ class PostgresCredentialRepository implements CredentialRepository {
         credential_source,
         encrypted_secret,
         label,
+        model_connection_preset,
         owner_user_id,
         provider,
         provider_account_id,
@@ -120,6 +128,7 @@ class PostgresCredentialRepository implements CredentialRepository {
         credential_source,
         encrypted_secret,
         label,
+        model_connection_preset,
         owner_user_id,
         provider,
         provider_account_id,
@@ -207,6 +216,68 @@ export class CredentialsService {
   async list(workspaceId: string, ownerUserId: string): Promise<CredentialMetadata[]> {
     const credentials = await this.domainService.list(workspaceId, ownerUserId);
     return credentials.map(toCredentialMetadata);
+  }
+
+  async createModelConnection(input: unknown, ownerUserId: string): Promise<ModelConnectionMetadata> {
+    const parsed = parseModelConnectionInput(input);
+    const credential = await this.create(
+      {
+        label: parsed.label,
+        provider: "deepseek",
+        providerAccountId: parsed.model,
+        rawSecret: parsed.apiKey,
+        workspaceId: parsed.workspaceId
+      },
+      ownerUserId
+    );
+
+    await this.database.execute(sql`
+      UPDATE provider_credentials
+      SET model_connection_preset = ${parsed.preset}
+      WHERE id = ${credential.id}
+        AND owner_user_id = ${ownerUserId}
+    `);
+
+    return toModelConnectionMetadata(credential, parsed.preset);
+  }
+
+  async validateModelConnection(input: unknown): Promise<CredentialValidationResponse> {
+    const parsed = parseModelConnectionInput(input);
+    return this.validate({
+      label: parsed.label,
+      provider: "deepseek",
+      providerAccountId: parsed.model,
+      rawSecret: parsed.apiKey,
+      workspaceId: parsed.workspaceId
+    });
+  }
+
+  async listModelConnections(workspaceId: string, ownerUserId: string): Promise<ModelConnectionMetadata[]> {
+    const result = await this.database.execute<CredentialRow>(sql`
+      SELECT
+        id,
+        credential_source,
+        encrypted_secret,
+        label,
+        model_connection_preset,
+        owner_user_id,
+        provider,
+        provider_account_id,
+        validation_state,
+        workspace_id
+      FROM provider_credentials
+      WHERE workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+        AND provider = 'deepseek'
+      ORDER BY created_at ASC
+    `);
+
+    return result.rows.map((row) =>
+      toModelConnectionMetadata(
+        toCredentialMetadata(mapCredentialRow(row)),
+        resolveModelConnectionPreset(row.model_connection_preset)
+      )
+    );
   }
 
   async listModes(workspaceId: string, ownerUserId: string): Promise<CredentialMode[]> {
@@ -303,6 +374,8 @@ export class CredentialsService {
         return validateClaudeCodeCredential(input);
       case "codex":
         return validateCodexCredential(input);
+      case "deepseek":
+        return validateDeepSeekCredential(input);
       case "hermes":
         return validateHermesCredential(input);
       case "openclaw":
@@ -324,4 +397,14 @@ export class CredentialsService {
       );
     }
   }
+}
+
+function resolveModelConnectionPreset(
+  value: ModelConnectionPreset | string | null
+): ModelConnectionPreset {
+  if (value === "fast" || value === "powerful" || value === "balanced") {
+    return value;
+  }
+
+  return "balanced";
 }

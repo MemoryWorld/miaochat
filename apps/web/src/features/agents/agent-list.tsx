@@ -10,7 +10,7 @@ export function AgentList({ agents }: AgentListProps) {
   if (agents.length === 0) {
     return (
       <p className="mb-0 text-sm leading-7 text-slate-600">
-        No custom agents have been saved yet.
+        当前还没有保存任何自定义 AI 同事。
       </p>
     );
   }
@@ -25,14 +25,12 @@ export function AgentList({ agents }: AgentListProps) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <strong className="text-slate-950">{agent.name}</strong>
-              <div className="mt-1 text-sm text-slate-500">
-                {agent.provider}
-              </div>
+              <div className="mt-1 text-sm text-slate-500">自定义 AI 同事</div>
             </div>
             {agent.avatarUrl ? (
-              <Badge tone="muted">avatar linked</Badge>
+              <Badge tone="muted">已配置头像</Badge>
             ) : (
-              <Badge tone="muted">text-only</Badge>
+              <Badge tone="muted">文字身份</Badge>
             )}
           </div>
           <p className="m-0 text-sm leading-7 text-slate-700">
@@ -40,7 +38,7 @@ export function AgentList({ agents }: AgentListProps) {
           </p>
           <div className="flex flex-wrap gap-2">
             {agent.capabilityTags.length === 0 ? (
-              <Badge tone="primary">no tags</Badge>
+              <Badge tone="primary">待补充标签</Badge>
             ) : (
               agent.capabilityTags.map((tag) => (
                 <Badge key={tag} tone="primary">

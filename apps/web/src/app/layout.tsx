@@ -1,31 +1,17 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 
 import "./globals.css";
 
-const sansFont = Space_Grotesk({
-  display: "swap",
-  subsets: ["latin"],
-  variable: "--font-sans"
-});
-
-const monoFont = IBM_Plex_Mono({
-  display: "swap",
-  subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["400", "500", "600"]
-});
-
 export const metadata: Metadata = {
-  description: "Release 1 Web MVP shell for AgentHub",
-  title: "AgentHub"
+  description: "AI 协作工作空间，统一收件箱、任务、频道和 AI 同事。",
+  title: "Miaochat | AI 协作工作空间"
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${sansFont.variable} ${monoFont.variable}`}>{children}</body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body>{children}</body>
     </html>
   );
 }

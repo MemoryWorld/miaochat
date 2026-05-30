@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -30,12 +32,12 @@ describe("ChatComposer", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "@hermes-planner" }));
-    fireEvent.change(screen.getByLabelText("Message"), {
+    fireEvent.change(screen.getByLabelText("消息内容"), {
       target: {
         value: "@hermes-planner plan the next release step"
       }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     await waitFor(() => {
       expect(onSend).toHaveBeenCalledWith({

@@ -21,6 +21,14 @@ export const conversationMode = pgEnum("conversation_mode", [
   "group"
 ]);
 
+export const runtimeBackend = pgEnum("runtime_backend", [
+  "enhanced-hermes",
+  "claude-code-internal",
+  "hermes-compat",
+  "openclaw-compat",
+  "mock"
+]);
+
 export const credentialSource = pgEnum("credential_source", [
   "platform_managed",
   "user_provided"
@@ -45,9 +53,40 @@ export const messageRole = pgEnum("message_role", [
   "user"
 ]);
 
+export const codingWorkflowState = pgEnum("coding_workflow_state", [
+  "plan_pending_approval",
+  "plan_rejected",
+  "plan_revision_requested",
+  "execution_running",
+  "review_running",
+  "qa_running",
+  "awaiting_user_confirmation",
+  "completed"
+]);
+
+export const codingWorkflowApprovalState = pgEnum("coding_workflow_approval_state", [
+  "pending",
+  "approved",
+  "rejected",
+  "revision_requested"
+]);
+
+export const codingWorkflowDecision = pgEnum("coding_workflow_decision", [
+  "approved",
+  "rejected",
+  "revision_requested"
+]);
+
+export const codingWorkflowPriority = pgEnum("coding_workflow_priority", [
+  "low",
+  "normal",
+  "high"
+]);
+
 export const providerId = pgEnum("provider_id", [
   "claude-code",
   "codex",
+  "deepseek",
   "hermes",
   "mock",
   "openclaw"
@@ -158,6 +197,7 @@ export const providerCredentials = pgTable("provider_credentials", {
   encryptedSecret: text("encrypted_secret").notNull(),
   id: text("id").primaryKey(),
   label: text("label").notNull(),
+  modelConnectionPreset: text("model_connection_preset"),
   ownerUserId: text("owner_user_id").notNull(),
   provider: providerId("provider").notNull(),
   providerAccountId: text("provider_account_id").notNull(),
@@ -275,6 +315,11 @@ export const customAgents = pgTable(
     name: text("name").notNull(),
     ownerUserId: text("owner_user_id").notNull(),
     provider: providerId("provider").notNull(),
+    modelProfileId: text("model_profile_id"),
+    memoryMode: text("memory_mode").notNull().default("workspace_plus_teammate"),
+    approvalMode: text("approval_mode").notNull().default("balanced"),
+    outputStyle: text("output_style").notNull().default("清晰、结构化、先给结论再给步骤。"),
+    scopeDescription: text("scope_description"),
     systemPrompt: text("system_prompt").notNull(),
     toolBindings: jsonb("tool_bindings").$type<
       Array<{
@@ -293,6 +338,213 @@ export const customAgents = pgTable(
     })
   })
 );
+
+export const codingWorkflows = pgTable("coding_workflows", {
+  activePlanVersion: integer("active_plan_version").notNull().default(1),
+  approvalState: codingWorkflowApprovalState("approval_state").notNull().default("pending"),
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  deadline: text("deadline"),
+  engineerAgentId: text("engineer_agent_id").notNull(),
+  executionStageAssignments: jsonb("execution_stage_assignments").$type<
+    Array<{
+      agentId: string;
+      role: "code_reviewer" | "qa_tester" | "software_engineer" | "tech_lead";
+    }>
+  >().notNull().default([]),
+  extraAgentIds: jsonb("extra_agent_ids").$type<string[]>().notNull().default([]),
+  goal: text("goal").notNull(),
+  id: text("id").primaryKey(),
+  kickoffMessageId: text("kickoff_message_id"),
+  ownerUserId: text("owner_user_id").notNull(),
+  planMessageId: text("plan_message_id"),
+  planningRole: text("planning_role").$type<
+    "code_reviewer" | "qa_tester" | "software_engineer" | "tech_lead"
+  >().notNull(),
+  planningTeammateId: text("planning_teammate_id").notNull(),
+  priority: codingWorkflowPriority("priority").notNull().default("normal"),
+  qaAgentId: text("qa_agent_id").notNull(),
+  repoContext: text("repo_context"),
+  reviewerAgentId: text("reviewer_agent_id").notNull(),
+  runtimeBackend: runtimeBackend("runtime_backend").notNull().default("enhanced-hermes"),
+  state: codingWorkflowState("state").notNull().default("plan_pending_approval"),
+  taskSnapshot: jsonb("task_snapshot").$type<
+    Array<{
+      id: string;
+      ownerRole: "code_reviewer" | "qa_tester" | "software_engineer" | "tech_lead";
+      state: "done" | "in_progress" | "in_review" | "todo";
+      title: string;
+    }>
+  >().notNull().default([]),
+  techLeadAgentId: text("tech_lead_agent_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const codingWorkflowApprovals = pgTable("coding_workflow_approvals", {
+  actorUserId: text("actor_user_id").notNull(),
+  decision: codingWorkflowDecision("decision").notNull(),
+  id: text("id").primaryKey(),
+  note: text("note"),
+  ownerUserId: text("owner_user_id").notNull(),
+  planVersion: integer("plan_version").notNull(),
+  workflowId: text("workflow_id")
+    .notNull()
+    .references(() => codingWorkflows.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const teammateChannelMemberships = pgTable("teammate_channel_memberships", {
+  channelId: text("channel_id").notNull(),
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  teammateId: text("teammate_id").notNull(),
+  teammateKind: text("teammate_kind").notNull().default("custom_agent"),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const workspaceTasks = pgTable("workspace_tasks", {
+  channelId: text("channel_id"),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  id: text("id").primaryKey(),
+  ownerScope: text("owner_scope").notNull(),
+  ownerScopeId: text("owner_scope_id"),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  priority: text("priority").notNull().default("normal"),
+  sourceKind: text("source_kind").notNull().default("manual"),
+  sourceRefId: text("source_ref_id"),
+  state: text("state").notNull().default("todo"),
+  summary: text("summary"),
+  teammateId: text("teammate_id"),
+  title: text("title").notNull(),
+  workflowId: text("workflow_id").references(() => codingWorkflows.id, {
+    onDelete: "set null"
+  }),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const calendarEvents = pgTable("calendar_events", {
+  channelId: text("channel_id"),
+  endAt: timestamp("end_at", { withTimezone: true }),
+  id: text("id").primaryKey(),
+  ownerScope: text("owner_scope").notNull(),
+  ownerScopeId: text("owner_scope_id"),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+  status: text("status").notNull().default("scheduled"),
+  summary: text("summary"),
+  teammateId: text("teammate_id"),
+  title: text("title").notNull(),
+  workflowId: text("workflow_id").references(() => codingWorkflows.id, {
+    onDelete: "set null"
+  }),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const approvalRequests = pgTable("approval_requests", {
+  conversationId: text("conversation_id").references(() => conversations.id, {
+    onDelete: "cascade"
+  }),
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  note: text("note"),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  planVersion: integer("plan_version"),
+  requesterTeammateId: text("requester_teammate_id"),
+  requesterTeammateName: text("requester_teammate_name"),
+  respondedAt: timestamp("responded_at", { withTimezone: true }),
+  responseNote: text("response_note"),
+  status: text("status").notNull(),
+  summary: text("summary").notNull(),
+  targetUserId: text("target_user_id"),
+  title: text("title").notNull(),
+  workflowId: text("workflow_id").references(() => codingWorkflows.id, {
+    onDelete: "cascade"
+  }),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const activityRounds = pgTable("activity_rounds", {
+  actingTeammateId: text("acting_teammate_id"),
+  actingTeammateName: text("acting_teammate_name"),
+  approvalRequestId: text("approval_request_id"),
+  channelId: text("channel_id"),
+  conversationId: text("conversation_id").references(() => conversations.id, {
+    onDelete: "cascade"
+  }),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  id: text("id").primaryKey(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  outputPreview: text("output_preview"),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  phase: text("phase").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  status: text("status").notNull(),
+  summary: text("summary").notNull(),
+  toolActivityPreview: text("tool_activity_preview"),
+  workflowId: text("workflow_id").references(() => codingWorkflows.id, {
+    onDelete: "cascade"
+  }),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const activityRoundSteps = pgTable("activity_round_steps", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  roundId: text("round_id")
+    .notNull()
+    .references(() => activityRounds.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  summary: text("summary"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const memoryRecords = pgTable("memory_records", {
+  content: text("content").notNull(),
+  conversationId: text("conversation_id").references(() => conversations.id, {
+    onDelete: "cascade"
+  }),
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  scope: text("scope").notNull(),
+  source: text("source").notNull().default("manual"),
+  teammateId: text("teammate_id"),
+  title: text("title").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const workspaceSkillBindings = pgTable("workspace_skill_bindings", {
+  enabled: boolean("enabled").notNull().default(true),
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  skillId: text("skill_id").notNull(),
+  source: text("source").notNull().default("workspace"),
+  teammateId: text("teammate_id"),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
 
 export const artifacts = pgTable("artifacts", {
   id: text("id").primaryKey(),
