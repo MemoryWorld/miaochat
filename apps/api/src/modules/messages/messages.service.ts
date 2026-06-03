@@ -13,6 +13,7 @@ import {
   messageIdSchema,
   messageSchema,
   messageThreadSchema,
+  sanitizeAssistantVisibleContent,
   toggleMessageReactionInputSchema,
   workspaceIdSchema,
   type Message,
@@ -29,6 +30,7 @@ import {
   DatabaseService,
   type DatabaseExecutor
 } from "../database/database.service.js";
+import { MultiAgentHarnessService } from "../multi-agent-harness/multi-agent-harness.service.js";
 import { MessagesRepository, type MessageRow } from "./messages.repository.js";
 
 type CreateStoredMessageInput = {
@@ -63,6 +65,8 @@ export class MessagesService {
     @Inject(ChannelMembersService)
     private readonly channelMembersService: ChannelMembersService,
     @Inject(GroupMembersService) private readonly groupMembersService: GroupMembersService,
+    @Inject(MultiAgentHarnessService)
+    private readonly multiAgentHarnessService: MultiAgentHarnessService,
     @Inject(MessagesRepository) private readonly messagesRepository: MessagesRepository
   ) {}
 
@@ -139,7 +143,7 @@ export class MessagesService {
   }): Promise<Message> {
     return this.createStored({
       authorUserId: null,
-      content: input.content,
+      content: sanitizeAssistantVisibleContent(input.content),
       conversationId: input.conversationId,
       id: input.id,
       mentionedAgentIds: [],
@@ -205,7 +209,10 @@ export class MessagesService {
         parsed.ownerUserId,
         tx
       );
-      return mapMessageRow(inserted, currentUserId);
+      const message = mapMessageRow(inserted, currentUserId);
+      await this.multiAgentHarnessService.mirrorMessage(message, tx);
+
+      return message;
     });
   }
 

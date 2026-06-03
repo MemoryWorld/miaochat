@@ -4,8 +4,10 @@ import "@testing-library/jest-dom/vitest";
 
 import {
   cleanup,
+  fireEvent,
   render,
-  screen
+  screen,
+  waitFor
 } from "@testing-library/react";
 import type * as NextNavigationModule from "next/navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,11 +26,28 @@ vi.mock("next/navigation", async () => {
 });
 
 vi.mock("../auth/auth-panel", () => ({
-  AuthPanel: () => <div>Mock Auth Panel</div>
+  AuthPanel: ({
+    onAuthenticated,
+    onLoggedOut
+  }: {
+    onAuthenticated?: () => void;
+    onLoggedOut?: () => void;
+  }) => (
+    <div>
+      <span>Mock Auth Panel</span>
+      <button onClick={() => onAuthenticated?.()} type="button">
+        Mock login success
+      </button>
+      <button onClick={() => onLoggedOut?.()} type="button">
+        Mock logout success
+      </button>
+    </div>
+  )
 }));
 
 describe("SettingsHost", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -148,6 +167,63 @@ describe("SettingsHost", () => {
     expect(screen.getByText(/\/setup/)).toBeInTheDocument();
     expect(screen.getAllByText("模型连接").length).toBeGreaterThan(0);
   });
+
+  it("refreshes active workspaces after the auth panel reports login success", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(401, { message: "Unauthorized" }),
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "workspace_phase_a",
+            name: "Phase A Demo Workspace",
+            ownerUserId: "user_phase_a",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/workspace-member-directory?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/workspace-billing-summary?workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ],
+      [`${apiBaseUrl}/workspace-capabilities?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/workspace-member-directory?workspaceId=workspace_phase_a`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/workspace-billing-summary?workspaceId=workspace_phase_a`]: [
+        jsonResponse(200, null)
+      ],
+      [`${apiBaseUrl}/workspace-capabilities?workspaceId=workspace_phase_a`]: [
+        jsonResponse(200, [])
+      ]
+    });
+
+    render(<SettingsHost initialSection="profile" />);
+
+    expect(await screen.findByText("Mock Auth Panel")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        countFetches(`${apiBaseUrl}/workspace-member-directory?workspaceId=default-workspace`)
+      ).toBe(1);
+    });
+    expect(screen.getByRole("combobox", { name: "Active workspace" })).toHaveValue(
+      "default-workspace"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Mock login success" }));
+
+    expect(await screen.findByText("Phase A Demo Workspace")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Active workspace" })).toHaveValue(
+      "workspace_phase_a"
+    );
+    await waitFor(() => {
+      expect(countFetches(`${apiBaseUrl}/workspaces`)).toBe(2);
+    });
+  });
 });
 
 function mockFetchByUrl(mapping: Record<string, Response[]>) {
@@ -170,4 +246,11 @@ function jsonResponse(status: number, body: unknown): Response {
     },
     status
   });
+}
+
+function countFetches(url: string): number {
+  return fetchMock.mock.calls.filter(([input]) => {
+    const inputUrl = typeof input === "string" ? input : input.url;
+    return inputUrl === url;
+  }).length;
 }

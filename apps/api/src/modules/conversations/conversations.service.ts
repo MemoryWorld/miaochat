@@ -235,6 +235,30 @@ export class ConversationsService {
     });
   }
 
+  async delete(
+    workspaceId: string,
+    ownerUserId: string,
+    conversationId: string
+  ): Promise<{ conversationId: string; deleted: true }> {
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
+    const deleted = await this.conversationsRepository.deleteConversation(
+      conversationId,
+      parsedWorkspaceId,
+      ownerUserId
+    );
+
+    if (!deleted) {
+      throw new NotFoundException(
+        `Conversation ${conversationId} was not found in workspace ${workspaceId}.`
+      );
+    }
+
+    return {
+      conversationId,
+      deleted: true
+    };
+  }
+
   private async applyMutation(
     workspaceId: string,
     ownerUserId: string,

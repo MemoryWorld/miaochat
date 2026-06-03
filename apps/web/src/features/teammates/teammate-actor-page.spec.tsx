@@ -173,7 +173,7 @@ describe("TeammateActorPage", () => {
             category: "流程",
             id: "planning-and-approval",
             name: "计划与审批",
-            runtimeBackendIds: ["enhanced-hermes"],
+            runtimeBackendIds: ["built-in-collaboration"],
             status: "active",
             summary: "负责拆解计划、整理风险，并把关键节点提交给用户确认。",
             teammateIds: ["tech_lead"],

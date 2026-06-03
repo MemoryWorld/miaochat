@@ -190,6 +190,127 @@ describe("ChatExperience", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("creates a channel and requires a second confirmation before deleting it", async () => {
+    const teammate = {
+      ...createAgent("agent_channel_builder", "频道执行同事"),
+      capabilityTags: ["频道"]
+    };
+    const createdConversation = {
+      archivedAt: null,
+      id: "conv_created_channel",
+      isPinned: false,
+      mode: "direct",
+      ownerUserId: "user_phase_a_demo",
+      participants: [{ agentId: teammate.id, agentName: teammate.name }],
+      pinnedMessageIds: [],
+      title: "频道执行同事频道",
+      updatedAt: "2026-05-28T00:00:00.000Z",
+      workspaceId: "default-workspace"
+    };
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: true,
+          user: {
+            displayName: "Phase A Demo",
+            email: "phase-a-demo@example.com",
+            id: "user_phase_a_demo"
+          }
+        })
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            id: "model_conn_demo",
+            kind: "deepseek_api",
+            label: "DeepSeek 工作区连接",
+            model: "deepseek-chat",
+            preset: "balanced",
+            status: "valid",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
+        jsonResponse(200, [teammate])
+      ],
+      [`${apiBaseUrl}/conversations`]: [
+        jsonResponse(201, createdConversation)
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_created_channel&workspaceId=default-workspace`]:
+        [jsonResponse(200, [])],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_created_channel&workspaceId=default-workspace`]:
+        [jsonResponse(200, null)],
+      [`${apiBaseUrl}/conversations/conv_created_channel?workspaceId=default-workspace`]:
+        [jsonResponse(200, { conversationId: "conv_created_channel", deleted: true })],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-28T00:00:00.000Z",
+            id: "default-workspace",
+            name: "Phase A Demo Workspace",
+            ownerUserId: "user_phase_a_demo",
+            updatedAt: "2026-05-28T00:00:00.000Z"
+          }
+        ])
+      ]
+    });
+
+    render(<ChatExperience />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建协作" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("AI 同事")).toHaveValue(teammate.id);
+    });
+    const createChannelButton = await screen.findByRole("button", { name: "创建频道" });
+    await waitFor(() => {
+      expect(createChannelButton).toBeEnabled();
+    });
+    fireEvent.click(createChannelButton);
+
+    expect(
+      await screen.findByRole("heading", { name: "# 频道执行同事频道" })
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "删除 频道执行同事频道" }));
+
+    expect(
+      screen.getByText("再次确认后会删除这个频道及其消息记录。")
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([url, options]) =>
+        url === `${apiBaseUrl}/conversations/conv_created_channel?workspaceId=default-workspace` &&
+        typeof options === "object" &&
+        options !== null &&
+        "method" in options &&
+        options.method === "DELETE"
+      )
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "确认删除 频道执行同事频道" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("heading", { name: "# 频道执行同事频道" })
+      ).not.toBeInTheDocument();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${apiBaseUrl}/conversations/conv_created_channel?workspaceId=default-workspace`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "DELETE"
+      })
+    );
+    expect(
+      screen.getByText("当前还没有频道。先新建一条与 AI 同事的协作，再把任务、文件和置顶内容逐步沉淀进来。")
+    ).toBeInTheDocument();
+  });
+
   it("launches a coding workflow with the built-in team and asks the tech lead to plan first", async () => {
     const techLead = createAgent("agent_builtin_tech_lead", "技术负责人");
     const engineer = createAgent("agent_builtin_engineer", "软件工程师");
@@ -445,7 +566,7 @@ function mockFetchByUrl(responsesByUrl: Record<string, Response[]>): void {
     const count = counts.get(url) ?? 0;
     counts.set(url, count + 1);
 
-    return responses[Math.min(count, responses.length - 1)] as Response;
+    return (responses[Math.min(count, responses.length - 1)] as Response).clone();
   });
 }
 

@@ -3,25 +3,25 @@
 import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 
-import type {
-  ActivityRound,
-  Artifact,
-  ArtifactUploadTarget,
-  ApprovalRequest,
-  ChannelSummary,
-  ChannelMember,
-  ChannelMemberList,
-  ChannelNotificationPreference,
-  ChannelReadState,
-  Conversation,
-  ConversationAgentMember,
-  CodingWorkflowDecision,
-  CodingWorkflowDetail,
-  FileSurfaceEntry,
-  Message,
-  MessageThread,
-  OrchestratorStatusEventPayload,
-  WorkspaceMemberDirectoryEntry
+import {
+  sanitizeAssistantVisibleContent,
+  type ActivityRound,
+  type Artifact,
+  type ArtifactUploadTarget,
+  type ApprovalRequest,
+  type ChannelSummary,
+  type ChannelMember,
+  type ChannelMemberList,
+  type ChannelNotificationPreference,
+  type ChannelReadState,
+  type Conversation,
+  type ConversationAgentMember,
+  type CodingWorkflowDecision,
+  type CodingWorkflowDetail,
+  type FileSurfaceEntry,
+  type Message,
+  type MessageThread,
+  type WorkspaceMemberDirectoryEntry
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
@@ -45,6 +45,7 @@ const channelTabs = [
   { id: "chat", label: "聊天" },
   { id: "files", label: "文件" }
 ] as const;
+const liveAssistantRefreshIntervalMs = 30_000;
 const postSendRefreshDelaysMs = [1_200, 4_000, 8_000, 15_000, 30_000, 65_000, 90_000] as const;
 
 type ChannelShellProps = {
@@ -65,6 +66,8 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
   const [memberActionError, setMemberActionError] = useState<string | null>(null);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
+  const [channelSendUnavailableMessage, setChannelSendUnavailableMessage] =
+    useState<string | null>(null);
   const [liveAssistantMessage, setLiveAssistantMessage] =
     useState<LiveAssistantMessage | null>(null);
   const [threadDrawer, setThreadDrawer] = useState<{
@@ -129,6 +132,22 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     () => conversations.data.find((entry) => entry.id === channelId) ?? null,
     [channelId, conversations.data]
   );
+  const channelLoadError = channelRoster.error ?? messages.error ?? readState.error;
+  const channelLookupError = channels.error ?? conversations.error;
+  const isChannelLookupLoading = channels.isLoading || conversations.isLoading;
+  const isChannelMissing =
+    isWorkspaceReady &&
+    !isChannelLookupLoading &&
+    !channelLoadError &&
+    !channelLookupError &&
+    !channel &&
+    !conversation;
+  const channelAvailabilityMessage =
+    channelSendUnavailableMessage ??
+    buildChannelAvailabilityMessage(channelLoadError, isChannelMissing);
+  const isChannelUnavailable = Boolean(channelAvailabilityMessage);
+  const composerDisabled = isSending || !isWorkspaceReady || isChannelUnavailable;
+  const visibleErrorMessage = channelAvailabilityMessage ? null : errorMessage;
   const channelParticipants = useMemo<ConversationAgentMember[]>(
     () =>
       conversation?.participants ??
@@ -143,37 +162,37 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     () => channelRoster.data?.members ?? normalizeChannelMembers(channelParticipants),
     [channelParticipants, channelRoster.data?.members]
   );
-  const statusEvents = stream.events.flatMap((event) =>
-    event.kind === "conversation.status" ? [event.payload as OrchestratorStatusEventPayload] : []
-  );
+  const visibleChannelMembers = isChannelUnavailable ? [] : channelMembers;
+  const visibleTimelineMessages = isChannelUnavailable ? [] : timelineMessages;
   const failedActivity = activity.data.filter((round) => round.status === "failed");
   const pinnedMessages = useMemo(
-    () => timelineMessages.filter((message) => message.isPinned),
-    [timelineMessages]
+    () => visibleTimelineMessages.filter((message) => message.isPinned),
+    [visibleTimelineMessages]
   );
   const displayedMessages = useMemo(() => {
     const query = messageSearchQuery.trim().toLowerCase();
 
     if (!query) {
-      return timelineMessages;
+      return visibleTimelineMessages;
     }
 
-    return timelineMessages.filter((message) => {
+    return visibleTimelineMessages.filter((message) => {
       const authorLabel = resolveMessageAuthorLabel(message) ?? "";
+      const visibleContent = getVisibleMessageContent(message);
 
       return (
-        message.content.toLowerCase().includes(query) ||
+        visibleContent.toLowerCase().includes(query) ||
         authorLabel.toLowerCase().includes(query)
       );
     });
-  }, [messageSearchQuery, timelineMessages]);
+  }, [messageSearchQuery, visibleTimelineMessages]);
   const availableAiMembers = useMemo(
     () =>
-      channelMembers.filter(
+      visibleChannelMembers.filter(
         (member): member is Extract<ChannelMember, { kind: "ai" }> =>
           member.kind === "ai" && member.status === "available"
       ),
-    [channelMembers]
+    [visibleChannelMembers]
   );
 
   useEffect(() => {
@@ -221,7 +240,10 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
   useEffect(() => {
     processedStreamEventCountRef.current = 0;
     clearPostSendRefreshTimers();
+    setChannelSendUnavailableMessage(null);
+    setErrorMessage(null);
     setLiveAssistantMessage(null);
+    setThreadDrawer(null);
   }, [channelId]);
 
   useEffect(() => () => clearPostSendRefreshTimers(), []);
@@ -242,10 +264,11 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     for (const event of nextEvents) {
       startTransition(() => {
         if (event.kind === "conversation.message.started") {
-          setLiveAssistantMessage({
+          setLiveAssistantMessage((current) => ({
             content: "",
-            id: event.payload.messageId
-          });
+            id: event.payload.messageId,
+            userMessageId: current?.userMessageId
+          }));
           return;
         }
 
@@ -255,22 +278,46 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
               current?.id === event.payload.messageId
                 ? `${current.content}${event.payload.delta}`
                 : event.payload.delta,
-            id: event.payload.messageId
+            id: event.payload.messageId,
+            userMessageId: current?.userMessageId
           }));
           return;
         }
 
         if (event.kind === "conversation.message.completed") {
           clearPostSendRefreshTimers();
-          setLiveAssistantMessage({
+          setLiveAssistantMessage((current) => ({
             content: event.payload.finalContent,
-            id: event.payload.messageId
-          });
+            id: event.payload.messageId,
+            userMessageId: current?.userMessageId
+          }));
           void messages.refresh();
         }
       });
     }
   }, [messages.refresh, stream.events]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !liveAssistantMessage) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void messages.refresh();
+    }, liveAssistantRefreshIntervalMs);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [activeWorkspaceId, liveAssistantMessage?.id, messages.refresh]);
+
+  useEffect(() => {
+    if (!liveAssistantMessage || stream.connectionState !== "connecting") {
+      return;
+    }
+
+    void messages.refresh();
+  }, [liveAssistantMessage?.id, messages.refresh, stream.connectionState]);
 
   async function handleDecision(input: {
     decision: CodingWorkflowDecision;
@@ -312,7 +359,12 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     mentionedAgentIds: string[];
     mentionedUserIds: string[];
     threadParentMessageId?: string | null;
-  }): Promise<void> {
+  }): Promise<boolean> {
+    if (channelAvailabilityMessage || !activeWorkspaceId) {
+      setErrorMessage(channelAvailabilityMessage ?? "请先选择工作区后再发送消息。");
+      return false;
+    }
+
     setErrorMessage(null);
     setIsSending(true);
 
@@ -336,7 +388,11 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "发送消息失败。"));
+        const nextErrorMessage = readErrorMessage(payload, "发送消息失败。");
+        if (response.status === 404) {
+          setChannelSendUnavailableMessage(normalizeChannelErrorMessage(nextErrorMessage));
+        }
+        throw new Error(nextErrorMessage);
       }
 
       const message = payload as Message;
@@ -372,10 +428,12 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       if (input.attachments.length > 0) {
         await createArtifactsForMessage(message, input.attachments);
       }
+      return true;
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "发送消息失败。"
       );
+      return false;
     } finally {
       setIsSending(false);
     }
@@ -590,12 +648,12 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     content: string;
     mentionedAgentIds: string[];
     mentionedUserIds: string[];
-  }): Promise<void> {
+  }): Promise<boolean> {
     if (!threadDrawer) {
-      return;
+      return false;
     }
 
-    await handleSend({
+    return handleSend({
       ...input,
       threadParentMessageId: threadDrawer.parent.id
     });
@@ -819,10 +877,13 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
         <div className="grid gap-4">
           <div>
             <h1 className="m-0 text-3xl font-semibold tracking-tight text-slate-950">
-              {channel?.title ?? conversation?.title ?? "正在加载频道"}
+              {channel?.title ?? conversation?.title ?? (isChannelUnavailable ? "频道不可用" : "正在加载频道")}
             </h1>
             <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              {channel?.summary ?? "消息、文件、审批和活动都围绕这个频道持续沉淀。"}
+              {channel?.summary ??
+                (isChannelUnavailable
+                  ? "当前频道无法继续使用，请从频道列表选择其他频道。"
+                  : "消息、文件、审批和活动都围绕这个频道持续沉淀。")}
             </p>
           </div>
           <div className="grid gap-2">
@@ -867,8 +928,19 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       {activeTab === "chat" ? (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="grid min-w-0 gap-4">
-            {errorMessage ? (
-              <p className="m-0 text-sm font-medium text-red-700">{errorMessage}</p>
+            {channelAvailabilityMessage ? (
+              <section
+                className="grid gap-2 rounded-[24px] border border-red-100 bg-red-50/80 p-4 text-sm leading-7 text-red-800"
+                role="alert"
+              >
+                <h2 className="m-0 text-base font-semibold text-red-950">频道不可用</h2>
+                <p className="m-0">
+                  {channelAvailabilityMessage} 无法继续发送消息，请从频道列表选择可用频道。
+                </p>
+              </section>
+            ) : null}
+            {visibleErrorMessage ? (
+              <p className="m-0 text-sm font-medium text-red-700">{visibleErrorMessage}</p>
             ) : null}
             {workflow.data ? (
               <CodingWorkflowPanel
@@ -926,7 +998,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                 ].map((action) => (
                   <button
                     className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={isSending || availableAiMembers.length === 0}
+                    disabled={composerDisabled || availableAiMembers.length === 0}
                     key={action.label}
                     onClick={() => {
                       void handleAiAction(action.value);
@@ -949,7 +1021,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                         <strong className="text-slate-950">
                           {resolveMessageAuthorLabel(message) ?? "频道成员"}
                         </strong>
-                        ：{message.content.slice(0, 80)}
+                        ：{getVisibleMessageContent(message).slice(0, 80)}
                       </a>
                     ))
                   ) : (
@@ -958,7 +1030,9 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                 </div>
               ) : null}
               {activeWorkspaceId ? (
-                <PresenceBar conversationId={channelId} workspaceId={activeWorkspaceId} />
+                !isChannelUnavailable ? (
+                  <PresenceBar conversationId={channelId} workspaceId={activeWorkspaceId} />
+                ) : null
               ) : null}
             </section>
 
@@ -994,12 +1068,11 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
               onPinMessage={handlePinMessage}
               onReplyMessage={handleOpenThread}
               resolveAuthorLabel={resolveMessageAuthorLabel}
-              statusEvents={statusEvents}
             />
-            {threadDrawer ? (
+            {threadDrawer && !isChannelUnavailable ? (
               <ThreadDrawer
                 artifactsByMessageId={artifactsByMessageId}
-                channelMembers={channelMembers}
+                channelMembers={visibleChannelMembers}
                 isSending={isSending}
                 onClose={() => setThreadDrawer(null)}
                 onPinMessage={handlePinMessage}
@@ -1009,26 +1082,26 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
               />
             ) : null}
             <ChatComposer
-              disabled={isSending}
-              members={channelMembers}
+              disabled={composerDisabled}
+              members={visibleChannelMembers}
               onSend={handleSend}
               onTyping={handleTyping}
-              participants={channelParticipants}
+              participants={isChannelUnavailable ? [] : channelParticipants}
             />
           </div>
           <ChannelMembersPanel
             actionError={memberActionError}
             busyMemberId={memberActionId}
             channelId={channelId}
-            directory={workspaceDirectory.data}
-            isLoading={channelRoster.isLoading}
-            members={channelMembers}
+            directory={isChannelUnavailable ? [] : workspaceDirectory.data}
+            isLoading={!isChannelUnavailable && channelRoster.isLoading}
+            members={visibleChannelMembers}
             onInviteHumans={handleInviteHumanMembers}
             onRemoveMember={handleRemoveMember}
             onUpdateNotificationPreference={handleUpdateNotificationPreference}
             onUpdateHumanPermission={handleUpdateHumanPermission}
-            readState={readState.data}
-            roster={channelRoster.data}
+            readState={isChannelUnavailable ? null : readState.data}
+            roster={isChannelUnavailable ? null : channelRoster.data}
           />
         </div>
       ) : (
@@ -1089,7 +1162,7 @@ function ThreadDrawer({
     content: string;
     mentionedAgentIds: string[];
     mentionedUserIds: string[];
-  }) => Promise<void>;
+  }) => Promise<boolean | void>;
   resolveAuthorLabel: (message: Message) => string | undefined;
   thread: {
     error: string | null;
@@ -1133,7 +1206,6 @@ function ThreadDrawer({
             messages={threadMessages}
             onPinMessage={onPinMessage}
             resolveAuthorLabel={resolveAuthorLabel}
-            statusEvents={[]}
           />
           <ChatComposer
             disabled={isSending}
@@ -1552,10 +1624,49 @@ function renderApprovalStatus(status: ApprovalRequest["status"]) {
   }
 }
 
+function getVisibleMessageContent(message: Message): string {
+  return message.role === "assistant"
+    ? sanitizeAssistantVisibleContent(message.content)
+    : message.content;
+}
+
 const recoveryActionClassName =
   "rounded-full border border-red-100 bg-white px-3 py-1 text-red-700 transition hover:bg-red-50";
 const recoveryLinkClassName =
   "rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700 no-underline transition hover:bg-slate-50";
+
+function buildChannelAvailabilityMessage(
+  loadError: string | null,
+  isMissing: boolean
+): string | null {
+  if (loadError) {
+    return normalizeChannelErrorMessage(loadError);
+  }
+
+  if (isMissing) {
+    return "当前频道不存在或已不可用。";
+  }
+
+  return null;
+}
+
+function normalizeChannelErrorMessage(message: string): string {
+  const trimmed = message.trim();
+
+  if (!trimmed || trimmed === "请求失败。") {
+    return "当前频道加载失败。";
+  }
+
+  if (trimmed === "发送消息失败。") {
+    return "当前频道不存在或已不可用。";
+  }
+
+  if (/[{}[\]]/.test(trimmed) || /\b(workspaceId|conversationId|channelId)\b/.test(trimmed)) {
+    return "当前频道加载失败。";
+  }
+
+  return trimmed;
+}
 
 async function readJson(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";

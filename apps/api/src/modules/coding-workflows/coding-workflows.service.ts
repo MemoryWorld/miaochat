@@ -38,6 +38,7 @@ import {
   type Conversation,
   type ConversationAgentMember,
   type CustomAgent,
+  type OrchestratorStatusEventPayload,
   type ProviderId,
   type RuntimeBackend
 } from "@agenthub/contracts";
@@ -1118,8 +1119,8 @@ export class CodingWorkflowsService {
     activeAgentName?: string;
     approvalState: CodingWorkflowDetail["approvalState"];
     conversationId: string;
-    label: import("@agenthub/contracts").OrchestratorStatusEventPayload["label"];
-    state: import("@agenthub/contracts").OrchestratorStatusEventPayload["state"];
+    label: OrchestratorStatusEventPayload["label"];
+    state: OrchestratorStatusEventPayload["state"];
     summary: string;
     taskSnapshot: CodingWorkflowTask[];
     workflow: CodingWorkflowDetail;

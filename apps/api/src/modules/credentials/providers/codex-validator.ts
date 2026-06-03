@@ -6,5 +6,5 @@ import { validateByPrefix } from "./shared.js";
 export async function validateCodexCredential(
   input: CreateProviderCredentialInput
 ): Promise<CredentialValidationResult> {
-  return validateByPrefix(input, "Codex", ["openai_", "sk-"]);
+  return validateByPrefix(input, ["openai_", "sk-"]);
 }

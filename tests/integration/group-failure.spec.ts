@@ -106,6 +106,11 @@ describe("group failure integration", () => {
           body: JSON.stringify({
             content: "Plan the rollback path",
             conversationId,
+            mentionedAgentIds: [
+              agentIds.hermes,
+              agentIds.failure,
+              agentIds.timeout
+            ],
             role: "user",
             workspaceId
           }),

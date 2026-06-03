@@ -1,12 +1,23 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
-import type { RuntimeBackend } from "@agenthub/contracts";
+import {
+  sanitizeAssistantVisibleContent,
+  sanitizeAssistantVisibleStreamEvents,
+  type RuntimeBackend
+} from "@agenthub/contracts";
 
+import {
+  buildAgentHarnessInstructions,
+  buildAgentHarnessRuntimeContext,
+  withAgentHarnessRuntimeContext
+} from "./agent-harness-instructions.js";
 import { createInternalRuntimeExecution } from "./internal-runtime-registry.js";
 
 export type ExecuteInternalRuntimeAgentActivityInput = {
   agentId: string;
+  agentName?: string;
   conversationId: string;
   context?: AgentExecutionContext;
+  harnessRunId?: string;
   message: string;
   ownerUserId: string;
   runtimeBackend: RuntimeBackend;
@@ -22,14 +33,35 @@ export async function executeInternalRuntimeAgentActivity(
     runtimeBackend: input.runtimeBackend,
     workspaceId: input.workspaceId
   });
-
-  return runtime.adapter.execute({
+  const agentName = input.agentName ?? "AI 同事";
+  const harness = buildAgentHarnessRuntimeContext({
     agentId: input.agentId,
-    context: input.context,
+    agentName,
+    conversationId: input.conversationId,
+    mode: "internal",
+    pinnedMessageIds: input.context?.pinnedMessages.map((message) => message.id),
+    runId: input.harnessRunId ?? `internal:${input.conversationId}:${input.agentId}`,
+    workspaceId: input.workspaceId
+  });
+
+  const execution = await runtime.adapter.execute({
+    agentId: input.agentId,
+    context: withAgentHarnessRuntimeContext(input.context, harness),
     conversationId: input.conversationId,
     credentialId: runtime.credentialId,
+    instructions: buildAgentHarnessInstructions({
+      agentName,
+      harness,
+      mode: "internal"
+    }),
     message: input.message,
     provider: runtime.provider,
     workspaceId: input.workspaceId
   });
+
+  return {
+    ...execution,
+    finalContent: sanitizeAssistantVisibleContent(execution.finalContent),
+    streamEvents: sanitizeAssistantVisibleStreamEvents(execution.streamEvents)
+  };
 }

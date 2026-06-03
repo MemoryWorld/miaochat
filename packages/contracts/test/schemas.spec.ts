@@ -29,12 +29,22 @@ import {
   messageSchema,
   normalizeRecommendedRoleIds,
   prepareArtifactUploadInputSchema,
+  runtimeBackendCatalog,
   skillBindingSchema,
   streamEventSchema,
   workspaceMemberDirectoryEntrySchema
 } from "../src";
 
+const forbiddenProductTerms = /hermes|openclaw/i;
+
 describe("@agenthub/contracts", () => {
+  it("keeps runtime catalog labels product-safe for AI coworkers", () => {
+    for (const entry of runtimeBackendCatalog) {
+      expect(entry.displayName).not.toMatch(forbiddenProductTerms);
+      expect(entry.publicSummary).not.toMatch(forbiddenProductTerms);
+    }
+  });
+
   it("accepts future-ready workspace fields on conversations", () => {
     const parsed = conversationSchema.parse({
       id: "conv_1",

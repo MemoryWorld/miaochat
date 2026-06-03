@@ -7,6 +7,8 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./agent-runtime": "./src/agent-runtime/index.ts",
+    "./multi-agent": "./src/multi-agent/index.ts",
     "./orchestration": "./src/orchestration/index.ts"
   },
   "scripts": {

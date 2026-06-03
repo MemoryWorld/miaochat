@@ -11,6 +11,7 @@ import { MessageRegenerateService } from "./message-regenerate.service.js";
 import { MessagesController } from "./messages.controller.js";
 import { MessagesRepository } from "./messages.repository.js";
 import { MessagesService } from "./messages.service.js";
+import { MultiAgentHarnessModule } from "../multi-agent-harness/multi-agent-harness.module.js";
 import { PinMessageService } from "./pin-message.service.js";
 
 @Module({
@@ -20,6 +21,7 @@ import { PinMessageService } from "./pin-message.service.js";
     ChannelsModule,
     ConversationsModule,
     DatabaseModule,
+    MultiAgentHarnessModule,
     StreamsModule,
     WorkspacesModule
   ],

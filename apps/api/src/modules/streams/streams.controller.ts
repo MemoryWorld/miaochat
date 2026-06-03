@@ -31,6 +31,7 @@ const presenceInputSchema = z.object({
   lastReadMessageId: z.string().min(1).nullable().optional(),
   workspaceId: z.string().min(1).default("default-workspace")
 });
+const defaultStreamHeartbeatIntervalMs = 15_000;
 
 @Controller("streams")
 export class StreamsController {
@@ -78,10 +79,17 @@ export class StreamsController {
     response.raw.setHeader("Cache-Control", "no-cache, no-transform");
     response.raw.setHeader("Connection", "keep-alive");
     response.raw.setHeader("Content-Type", "text/event-stream");
+    response.raw.setHeader("X-Accel-Buffering", "no");
     response.raw.flushHeaders();
     response.raw.write(": connected\n\n");
+    const heartbeatTimer = setInterval(() => {
+      if (!response.raw.destroyed && !response.raw.writableEnded) {
+        response.raw.write(": heartbeat\n\n");
+      }
+    }, getStreamHeartbeatIntervalMs());
 
-    request.raw.on("close", () => {
+    request.raw.once("close", () => {
+      clearInterval(heartbeatTimer);
       unsubscribe();
     });
   }
@@ -129,4 +137,15 @@ export class StreamsController {
 
 function formatSseMessage(event: StreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+function getStreamHeartbeatIntervalMs(): number {
+  const configured = Number.parseInt(
+    process.env.STREAM_HEARTBEAT_INTERVAL_MS ?? "",
+    10
+  );
+
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : defaultStreamHeartbeatIntervalMs;
 }

@@ -1,7 +1,15 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
-import type { ProviderId } from "@agenthub/contracts";
+import {
+  sanitizeAssistantVisibleContent,
+  sanitizeAssistantVisibleStreamEvents,
+  type ProviderId
+} from "@agenthub/contracts";
 
-import { buildAgentHarnessInstructions } from "./agent-harness-instructions.js";
+import {
+  buildAgentHarnessInstructions,
+  buildAgentHarnessRuntimeContext,
+  withAgentHarnessRuntimeContext
+} from "./agent-harness-instructions.js";
 import { toTemporalActivityFailure } from "./activity-errors.js";
 import { createPhaseARuntimeExecution } from "./provider-runtime.js";
 
@@ -10,6 +18,7 @@ export type ExecuteDirectAgentActivityInput = {
   agentName?: string;
   conversationId: string;
   context?: AgentExecutionContext;
+  harnessRunId?: string;
   message: string;
   ownerUserId: string;
   outputStyle?: string | null;
@@ -29,14 +38,24 @@ export async function executeDirectAgentActivity(
       provider: input.provider,
       workspaceId: input.workspaceId
     });
-
-    return await runtime.adapter.execute({
+    const harness = buildAgentHarnessRuntimeContext({
       agentId: input.agentId,
-      context: input.context,
+      agentName: input.agentName ?? "AI 同事",
+      conversationId: input.conversationId,
+      mode: "direct",
+      pinnedMessageIds: input.context?.pinnedMessages.map((message) => message.id),
+      runId: input.harnessRunId ?? `direct:${input.conversationId}:${input.agentId}`,
+      workspaceId: input.workspaceId
+    });
+
+    const execution = await runtime.adapter.execute({
+      agentId: input.agentId,
+      context: withAgentHarnessRuntimeContext(input.context, harness),
       conversationId: input.conversationId,
       credentialId: runtime.credentialId,
       instructions: buildAgentHarnessInstructions({
         agentName: input.agentName ?? "AI 同事",
+        harness,
         mode: "direct",
         outputStyle: input.outputStyle,
         scopeDescription: input.scopeDescription,
@@ -46,6 +65,12 @@ export async function executeDirectAgentActivity(
       provider: runtime.provider,
       workspaceId: input.workspaceId
     });
+
+    return {
+      ...execution,
+      finalContent: sanitizeAssistantVisibleContent(execution.finalContent),
+      streamEvents: sanitizeAssistantVisibleStreamEvents(execution.streamEvents)
+    };
   } catch (error) {
     throw toTemporalActivityFailure(error);
   }

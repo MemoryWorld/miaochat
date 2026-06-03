@@ -85,7 +85,7 @@ export function AgentForm({ busy = false, onSubmit }: AgentFormProps) {
           onChange={(event) => {
             setAvatarUrl(event.target.value);
           }}
-          placeholder="https://example.com/agent.png"
+          placeholder="https://example.com/avatar.png"
           type="url"
           value={avatarUrl}
         />

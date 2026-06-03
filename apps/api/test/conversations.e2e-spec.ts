@@ -183,6 +183,48 @@ describe("conversations and messages api", () => {
     });
   });
 
+  it("deletes a channel and removes it from the conversation list", async () => {
+    const conversationResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      payload: {
+        agentIds: [agentIds.hermes],
+        mode: "direct",
+        title: "Temporary channel",
+        workspaceId
+      },
+      url: "/conversations"
+    });
+    const conversationId = conversationResponse.json().id as string;
+
+    const deleteResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "DELETE",
+      url: `/conversations/${conversationId}?workspaceId=${workspaceId}`
+    });
+
+    expect(deleteResponse.statusCode).toBe(200);
+    expect(deleteResponse.json()).toEqual({
+      conversationId,
+      deleted: true
+    });
+
+    const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "GET",
+      url: `/conversations?workspaceId=${workspaceId}&includeArchived=true`
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()).toEqual([]);
+  });
+
   it("uses channel wording for generated direct and group titles", async () => {
     const directResponse = await app.inject({
       headers: {

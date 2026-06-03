@@ -8,7 +8,6 @@ import {
 import {
   calculateCodingWorkflowAgentProgress,
   buildExecutionTaskId,
-  builtInCodingProfiles,
   getBuiltInCodingProfileName,
   type CodingWorkflowTask,
   type CodingWorkflowExecutionStageAssignment,
@@ -215,6 +214,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
     });
     const finalContent = await this.executeSingleAgent({
       agentId: input.activeAgentId,
+      agentName: input.activeAgentName,
       assistantMessageId: input.assistantMessageId,
       context: await this.loadPinnedContext(
         input.conversationId,
@@ -248,6 +248,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
 
   private async executeSingleAgent(input: {
     agentId: string;
+    agentName: string;
     assistantMessageId: string;
     context: AgentExecutionContext;
     conversationId: string;
@@ -261,6 +262,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       args: [
         {
           agentId: input.agentId,
+          agentName: input.agentName,
           context: input.context,
           conversationId: input.conversationId,
           message: input.message,

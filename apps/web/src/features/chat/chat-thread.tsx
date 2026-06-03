@@ -1,13 +1,12 @@
-import type {
-  Artifact,
-  Message,
-  OrchestratorStatusEventPayload
+import {
+  sanitizeAssistantVisibleContent,
+  type Artifact,
+  type Message
 } from "@agenthub/contracts";
 
 import { DeployStatusCard } from "../artifacts/deploy-status-card";
 import type { DeployCommandResult } from "./deploy-command";
 import { ChatMessage } from "./chat-message";
-import { SystemStatusCard } from "./system-status-card";
 
 type ChatThreadProps = {
   artifactsByMessageId: Record<string, Artifact[]>;
@@ -22,7 +21,6 @@ type ChatThreadProps = {
   onPinMessage: (messageId: string) => Promise<void>;
   onReplyMessage?: (message: Message) => void;
   resolveAuthorLabel?: (message: Message) => string | undefined;
-  statusEvents: OrchestratorStatusEventPayload[];
 };
 
 export function ChatThread({
@@ -34,12 +32,14 @@ export function ChatThread({
   messages,
   onPinMessage,
   onReplyMessage,
-  resolveAuthorLabel,
-  statusEvents
+  resolveAuthorLabel
 }: ChatThreadProps) {
   const hasPersistedLiveMessage =
     liveAssistantMessage &&
     messages.some((message) => message.id === liveAssistantMessage.id);
+  const liveAssistantVisibleContent = liveAssistantMessage
+    ? sanitizeAssistantVisibleContent(liveAssistantMessage.content)
+    : "";
 
   return (
     <section
@@ -56,12 +56,6 @@ export function ChatThread({
       >
         流状态：{formatConnectionState(connectionState)}
       </div>
-      {statusEvents.map((event, index) => (
-        <SystemStatusCard
-          event={event}
-          key={`${event.label}:${event.successfulAgentCount}:${event.failures.length}:${index}`}
-        />
-      ))}
       {deployments.map((entry) => (
         <DeployStatusCard
           artifact={entry.artifact}
@@ -144,7 +138,7 @@ export function ChatThread({
           </div>
           <div style={{ lineHeight: 1.7 }}>
             {liveAssistantMessage.content.trim().length > 0 ? (
-              liveAssistantMessage.content
+              liveAssistantVisibleContent
             ) : (
               <TypingIndicator />
             )}

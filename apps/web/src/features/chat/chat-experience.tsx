@@ -11,8 +11,7 @@ import {
   type CustomAgent,
   type DeployCommandResult,
   type Message,
-  type ModelConnection,
-  type OrchestratorStatusEventPayload
+  type ModelConnection
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
@@ -56,6 +55,9 @@ export function ChatExperience() {
   const [customAgents, setCustomAgents] = useState<CustomAgent[]>([]);
   const [modelConnections, setModelConnections] = useState<ModelConnection[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [confirmingDeleteConversationId, setConfirmingDeleteConversationId] =
+    useState<string | null>(null);
+  const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [hasLoadedCustomAgents, setHasLoadedCustomAgents] = useState(false);
   const [isLaunchingCodingWorkflow, setIsLaunchingCodingWorkflow] = useState(false);
@@ -95,6 +97,8 @@ export function ChatExperience() {
 
   useEffect(() => {
     setSelectedConversationId(null);
+    setConfirmingDeleteConversationId(null);
+    setDeletingConversationId(null);
     setMessages([]);
     setArtifactsByMessageId({});
     setLiveAssistantMessage(null);
@@ -209,10 +213,6 @@ export function ChatExperience() {
   );
   const selectedConversation =
     conversationList.find((conversation) => conversation.id === selectedConversationId) ?? null;
-  const statusEvents = stream.events.flatMap((event) =>
-    event.kind === "conversation.status" ? [event.payload as OrchestratorStatusEventPayload] : []
-  );
-
   useEffect(() => {
     if (
       !hasReadyModelConnection ||
@@ -498,6 +498,59 @@ export function ChatExperience() {
     }
   }
 
+  async function handleDeleteConversation(conversation: Conversation): Promise<void> {
+    const conversationId = conversation.id;
+    const isDeletingSelectedConversation = selectedConversationId === conversationId;
+
+    setErrorMessage(null);
+    setDeletingConversationId(conversationId);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/conversations/${encodeURIComponent(
+          conversationId
+        )}?workspaceId=${encodeURIComponent(workspaceId)}`,
+        {
+          credentials: "include",
+          method: "DELETE"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "删除频道失败。"));
+      }
+
+      startTransition(() => {
+        setConversations((current) =>
+          current.filter((entry) => entry.id !== conversationId)
+        );
+        setSelectedConversationId((current) =>
+          current === conversationId ? null : current
+        );
+        setMessages((current) =>
+          current.filter((message) => message.conversationId !== conversationId)
+        );
+        setConfirmingDeleteConversationId(null);
+
+        if (isDeletingSelectedConversation) {
+          setArtifactsByMessageId({});
+          setCodingWorkflow(null);
+          setDeployments([]);
+          setLiveAssistantMessage(null);
+          clearPostSendRefreshTimers();
+          processedStreamEventCountRef.current = 0;
+        }
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "删除频道失败。"
+      );
+    } finally {
+      setDeletingConversationId(null);
+    }
+  }
+
   async function sendUserMessage(input: {
     content: string;
     conversationId: string;
@@ -630,6 +683,8 @@ export function ChatExperience() {
       return;
     }
 
+    const conversationId = selectedConversationId;
+
     setErrorMessage(null);
     setIsSending(true);
 
@@ -669,18 +724,21 @@ export function ChatExperience() {
 
       const message = await sendUserMessage({
         content: input.content,
-        conversationId: selectedConversationId,
+        conversationId,
         mentionedAgentIds: input.mentionedAgentIds,
         mentionedUserIds: input.mentionedUserIds
       });
 
       startTransition(() => {
         setMessages((current) => [...current, message]);
+        setConversations((current) =>
+          promoteConversationByActivity(current, conversationId, message.createdAt)
+        );
         if ((selectedConversation?.participants.length ?? 0) > 0) {
           setLiveAssistantMessage(createPendingAssistantMessage(message.id));
         }
       });
-      schedulePostSendRefresh(selectedConversationId);
+      schedulePostSendRefresh(conversationId);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "发送消息失败。"
@@ -702,6 +760,7 @@ export function ChatExperience() {
     postSendRefreshTimersRef.current = postSendRefreshDelaysMs.map((delay) =>
       setTimeout(() => {
         void loadMessages(conversationId);
+        void loadConversations();
       }, delay)
     );
   }
@@ -774,8 +833,10 @@ export function ChatExperience() {
     startTransition(() => {
       setArtifactsByMessageId({});
       setCodingWorkflow(null);
+      setConfirmingDeleteConversationId(null);
       setConversations([]);
       setCustomAgents([]);
+      setDeletingConversationId(null);
       setHasLoadedCustomAgents(false);
       setDeployments([]);
       setErrorMessage(null);
@@ -898,23 +959,76 @@ export function ChatExperience() {
             )}
             <div className="grid gap-2.5">
               {conversationList.map((conversation) => (
-                <button
+                <article
                   key={conversation.id}
-                  onClick={() => {
-                    setSelectedConversationId(conversation.id);
-                  }}
-                  className={`grid gap-1 rounded-3xl border bg-white/90 px-4 py-3 text-left transition hover:bg-white ${
+                  className={`grid gap-3 rounded-3xl border bg-white/90 px-4 py-3 transition hover:bg-white ${
                     conversation.id === selectedConversationId
                       ? "border-sky-200 ring-2 ring-sky-100"
                       : "border-slate-200"
                   }`}
-                  type="button"
                 >
-                  <strong className="text-slate-950"># {conversation.title}</strong>
-                  <span className="text-xs text-slate-500">
-                    {conversation.participants.map((entry) => entry.agentName).join(", ")}
-                  </span>
-                </button>
+                  <div className="flex items-start justify-between gap-3">
+                    <button
+                      className="grid min-w-0 flex-1 gap-1 text-left"
+                      disabled={deletingConversationId === conversation.id}
+                      onClick={() => {
+                        setConfirmingDeleteConversationId(null);
+                        setSelectedConversationId(conversation.id);
+                      }}
+                      type="button"
+                    >
+                      <strong className="truncate text-slate-950">
+                        # {conversation.title}
+                      </strong>
+                      <span className="truncate text-xs text-slate-500">
+                        {conversation.participants.map((entry) => entry.agentName).join(", ") ||
+                          "暂无 AI 同事"}
+                      </span>
+                    </button>
+                    <button
+                      aria-label={`删除 ${conversation.title}`}
+                      className="shrink-0 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={deletingConversationId === conversation.id}
+                      onClick={() => {
+                        setConfirmingDeleteConversationId(conversation.id);
+                      }}
+                      type="button"
+                    >
+                      删除
+                    </button>
+                  </div>
+                  {confirmingDeleteConversationId === conversation.id ? (
+                    <div className="grid gap-2 rounded-2xl border border-red-100 bg-red-50/80 p-3 text-xs text-red-800">
+                      <p className="m-0 leading-5">
+                        再次确认后会删除这个频道及其消息记录。
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          aria-label={`确认删除 ${conversation.title}`}
+                          className="rounded-full bg-red-700 px-3 py-1.5 font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={deletingConversationId === conversation.id}
+                          onClick={() => {
+                            void handleDeleteConversation(conversation);
+                          }}
+                          type="button"
+                        >
+                          {deletingConversationId === conversation.id ? "删除中..." : "确认删除"}
+                        </button>
+                        <button
+                          aria-label={`取消删除 ${conversation.title}`}
+                          className="rounded-full border border-red-200 bg-white px-3 py-1.5 font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={deletingConversationId === conversation.id}
+                          onClick={() => {
+                            setConfirmingDeleteConversationId(null);
+                          }}
+                          type="button"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
               ))}
               {conversationList.length === 0 ? (
                 <p className="mb-0 text-sm leading-7 text-slate-600">
@@ -964,7 +1078,6 @@ export function ChatExperience() {
           messages={messages}
           onPinMessage={handlePinMessage}
           resolveAuthorLabel={resolveMessageAuthorLabel}
-          statusEvents={statusEvents}
         />
         <ChatComposer
           disabled={!selectedConversationId || isSending}
@@ -1005,6 +1118,29 @@ async function readJson(response: Response): Promise<unknown> {
 
 function readErrorMessage(payload: unknown, fallback: string): string {
   return readApiErrorMessage(payload, fallback);
+}
+
+function promoteConversationByActivity(
+  conversations: Conversation[],
+  conversationId: string,
+  updatedAt: Conversation["updatedAt"]
+): Conversation[] {
+  const nextConversations = conversations.filter(
+    (conversation) => conversation.id !== conversationId
+  );
+  const conversation = conversations.find((entry) => entry.id === conversationId);
+
+  if (!conversation) {
+    return conversations;
+  }
+
+  return [
+    {
+      ...conversation,
+      updatedAt
+    },
+    ...nextConversations
+  ];
 }
 
 function mergeMessages(

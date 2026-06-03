@@ -221,12 +221,12 @@ describe("Phase A runtime baseline integration", () => {
       expect(JSON.parse(hermesRequests.at(-1)?.body ?? "{}")).toEqual(
         expect.objectContaining({
           prompt: "Use the pinned note",
-          pinnedMessages: [
+          pinnedMessages: expect.arrayContaining([
             expect.objectContaining({
               content: "Remember the baseline note",
               role: "user"
             })
-          ]
+          ])
         })
       );
 
@@ -269,12 +269,12 @@ describe("Phase A runtime baseline integration", () => {
       expect(openClawMessages[1]?.sourceAgentId).toBe(agentIds.openclaw);
       expect(JSON.parse(openClawRequests.at(-1)?.body ?? "{}")).toEqual(
         expect.objectContaining({
-          messages: [
+          messages: expect.arrayContaining([
             expect.objectContaining({
               content: "Ship the runtime slice",
               role: "user"
             })
-          ],
+          ]),
           stream: true
         })
       );
@@ -299,6 +299,7 @@ describe("Phase A runtime baseline integration", () => {
         baseUrl,
         content: "Coordinate the baseline",
         conversationId: groupConversationId,
+        mentionedAgentIds: [agentIds.hermes, agentIds.openclaw],
         workspaceId
       });
       const groupEvents = await readEvents(groupStream.reader, 7);
@@ -479,12 +480,14 @@ async function sendMessage(input: {
   baseUrl: string;
   content: string;
   conversationId: string;
+  mentionedAgentIds?: string[];
   workspaceId: string;
 }) {
   const response = await fetch(`${input.baseUrl}/messages/send`, {
     body: JSON.stringify({
       content: input.content,
       conversationId: input.conversationId,
+      mentionedAgentIds: input.mentionedAgentIds ?? [],
       role: "user",
       workspaceId: input.workspaceId
     }),

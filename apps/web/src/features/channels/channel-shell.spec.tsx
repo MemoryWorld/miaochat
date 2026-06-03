@@ -42,6 +42,10 @@ class MockEventSource {
     );
   }
 
+  emitError() {
+    this.onerror?.(new Event("error"));
+  }
+
   emitOpen() {
     this.onopen?.(new Event("open"));
   }
@@ -397,6 +401,52 @@ describe("ChannelShell", () => {
     expect(screen.queryByText("频道成员")).not.toBeInTheDocument();
   });
 
+  it("shows a channel unavailable notice and disables sending when the current channel cannot load", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [jsonResponse(200, [])],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [jsonResponse(200, [])],
+      [`${apiBaseUrl}/messages?conversationId=conv_missing&workspaceId=default-workspace`]: [
+        jsonResponse(404, {
+          message: "频道不存在或已不可用。"
+        })
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_missing&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_missing&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_missing&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_missing&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_missing" />);
+
+    const notice = await screen.findByRole("alert");
+    expect(notice).toHaveTextContent("频道不可用");
+    expect(notice).toHaveTextContent("频道不存在或已不可用。");
+    expect(notice).not.toHaveTextContent("channelId");
+    await waitFor(() => {
+      expect(screen.getByLabelText("消息内容")).toBeDisabled();
+      expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+    });
+  });
+
   it("lets the user send a message directly inside the opened channel and refreshes after stream completion", async () => {
     mockFetchByUrl({
       [`${apiBaseUrl}/workspaces`]: [
@@ -695,6 +745,229 @@ describe("ChannelShell", () => {
     expect(
       await screen.findByText("收到了！你的信息我都能看到。", {}, { timeout: 2_500 })
     ).toBeInTheDocument();
+  });
+
+  it("keeps orchestrator status events out of the chat while persisted group replies clear pending", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_group_live",
+            id: "conv_group_live",
+            memberTeammateIds: ["agent_planner", "agent_builder"],
+            sourceType: "conversation",
+            summary: "2 位协作成员共享这个频道。",
+            title: "多人协作频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_group_live",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [
+              { agentId: "agent_planner", agentName: "规划同事" },
+              { agentId: "agent_builder", agentName: "实现同事" }
+            ],
+            pinnedMessageIds: [],
+            title: "多人协作频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_group_live&workspaceId=default-workspace`]: [
+        jsonResponse(200, []),
+        jsonResponse(200, [
+          {
+            content: "请两位同事协作推进这个目标。",
+            conversationId: "conv_group_live",
+            createdAt: "2026-05-29T00:00:01.000Z",
+            id: "msg_user_group",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "user",
+            sourceAgentId: null,
+            workspaceId: "default-workspace"
+          },
+          {
+            content: "规划同事已拆出执行路径。",
+            conversationId: "conv_group_live",
+            createdAt: "2026-05-29T00:00:02.000Z",
+            id: "msg_assistant_planner",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "assistant",
+            sourceAgentId: "agent_planner",
+            workspaceId: "default-workspace"
+          },
+          {
+            content: "实现同事已补充落地步骤。",
+            conversationId: "conv_group_live",
+            createdAt: "2026-05-29T00:00:03.000Z",
+            id: "msg_assistant_builder",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "assistant",
+            sourceAgentId: "agent_builder",
+            workspaceId: "default-workspace"
+          },
+          {
+            content: "规划同事已补充风险清单。",
+            conversationId: "conv_group_live",
+            createdAt: "2026-05-29T00:00:04.000Z",
+            id: "msg_assistant_planner_followup",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "assistant",
+            sourceAgentId: "agent_planner",
+            workspaceId: "default-workspace"
+          },
+          {
+            content: "实现同事已确认下一步实现顺序。",
+            conversationId: "conv_group_live",
+            createdAt: "2026-05-29T00:00:05.000Z",
+            id: "msg_assistant_builder_followup",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "assistant",
+            sourceAgentId: "agent_builder",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_group_live&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_group_live&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_group_live&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_group_live&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ],
+      [`${apiBaseUrl}/messages/send`]: [
+        jsonResponse(202, {
+          content: "请两位同事协作推进这个目标。",
+          conversationId: "conv_group_live",
+          createdAt: "2026-05-29T00:00:01.000Z",
+          id: "msg_user_group",
+          isPinned: false,
+          mentionedAgentIds: [],
+          ownerUserId: "user_demo",
+          role: "user",
+          sourceAgentId: null,
+          workspaceId: "default-workspace"
+        })
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_group_live" />);
+
+    expect(await screen.findByText("多人协作频道")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+    MockEventSource.instances[0]?.emitOpen();
+    await screen.findByText("流状态：已连接");
+
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: { value: "请两位同事协作推进这个目标。" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(await screen.findByText("请两位同事协作推进这个目标。")).toBeInTheDocument();
+    expect(await screen.findByText("AI 同事正在处理你的消息")).toBeInTheDocument();
+
+    MockEventSource.instances[0]?.emitMessage({
+      kind: "conversation.status",
+      payload: {
+        failures: [],
+        label: "orchestrator.received",
+        state: "running",
+        successfulAgentCount: 0,
+        summary: "ORCHESTRATOR RECEIVED Accepted the group request for 2 agents.",
+        totalAgentCount: 2
+      }
+    });
+    MockEventSource.instances[0]?.emitMessage({
+      kind: "conversation.status",
+      payload: {
+        failures: [],
+        label: "orchestrator.dispatched",
+        state: "running",
+        successfulAgentCount: 0,
+        summary: "ORCHESTRATOR DISPATCHED Dispatching 2 agent tasks.",
+        totalAgentCount: 2
+      }
+    });
+    MockEventSource.instances[0]?.emitMessage({
+      kind: "conversation.status",
+      payload: {
+        failures: [],
+        label: "orchestrator.running",
+        state: "running",
+        successfulAgentCount: 0,
+        summary: "ORCHESTRATOR RUNNING Waiting for 2 agent results.",
+        totalAgentCount: 2
+      }
+    });
+    MockEventSource.instances[0]?.emitMessage({
+      kind: "conversation.status",
+      payload: {
+        failures: [],
+        label: "orchestrator.aggregated",
+        state: "succeeded",
+        successfulAgentCount: 4,
+        summary: "ORCHESTRATOR AGGREGATED Aggregated 4 of 2 agent results.",
+        totalAgentCount: 2
+      }
+    });
+    MockEventSource.instances[0]?.emitError();
+
+    expect(
+      await screen.findByText("规划同事已拆出执行路径。", {}, { timeout: 800 })
+    ).toBeInTheDocument();
+    expect(screen.getByText("实现同事已补充落地步骤。")).toBeInTheDocument();
+    expect(screen.getByText("规划同事已补充风险清单。")).toBeInTheDocument();
+    expect(screen.getByText("实现同事已确认下一步实现顺序。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("AI 同事正在处理你的消息")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText(/ORCHESTRATOR RECEIVED/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ORCHESTRATOR DISPATCHED/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ORCHESTRATOR RUNNING/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ORCHESTRATOR AGGREGATED/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Accepted the group request for 2 agents.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dispatching 2 agent tasks.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Waiting for 2 agent results.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Aggregated 4 of 2 agent results.")).not.toBeInTheDocument();
   });
 });
 

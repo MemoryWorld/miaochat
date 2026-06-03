@@ -65,7 +65,7 @@ describe("credentials api", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
-      message: "Hermes credential passed local format validation.",
+      message: "模型连接格式验证通过。",
       providerAccountId: "acct_hermes",
       valid: true
     });

@@ -84,14 +84,14 @@ export function SystemStatusCard({ event }: SystemStatusCardProps) {
 
 function buildFallbackSummary(event: OrchestratorStatusEventPayload): string {
   if (event.state === "failed") {
-    return `${event.failures.length} failures reported while processing ${event.totalAgentCount} agents.`;
+    return `处理 ${event.totalAgentCount} 位 AI 同事时报告 ${event.failures.length} 个失败。`;
   }
 
   if (event.state === "succeeded") {
-    return `Completed ${event.successfulAgentCount} of ${event.totalAgentCount} agent results.`;
+    return `已完成 ${event.successfulAgentCount}/${event.totalAgentCount} 位 AI 同事的结果。`;
   }
 
-  return `Processing ${event.totalAgentCount} agent tasks.`;
+  return `正在处理 ${event.totalAgentCount} 位 AI 同事的任务。`;
 }
 
 function formatStatusHeading(label: OrchestratorStatusEventPayload["label"]): string {

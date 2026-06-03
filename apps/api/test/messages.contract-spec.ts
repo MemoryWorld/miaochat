@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
-import { Client } from "pg";
+import type { Client } from "pg";
 
 import {
   apiRequest,

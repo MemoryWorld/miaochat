@@ -13,7 +13,7 @@ type DemoAgentDraft = {
   capabilityTags: string[];
   id: string;
   name: string;
-  provider: "hermes" | "openclaw";
+  provider: "deepseek" | "hermes" | "openclaw";
   systemPrompt: string;
   toolBindings: [];
 };
@@ -85,7 +85,7 @@ export type PhaseADemoSeedResult = {
   customAgents: Array<{
     id: string;
     name: string;
-    provider: "hermes" | "openclaw";
+    provider: "deepseek" | "hermes" | "openclaw";
   }>;
   nextAction: string;
   summary: {
@@ -108,6 +108,10 @@ export type PhaseADemoSeedResult = {
 };
 
 export type PhaseADemoStore = {
+  deleteLegacyDemoContent?(
+    workspaceId: string,
+    ownerUserId: string
+  ): Promise<void>;
   clearWorkspaceProviderMode(
     workspaceId: string,
     ownerUserId: string,
@@ -159,6 +163,7 @@ export type InMemoryPhaseADemoStore = PhaseADemoStore & {
     artifactCount: number;
     conversationCount: number;
     credentialCount: number;
+    messages: DemoMessageDraft[];
     messageCount: number;
     userCount: number;
     workspaceCount: number;
@@ -167,6 +172,15 @@ export type InMemoryPhaseADemoStore = PhaseADemoStore & {
 
 const demoUserId = "user_phase_a_demo";
 const demoWorkspaceId = "default-workspace";
+const legacyDemoAgentIds = [
+  "agent_phase_a_hermes_direct",
+  "agent_phase_a_hermes_planner",
+  "agent_phase_a_openclaw_operator"
+];
+const legacyDemoMessageIds = [
+  "msg_phase_a_group_assistant_hermes",
+  "msg_phase_a_group_assistant_openclaw"
+];
 
 export async function seedPhaseADemoData(
   store: PhaseADemoStore,
@@ -182,6 +196,7 @@ export async function seedPhaseADemoData(
     fixtures.user.id,
     "owner"
   );
+  await store.deleteLegacyDemoContent?.(fixtures.workspace.id, fixtures.user.id);
 
   for (const agent of fixtures.customAgents) {
     await store.upsertCustomAgent(fixtures.workspace.id, fixtures.user.id, agent);
@@ -233,7 +248,7 @@ export async function seedPhaseADemoData(
 
     credentialStatuses.push({
       id: `${provider.provider}_manual_setup`,
-      label: `${provider.provider} manual setup required`,
+      label: `演示模型连接 ${credentialStatuses.length + 1}`,
       provider: provider.provider,
       status: "manual_setup_required"
     });
@@ -252,8 +267,8 @@ export async function seedPhaseADemoData(
       provider: agent.provider
     })),
     nextAction: credentialStatuses.some((entry) => entry.status === "manual_setup_required")
-      ? "Log in as the demo user, open /setup, bind the missing Phase A providers, then record the demo."
-      : "Start the API and web apps, log in as the demo user, and open the seeded Phase A conversations.",
+      ? "Log in as the demo user, open /setup, bind the missing model connections, then record the demo."
+      : "Start the API and web apps, log in as the demo user, and open the seeded demo conversations.",
     summary: {
       counts: {
         artifactCount: fixtures.artifacts.length,
@@ -288,9 +303,9 @@ export function formatPhaseADemoSeedReport(result: PhaseADemoSeedResult): string
     lines.push(`- ${conversation.title} [${conversation.mode}]`);
   }
 
-  lines.push("", "Credential binding:");
+  lines.push("", "Model connections:");
   for (const credential of result.credentials) {
-    lines.push(`- ${credential.provider}: ${credential.status}`);
+    lines.push(`- ${credential.label}: ${credential.status}`);
   }
 
   lines.push("", `Next action: ${result.nextAction}`);
@@ -314,6 +329,14 @@ export function createInMemoryPhaseADemoStore(): InMemoryPhaseADemoStore {
     async clearWorkspaceProviderMode(workspaceId, ownerUserId, provider) {
       credentialModes.delete(`${ownerUserId}:${workspaceId}:${provider}`);
     },
+    async deleteLegacyDemoContent() {
+      for (const id of legacyDemoMessageIds) {
+        messages.delete(id);
+      }
+      for (const id of legacyDemoAgentIds) {
+        customAgents.delete(id);
+      }
+    },
     async replaceConversationParticipants(conversationId, _workspaceId, _ownerUserId, participants) {
       conversationParticipants.set(
         conversationId,
@@ -325,6 +348,7 @@ export function createInMemoryPhaseADemoStore(): InMemoryPhaseADemoStore {
         artifactCount: artifacts.size,
         conversationCount: conversations.size,
         credentialCount: credentials.size,
+        messages: [...messages.values()],
         messageCount: messages.size,
         userCount: users.size,
         workspaceCount: workspaces.size
@@ -359,6 +383,26 @@ export function createInMemoryPhaseADemoStore(): InMemoryPhaseADemoStore {
 
 export function createPgPhaseADemoStore(client: Client): PhaseADemoStore {
   return {
+    async deleteLegacyDemoContent(workspaceId, ownerUserId) {
+      await client.query(
+        `
+          DELETE FROM messages
+          WHERE workspace_id = $1
+            AND owner_user_id = $2
+            AND id = ANY($3::text[])
+        `,
+        [workspaceId, ownerUserId, legacyDemoMessageIds]
+      );
+      await client.query(
+        `
+          DELETE FROM custom_agents
+          WHERE workspace_id = $1
+            AND owner_user_id = $2
+            AND id = ANY($3::text[])
+        `,
+        [workspaceId, ownerUserId, legacyDemoAgentIds]
+      );
+    },
     async clearWorkspaceProviderMode(workspaceId, ownerUserId, provider) {
       const existence = await client.query<{ regclass: string | null }>(
         `SELECT to_regclass('workspace_provider_credential_modes') AS regclass`
@@ -654,26 +698,26 @@ async function buildPhaseADemoFixtures(
   const customAgents: DemoAgentDraft[] = [
     {
       capabilityTags: ["phase-a", "demo", "direct"],
-      id: "agent_phase_a_hermes_direct",
-      name: "Hermes Demo Direct",
-      provider: "hermes",
-      systemPrompt: "Handle direct Phase A demo prompts with concise implementation guidance.",
+      id: "agent_phase_a_direct_teammate",
+      name: "需求梳理同事",
+      provider: "deepseek",
+      systemPrompt: "面向单人协作频道，给出简洁、可执行的实现建议。",
       toolBindings: []
     },
     {
       capabilityTags: ["phase-a", "demo", "group", "planning"],
-      id: "agent_phase_a_hermes_planner",
-      name: "Hermes Demo Planner",
-      provider: "hermes",
-      systemPrompt: "Break multi-agent demo work into clear orchestration steps.",
+      id: "agent_phase_a_planning_teammate",
+      name: "方案规划同事",
+      provider: "deepseek",
+      systemPrompt: "把多人协作任务拆成清晰阶段、交接点和验证步骤。",
       toolBindings: []
     },
     {
       capabilityTags: ["phase-a", "demo", "group", "execution"],
-      id: "agent_phase_a_openclaw_operator",
-      name: "OpenClaw Demo Operator",
-      provider: "openclaw",
-      systemPrompt: "Provide execution-oriented output for the Phase A group demo.",
+      id: "agent_phase_a_execution_teammate",
+      name: "执行落地同事",
+      provider: "deepseek",
+      systemPrompt: "根据共享方案输出执行检查清单、风险和落地反馈。",
       toolBindings: []
     }
   ];
@@ -682,28 +726,28 @@ async function buildPhaseADemoFixtures(
       id: "conv_phase_a_direct",
       isPinned: false,
       mode: "direct",
-      participantIds: ["agent_phase_a_hermes_direct"],
+      participantIds: ["agent_phase_a_direct_teammate"],
       pinnedMessageIds: ["msg_phase_a_direct_user"],
-      title: "Phase A Direct Conversation"
+      title: "单人协作频道"
     },
     {
       id: "conv_phase_a_group",
       isPinned: true,
       mode: "group",
       participantIds: [
-        "agent_phase_a_hermes_planner",
-        "agent_phase_a_openclaw_operator"
+        "agent_phase_a_planning_teammate",
+        "agent_phase_a_execution_teammate"
       ],
       pinnedMessageIds: [],
-      title: "Phase A Group Orchestration"
+      title: "方案落地协作频道"
     },
     {
       id: "conv_phase_a_artifact",
       isPinned: false,
       mode: "direct",
-      participantIds: ["agent_phase_a_hermes_direct"],
+      participantIds: ["agent_phase_a_direct_teammate"],
       pinnedMessageIds: [],
-      title: "Phase A Artifact Review"
+      title: "交付物评审频道"
     }
   ];
   const messages: DemoMessageDraft[] = [
@@ -718,13 +762,13 @@ async function buildPhaseADemoFixtures(
     },
     {
       content:
-        "The real runtime slice is now Hermes-backed end to end, with persisted history and stream events visible after refresh.",
+        "这条运行链路已经可以端到端执行，刷新后仍能看到历史消息和过程事件。",
       conversationId: "conv_phase_a_direct",
       id: "msg_phase_a_direct_assistant",
       isPinned: false,
       mentionedAgentIds: [],
       role: "assistant",
-      sourceAgentId: "agent_phase_a_hermes_direct"
+      sourceAgentId: "agent_phase_a_direct_teammate"
     },
     {
       content: "Break the landing-page demo into planning and execution steps.",
@@ -732,31 +776,31 @@ async function buildPhaseADemoFixtures(
       id: "msg_phase_a_group_user",
       isPinned: false,
       mentionedAgentIds: [
-        "agent_phase_a_hermes_planner",
-        "agent_phase_a_openclaw_operator"
+        "agent_phase_a_planning_teammate",
+        "agent_phase_a_execution_teammate"
       ],
       role: "user",
       sourceAgentId: null
     },
     {
       content:
-        "Hermes: define the scope, confirm the provider path, and outline the demo sequence.",
+        "方案规划同事：先确认目标范围、协作边界和演示顺序，再把执行交接点写清楚。",
       conversationId: "conv_phase_a_group",
-      id: "msg_phase_a_group_assistant_hermes",
+      id: "msg_phase_a_group_assistant_planning",
       isPinned: false,
       mentionedAgentIds: [],
       role: "assistant",
-      sourceAgentId: "agent_phase_a_hermes_planner"
+      sourceAgentId: "agent_phase_a_planning_teammate"
     },
     {
       content:
-        "OpenClaw: produce the execution checklist, confirm the runtime response, and keep one artifact backup ready.",
+        "执行落地同事：补齐执行检查清单、确认运行响应，并准备一份交付物兜底方案。",
       conversationId: "conv_phase_a_group",
-      id: "msg_phase_a_group_assistant_openclaw",
+      id: "msg_phase_a_group_assistant_execution",
       isPinned: false,
       mentionedAgentIds: [],
       role: "assistant",
-      sourceAgentId: "agent_phase_a_openclaw_operator"
+      sourceAgentId: "agent_phase_a_execution_teammate"
     },
     {
       content: "Show the preview, diff, and attachment cards in one conversation.",
@@ -775,7 +819,7 @@ async function buildPhaseADemoFixtures(
       isPinned: false,
       mentionedAgentIds: [],
       role: "assistant",
-      sourceAgentId: "agent_phase_a_hermes_direct"
+      sourceAgentId: "agent_phase_a_direct_teammate"
     }
   ];
   const artifacts: DemoArtifactDraft[] = [
@@ -822,10 +866,7 @@ async function buildPhaseADemoFixtures(
           environment.credentialEncryptionKey
         ),
         id: `cred_phase_a_demo_${provider.provider}`,
-        label:
-          provider.provider === "hermes"
-            ? "Phase A Hermes Demo"
-            : "Phase A OpenClaw Demo",
+        label: `演示模型连接 ${provider.provider === "hermes" ? "A" : "B"}`,
         provider: provider.provider,
         providerAccountId: provider.accountId
       };

@@ -6,5 +6,5 @@ import { validateByPrefix } from "./shared.js";
 export async function validateHermesCredential(
   input: CreateProviderCredentialInput
 ): Promise<CredentialValidationResult> {
-  return validateByPrefix(input, "Hermes", ["hermes_"]);
+  return validateByPrefix(input, ["hermes_"]);
 }

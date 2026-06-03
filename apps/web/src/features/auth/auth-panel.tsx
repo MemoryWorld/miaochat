@@ -189,7 +189,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
             <input
               autoComplete="email"
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-normal text-slate-950 outline-none transition focus:border-sky-300"
-              disabled={isLoadingSession || isSubmitting}
+              disabled={isSubmitting}
               name="email"
               onChange={(event) => {
                 setEmail(event.target.value);
@@ -203,7 +203,7 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
             <input
               autoComplete="current-password"
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-normal text-slate-950 outline-none transition focus:border-sky-300"
-              disabled={isLoadingSession || isSubmitting}
+              disabled={isSubmitting}
               name="password"
               onChange={(event) => {
                 setPassword(event.target.value);

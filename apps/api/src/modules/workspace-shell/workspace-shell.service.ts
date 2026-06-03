@@ -1150,11 +1150,11 @@ export class WorkspaceShellService {
           category: entry.category,
           id: entry.id,
           name: entry.name,
-          runtimeBackendIds: ["enhanced-hermes"],
+          runtimeBackendIds: ["built-in-collaboration"],
           status: "active",
           summary: entry.summary,
           teammateIds: Array.from(teammateSkillMap.entries())
-            .filter(([_, skillIds]) => skillIds.has(entry.id))
+            .filter(([, skillIds]) => skillIds.has(entry.id))
             .map(([teammateId]) => teammateId)
             .filter((teammateId) => teammateId !== "__workspace__"),
           workspaceEnabled: true,

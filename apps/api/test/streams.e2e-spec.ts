@@ -10,6 +10,7 @@ import { signupSessionViaFetch } from "../../../tests/support/auth-session.js";
 
 const decoder = new TextDecoder();
 const workspaceId = `workspace_streaming_task_17_${Date.now()}`;
+const originalStreamHeartbeatIntervalMs = process.env.STREAM_HEARTBEAT_INTERVAL_MS;
 
 describe("streams e2e", () => {
   let app: NestFastifyApplication;
@@ -19,6 +20,7 @@ describe("streams e2e", () => {
   let conversationId: string;
 
   beforeAll(async () => {
+    process.env.STREAM_HEARTBEAT_INTERVAL_MS = "10";
     app = await createApp();
     await app.listen({
       host: "127.0.0.1",
@@ -78,9 +80,14 @@ describe("streams e2e", () => {
 
   afterAll(async () => {
     await app.close();
+    if (originalStreamHeartbeatIntervalMs === undefined) {
+      delete process.env.STREAM_HEARTBEAT_INTERVAL_MS;
+    } else {
+      process.env.STREAM_HEARTBEAT_INTERVAL_MS = originalStreamHeartbeatIntervalMs;
+    }
   });
 
-  it("streams published conversation events to browser subscribers over SSE", async () => {
+  it("keeps the SSE stream alive with heartbeat comments and still streams published conversation events", async () => {
     const event: StreamEvent = {
       kind: "conversation.message.delta",
       payload: {
@@ -108,13 +115,16 @@ describe("streams e2e", () => {
     const handshakeChunk = await readChunk(reader!);
     expect(handshakeChunk).toContain(": connected");
 
+    const heartbeatChunk = await readChunk(reader!);
+    expect(heartbeatChunk).toContain(": heartbeat");
+
     broker.publish({
       conversationId,
       event,
       workspaceId
     });
 
-    const dataChunk = await readChunk(reader!);
+    const dataChunk = await readUntilDataChunk(reader!);
     const parsedEvent = readFirstEvent(dataChunk);
 
     expect(streamEventSchema.parse(parsedEvent)).toEqual(event);
@@ -124,15 +134,44 @@ describe("streams e2e", () => {
 });
 
 async function readChunk(
-  reader: ReadableStreamDefaultReader<Uint8Array>
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs = 1_000
 ): Promise<string> {
-  const result = await reader.read();
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(`Timed out waiting ${timeoutMs}ms for SSE chunk.`));
+    }, timeoutMs);
+  });
+  let result: ReadableStreamReadResult<Uint8Array>;
+
+  try {
+    result = await Promise.race([reader.read(), timeoutPromise]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 
   if (result.done || !result.value) {
     throw new Error("Expected SSE chunk but stream closed.");
   }
 
   return decoder.decode(result.value);
+}
+
+async function readUntilDataChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>
+): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const chunk = await readChunk(reader);
+
+    if (chunk.includes("data: ")) {
+      return chunk;
+    }
+  }
+
+  throw new Error("Expected SSE data chunk but only received heartbeat comments.");
 }
 
 function readFirstEvent(chunk: string): unknown {

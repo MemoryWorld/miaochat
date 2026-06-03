@@ -17,11 +17,6 @@ const quotaProviderSchema = z.enum([
   "openclaw"
 ]);
 
-const quotaPolicySchema = z.object({
-  limit: z.number().int().positive(),
-  periodMs: z.number().int().positive()
-});
-
 const consumePlatformQuotaInputSchema = z.object({
   now: z.coerce.date().optional(),
   provider: quotaProviderSchema,
@@ -45,7 +40,10 @@ const quotaPeriodSchema = z.object({
 });
 
 type QuotaProvider = z.infer<typeof quotaProviderSchema>;
-type QuotaPolicy = z.infer<typeof quotaPolicySchema>;
+type QuotaPolicy = {
+  limit: number;
+  periodMs: number;
+};
 type ConsumePlatformQuotaInput = z.infer<typeof consumePlatformQuotaInputSchema>;
 type WorkspaceProviderQuotaPeriod = z.infer<typeof quotaPeriodSchema>;
 

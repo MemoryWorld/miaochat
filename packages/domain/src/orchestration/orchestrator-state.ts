@@ -1,4 +1,5 @@
 import type {
+  MultiAgentOutputEnvelope,
   OrchestratorFailure,
   OrchestratorStatusEventPayload,
   ProviderId,
@@ -15,7 +16,9 @@ export type OrchestratorStatus =
 export type OrchestratorTarget = {
   agentId: string;
   agentName: string;
+  capabilityTags?: string[];
   outputStyle?: string | null;
+  participantId?: string;
   provider: ProviderId;
   scopeDescription?: string | null;
   systemPrompt?: string | null;
@@ -23,6 +26,9 @@ export type OrchestratorTarget = {
 
 export type OrchestratorResult = OrchestratorTarget & {
   finalContent: string;
+  harnessOutput?: MultiAgentOutputEnvelope;
+  roundIndex?: number;
+  turnIndex?: number;
 };
 
 export type OrchestratorState = {
@@ -89,6 +95,16 @@ export function recordOrchestratorFailures(
   };
 }
 
+export function recordOrchestratorTargets(
+  state: OrchestratorState,
+  targets: OrchestratorTarget[]
+): OrchestratorState {
+  return {
+    ...state,
+    targets: uniqueTargets(targets)
+  };
+}
+
 export function toOrchestratorStatusEvent(
   state: OrchestratorState
 ): StreamEvent {
@@ -146,4 +162,20 @@ function resolveStatusSummary(state: OrchestratorState): string {
 
 function pluralize(noun: string, count: number): string {
   return count === 1 ? noun : `${noun}s`;
+}
+
+function uniqueTargets(targets: OrchestratorTarget[]): OrchestratorTarget[] {
+  const seen = new Set<string>();
+  const unique: OrchestratorTarget[] = [];
+
+  for (const target of targets) {
+    if (seen.has(target.agentId)) {
+      continue;
+    }
+
+    seen.add(target.agentId);
+    unique.push(target);
+  }
+
+  return unique;
 }

@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import {
-  builtInCodingRoleSchema,
   runtimeBackendSchema,
   type BuiltInCodingRole,
   type RuntimeBackend

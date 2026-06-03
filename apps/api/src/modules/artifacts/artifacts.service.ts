@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException
+} from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DatabaseError } from "pg";
 
@@ -16,6 +21,10 @@ import {
 import { ChannelMembersService } from "../channels/channel-members.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { StorageService } from "./storage.service.js";
+
+type MessageAccess = {
+  ownerUserId: string;
+};
 
 type ArtifactRow = {
   created_at: Date;
@@ -97,12 +106,18 @@ export class ArtifactsService {
 
   async list(input: unknown, actorUserId: string): Promise<Artifact[]> {
     const parsed = artifactQuerySchema.parse(input);
-    const access = await this.assertMessageAccess({
+    const access = await this.resolveMessageAccess({
       actorUserId,
+      hiddenBehavior: "empty",
       messageId: parsed.messageId,
       mode: "read",
       workspaceId: parsed.workspaceId
     });
+
+    if (!access) {
+      return [];
+    }
+
     const result = await this.database.execute<ArtifactRow>(sql`
       SELECT
         artifacts.created_at,
@@ -152,7 +167,28 @@ export class ArtifactsService {
     messageId: string;
     mode: "read" | "send";
     workspaceId: string;
-  }): Promise<{ ownerUserId: string }> {
+  }): Promise<MessageAccess> {
+    const access = await this.resolveMessageAccess({
+      ...input,
+      hiddenBehavior: "not_found"
+    });
+
+    if (!access) {
+      throw new NotFoundException(
+        `Message ${input.messageId} was not found in workspace ${input.workspaceId}`
+      );
+    }
+
+    return access;
+  }
+
+  private async resolveMessageAccess(input: {
+    actorUserId: string;
+    hiddenBehavior: "empty" | "not_found";
+    messageId: string;
+    mode: "read" | "send";
+    workspaceId: string;
+  }): Promise<MessageAccess | null> {
     const result = await this.database.execute<{
       conversation_id: string;
       owner_user_id: string;
@@ -166,23 +202,50 @@ export class ArtifactsService {
     const message = result.rows[0];
 
     if (!message) {
+      if (input.hiddenBehavior === "empty") {
+        return null;
+      }
+
       throw new NotFoundException(
         `Message ${input.messageId} was not found in workspace ${input.workspaceId}`
       );
     }
 
-    const access =
-      input.mode === "send"
-        ? await this.channelMembersService.assertCanSend({
-            actorUserId: input.actorUserId,
-            channelId: message.conversation_id,
-            workspaceId: input.workspaceId
-          })
-        : await this.channelMembersService.assertCanRead({
-            actorUserId: input.actorUserId,
-            channelId: message.conversation_id,
-            workspaceId: input.workspaceId
-          });
+    let access: Awaited<ReturnType<ChannelMembersService["assertCanRead"]>>;
+
+    try {
+      access = await this.channelMembersService.assertCanRead({
+        actorUserId: input.actorUserId,
+        channelId: message.conversation_id,
+        workspaceId: input.workspaceId
+      });
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        const wasRemoved = await this.channelMembersService.wasRemovedHumanMember({
+          actorUserId: input.actorUserId,
+          channelId: message.conversation_id,
+          workspaceId: input.workspaceId
+        });
+
+        if (wasRemoved) {
+          throw error;
+        }
+
+        if (input.hiddenBehavior === "empty") {
+          return null;
+        }
+
+        throw new NotFoundException(
+          `Message ${input.messageId} was not found in workspace ${input.workspaceId}`
+        );
+      }
+
+      throw error;
+    }
+
+    if (input.mode === "send" && access.permission === "read") {
+      throw new ForbiddenException("你在这个频道里只有只读权限，不能上传产物。");
+    }
 
     return { ownerUserId: access.ownerUserId };
   }

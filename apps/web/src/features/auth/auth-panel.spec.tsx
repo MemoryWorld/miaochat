@@ -37,6 +37,16 @@ describe("AuthPanel", () => {
     expect(screen.getByLabelText("密码")).toBeInTheDocument();
   });
 
+  it("keeps credential fields editable while the session check is pending", () => {
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}));
+
+    render(<AuthPanel />);
+
+    expect(screen.getByLabelText("邮箱")).toBeEnabled();
+    expect(screen.getByLabelText("密码")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "登录" })).toBeDisabled();
+  });
+
   it("logs in with credentials and exposes a logout action after success", async () => {
     const onAuthenticated = vi.fn();
 

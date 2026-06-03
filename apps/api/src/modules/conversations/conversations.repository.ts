@@ -51,6 +51,7 @@ export type OwnedConversationRow = {
 export type ResolvedConversationAgentRow = {
   agent_id: string;
   agent_name: string;
+  capability_tags: string[];
   mode: "direct" | "group";
   output_style: string;
   provider: ProviderId;
@@ -233,6 +234,23 @@ export class ConversationsRepository {
     `);
 
     return result.rows;
+  }
+
+  async deleteConversation(
+    conversationId: string,
+    workspaceId: string,
+    ownerUserId: string,
+    executor?: DatabaseExecutor
+  ): Promise<boolean> {
+    const result = await this.resolveExecutor(executor).execute<{ id: string }>(sql`
+      DELETE FROM conversations
+      WHERE id = ${conversationId}
+        AND workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+      RETURNING id
+    `);
+
+    return Boolean(result.rows[0]);
   }
 
   async listWorkspaceParticipants(
@@ -543,6 +561,7 @@ export class ConversationsRepository {
       SELECT
         conversation_agents.agent_id,
         conversation_agents.agent_name,
+        custom_agents.capability_tags,
         conversations.mode,
         custom_agents.output_style,
         custom_agents.provider,
@@ -558,7 +577,7 @@ export class ConversationsRepository {
       WHERE conversations.id = ${conversationId}
         AND conversations.workspace_id = ${workspaceId}
         AND conversations.owner_user_id = ${ownerUserId}
-      ORDER BY conversation_agents.agent_id ASC
+      ORDER BY custom_agents.created_at ASC, conversation_agents.agent_id ASC
     `);
 
     return result.rows;

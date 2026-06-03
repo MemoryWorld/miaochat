@@ -3,20 +3,29 @@ import type {
   OrchestratorResult,
   OrchestratorTarget
 } from "@agenthub/domain/orchestration";
+import { sanitizeAssistantVisibleContent } from "@agenthub/contracts";
+import { parseMultiAgentOutputEnvelope } from "@agenthub/domain/multi-agent";
 
 import {
   getWorkerLogger,
   getWorkerMetrics,
   getWorkerTracer
 } from "../observability/observability.js";
-import { buildAgentHarnessInstructions } from "./agent-harness-instructions.js";
+import {
+  type AgentCollaborationStepInstruction,
+  buildAgentHarnessInstructions,
+  buildAgentHarnessRuntimeContext,
+  withAgentHarnessRuntimeContext
+} from "./agent-harness-instructions.js";
 import { toTemporalActivityFailure } from "./activity-errors.js";
 import { maybeThrowMockDispatchFailure } from "./failure-handling.activity.js";
 import { createPhaseARuntimeExecution } from "./provider-runtime.js";
 
 export type DispatchAgentActivityInput = OrchestratorTarget & {
+  collaborationStep?: AgentCollaborationStepInstruction;
   context?: AgentExecutionContext;
   conversationId: string;
+  harnessRunId?: string;
   message: string;
   ownerUserId: string;
   workspaceId: string;
@@ -44,14 +53,25 @@ export async function dispatchAgentActivity(
       provider: input.provider,
       workspaceId: input.workspaceId
     });
+    const harness = buildAgentHarnessRuntimeContext({
+      agentId: input.agentId,
+      agentName: input.agentName,
+      conversationId: input.conversationId,
+      mode: "group",
+      pinnedMessageIds: input.context?.pinnedMessages.map((message) => message.id),
+      runId: input.harnessRunId ?? `group:${input.conversationId}:${input.agentId}`,
+      workspaceId: input.workspaceId
+    });
 
     const execution = await runtime.adapter.execute({
       agentId: input.agentId,
-      context: input.context,
+      context: withAgentHarnessRuntimeContext(input.context, harness),
       conversationId: input.conversationId,
       credentialId: runtime.credentialId,
       instructions: buildAgentHarnessInstructions({
         agentName: input.agentName,
+        collaborationStep: input.collaborationStep,
+        harness,
         mode: "group",
         outputStyle: input.outputStyle,
         scopeDescription: input.scopeDescription,
@@ -62,15 +82,31 @@ export async function dispatchAgentActivity(
       workspaceId: input.workspaceId
     });
 
+    const parsedOutput = parseMultiAgentOutputEnvelope({
+      rawText: execution.finalContent
+    });
+    const visibleContent =
+      parsedOutput.errors.length === 0
+        ? sanitizeAssistantVisibleContent(
+            parsedOutput.envelope.visibleMessage.trim() || execution.finalContent,
+            { stripCollaborationPlaceholders: true }
+          )
+        : sanitizeAssistantVisibleContent(execution.finalContent, {
+            stripCollaborationPlaceholders: true
+          });
+
     metrics.incrementCounter("worker_dispatch_success_total", {
       provider: input.provider
     });
-    span.end({ contentLength: execution.finalContent.length });
+    span.end({ contentLength: visibleContent.length });
 
     return {
       agentId: input.agentId,
       agentName: input.agentName,
-      finalContent: execution.finalContent,
+      finalContent: visibleContent,
+      ...(parsedOutput.errors.length === 0
+        ? { harnessOutput: parsedOutput.envelope }
+        : {}),
       provider: input.provider
     };
   } catch (error) {

@@ -39,6 +39,7 @@ export function SettingsHost({
   const {
     activeWorkspaceId,
     isLoading,
+    refresh: refreshWorkspaces,
     selectWorkspace,
     workspaces
   } = useActiveWorkspace();
@@ -58,6 +59,9 @@ export function SettingsHost({
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
 
   const selectedSection = resolveSettingsSection(initialSection);
+  function refreshWorkspacesAfterAuthChange(): void {
+    void refreshWorkspaces();
+  }
 
   return (
     <AppShell
@@ -118,7 +122,10 @@ export function SettingsHost({
               登录身份、通知、语言和安全入口集中在这里。
             </p>
           </div>
-          <AuthPanel />
+          <AuthPanel
+            onAuthenticated={refreshWorkspacesAfterAuthChange}
+            onLoggedOut={refreshWorkspacesAfterAuthChange}
+          />
           <div className="grid gap-3 md:grid-cols-2">
             <ProfileInfo title="语言" value="简体中文" />
             <ProfileInfo title="时区" value="跟随浏览器" />

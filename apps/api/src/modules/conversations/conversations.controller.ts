@@ -119,6 +119,19 @@ export class ConversationsController {
     return this.conversationsService.restore(parsed, user.id, conversationId);
   }
 
+  @Delete(":conversationId")
+  @HttpCode(200)
+  async deleteConversation(
+    @Param("conversationId") conversationId: string,
+    @Query("workspaceId") workspaceId: string | undefined,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsed = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+    await this.permissionGuard.assert(user.id, parsed, "conversation.update");
+    return this.conversationsService.delete(parsed, user.id, conversationId);
+  }
+
   @Post(":conversationId/teammates")
   async addTeammate(
     @Param("conversationId") conversationId: string,

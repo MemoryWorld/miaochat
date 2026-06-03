@@ -16,7 +16,7 @@ type ChatSendInput = {
 type ChatComposerProps = {
   disabled?: boolean;
   members?: ChannelMember[];
-  onSend: (input: ChatSendInput) => Promise<void>;
+  onSend: (input: ChatSendInput) => Promise<boolean | void>;
   onTyping?: () => void;
   participants?: ConversationAgentMember[];
 };
@@ -33,6 +33,7 @@ export function ChatComposer({
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const fileInputId = useId();
   const mentionMembers = members ?? participants.map(mapParticipantToMember);
+  const mentionableMembers = mentionMembers.filter(isMentionableMember);
   const showActionSuggestions = content.trimStart().startsWith("/");
 
   return (
@@ -46,18 +47,27 @@ export function ChatComposer({
           return;
         }
 
-        await onSend({
+        const mentionedMemberIds = resolveMentionedMemberIds(
+          trimmed,
+          mentionableMembers,
+          selectedMemberIds
+        );
+
+        const didSend = await onSend({
           attachments,
           content: trimmed,
-          mentionedAgentIds: selectedMemberIds.flatMap((memberId) =>
+          mentionedAgentIds: mentionedMemberIds.flatMap((memberId) =>
             memberId.startsWith("ai:") ? [memberId.slice("ai:".length)] : []
           ),
-          mentionedUserIds: selectedMemberIds.flatMap((memberId) =>
+          mentionedUserIds: mentionedMemberIds.flatMap((memberId) =>
             memberId.startsWith("human:") && !memberId.startsWith("human:pending:")
               ? [memberId.slice("human:".length)]
               : []
           )
         });
+        if (didSend === false) {
+          return;
+        }
         setContent("");
         setAttachments([]);
         setSelectedMemberIds([]);
@@ -72,7 +82,7 @@ export function ChatComposer({
     >
       <MemberMentionInput
         disabled={disabled}
-        members={mentionMembers}
+        members={mentionableMembers}
         onToggleMember={(member) => {
           setSelectedMemberIds((current) =>
             current.includes(member.memberId)
@@ -208,6 +218,62 @@ function appendMentionLabel(content: string, mentionLabel: string): string {
   }
 
   return `${trimmedEnd} ${mentionLabel} `;
+}
+
+function resolveMentionedMemberIds(
+  content: string,
+  members: ChannelMember[],
+  selectedMemberIds: string[]
+): string[] {
+  const resolvedMemberIds = new Set(selectedMemberIds);
+
+  for (const member of members) {
+    if (contentHasMentionLabel(content, buildMentionLabel(member.displayName))) {
+      resolvedMemberIds.add(member.memberId);
+    }
+  }
+
+  return [...resolvedMemberIds];
+}
+
+function contentHasMentionLabel(content: string, mentionLabel: string): boolean {
+  let searchFrom = 0;
+
+  while (searchFrom < content.length) {
+    const index = content.indexOf(mentionLabel, searchFrom);
+
+    if (index === -1) {
+      return false;
+    }
+
+    const before = content[index - 1];
+    const after = content[index + mentionLabel.length];
+
+    if (isMentionBoundary(before) && isMentionBoundary(after)) {
+      return true;
+    }
+
+    searchFrom = index + mentionLabel.length;
+  }
+
+  return false;
+}
+
+function isMentionBoundary(character: string | undefined): boolean {
+  if (!character) {
+    return true;
+  }
+
+  return /\s/.test(character) || mentionBoundaryCharacters.includes(character);
+}
+
+const mentionBoundaryCharacters = ",，。.!?！？；;:：、()[]{}<>\"'`";
+
+function isMentionableMember(member: ChannelMember): boolean {
+  return (
+    (member.kind === "ai" && member.status === "available") ||
+    (member.kind === "human" && member.status === "active" && Boolean(member.userId))
+  );
 }
 
 function mapParticipantToMember(participant: ConversationAgentMember): ChannelMember {

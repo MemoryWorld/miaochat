@@ -6,5 +6,5 @@ import { validateByPrefix } from "./shared.js";
 export async function validateOpenClawCredential(
   input: CreateProviderCredentialInput
 ): Promise<CredentialValidationResult> {
-  return validateByPrefix(input, "OpenClaw", ["openclaw_"]);
+  return validateByPrefix(input, ["openclaw_"]);
 }

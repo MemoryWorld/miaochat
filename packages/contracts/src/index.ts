@@ -1,4 +1,6 @@
 export * from "./activity.js";
+export * from "./agent-actor-runtime.js";
+export * from "./assistant-visible-content.js";
 export * from "./approval.js";
 export * from "./artifact.js";
 export * from "./artifact-revision.js";
@@ -12,8 +14,10 @@ export * from "./database-enums.js";
 export * from "./deploy-command.js";
 export * from "./deploy-target.js";
 export * from "./deployment.js";
+export * from "./harness-runtime.js";
 export * from "./memory.js";
 export * from "./message.js";
+export * from "./multi-agent-harness.js";
 export * from "./orchestrator-event.js";
 export * from "./presence-event.js";
 export * from "./runtime-execution.js";

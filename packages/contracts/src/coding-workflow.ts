@@ -24,31 +24,31 @@ export const runtimeBackendCatalogEntrySchema = z.object({
 export const runtimeBackendCatalog = [
   {
     availability: "active",
-    displayName: "增强版 Hermes 内部运行时",
+    displayName: "内置协作运行时",
     id: "enhanced-hermes",
     kind: "internal",
-    publicSummary: "内置编码同事的首选后端。"
+    publicSummary: "AI 同事默认使用的稳定协作后端。"
   },
   {
     availability: "planned",
-    displayName: "Claude Internal Runtime",
+    displayName: "预留协作运行时",
     id: "claude-code-internal",
     kind: "internal",
-    publicSummary: "预留给后续引入的 Claude 内部编码运行时。"
+    publicSummary: "预留给后续内部协作能力扩展。"
   },
   {
     availability: "active",
-    displayName: "Hermes 兼容层",
+    displayName: "兼容运行时 A",
     id: "hermes-compat",
     kind: "compatibility",
-    publicSummary: "兼容旧 Hermes 路径的过渡后端。"
+    publicSummary: "用于旧版任务迁移的过渡后端。"
   },
   {
     availability: "active",
-    displayName: "OpenClaw 兼容层",
+    displayName: "兼容运行时 B",
     id: "openclaw-compat",
     kind: "compatibility",
-    publicSummary: "兼容 OpenClaw 路径的过渡后端。"
+    publicSummary: "用于旧版任务迁移的过渡后端。"
   },
   {
     availability: "testing",
@@ -120,7 +120,13 @@ export const builtInCodingProfileSchema = z.object({
 export const builtInCodingProfiles = [
   {
     approvalPolicy: "任何计划进入执行前都必须等待用户确认。",
-    capabilityTags: [builtInCodingTeammateTag, "编码", "计划"],
+    capabilityTags: [
+      builtInCodingTeammateTag,
+      "编码",
+      "计划",
+      "role:tech_lead",
+      "channel:coordinator"
+    ],
     id: "tech_lead",
     mission: "先梳理需求、拆解计划，再把执行顺序和风险清晰交给用户确认。",
     name: "技术负责人",
@@ -138,7 +144,12 @@ export const builtInCodingProfiles = [
   },
   {
     approvalPolicy: "只有在计划已批准后才进入实现。",
-    capabilityTags: [builtInCodingTeammateTag, "编码", "实现"],
+    capabilityTags: [
+      builtInCodingTeammateTag,
+      "编码",
+      "实现",
+      "role:software_engineer"
+    ],
     id: "software_engineer",
     mission: "按照已确认的计划完成实现，并把关键改动解释清楚。",
     name: "软件工程师",
@@ -156,7 +167,12 @@ export const builtInCodingProfiles = [
   },
   {
     approvalPolicy: "高风险问题必须明确要求返工或继续修复。",
-    capabilityTags: [builtInCodingTeammateTag, "编码", "评审"],
+    capabilityTags: [
+      builtInCodingTeammateTag,
+      "编码",
+      "评审",
+      "role:code_reviewer"
+    ],
     id: "code_reviewer",
     mission: "从风险、回归和可维护性角度审视实现结果。",
     name: "代码评审",
@@ -174,7 +190,12 @@ export const builtInCodingProfiles = [
   },
   {
     approvalPolicy: "关键缺陷必须显式阻止进入完成状态。",
-    capabilityTags: [builtInCodingTeammateTag, "编码", "测试"],
+    capabilityTags: [
+      builtInCodingTeammateTag,
+      "编码",
+      "测试",
+      "role:qa_tester"
+    ],
     id: "qa_tester",
     mission: "验证需求是否真正达成，并尽早暴露缺陷或遗漏。",
     name: "测试工程师",

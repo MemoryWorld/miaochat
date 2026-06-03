@@ -1,6 +1,6 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
 import type { RuntimeBackend } from "@agenthub/contracts";
-import { proxyActivities } from "@temporalio/workflow";
+import { proxyActivities, workflowInfo } from "@temporalio/workflow";
 
 import type {
   executeInternalRuntimeAgentActivity as executeInternalRuntimeAgentActivityFn
@@ -14,6 +14,7 @@ const { executeInternalRuntimeAgentActivity } = proxyActivities<{
 
 export type InternalRuntimeAgentWorkflowInput = {
   agentId: string;
+  agentName?: string;
   conversationId: string;
   context?: AgentExecutionContext;
   message: string;
@@ -25,5 +26,8 @@ export type InternalRuntimeAgentWorkflowInput = {
 export async function internalRuntimeAgentWorkflow(
   input: InternalRuntimeAgentWorkflowInput
 ): Promise<AgentExecutionResult> {
-  return executeInternalRuntimeAgentActivity(input);
+  return executeInternalRuntimeAgentActivity({
+    ...input,
+    harnessRunId: workflowInfo().workflowId
+  });
 }

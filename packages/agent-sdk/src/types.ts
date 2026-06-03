@@ -1,4 +1,5 @@
 import type {
+  HarnessRuntimeContext,
   Message,
   ProviderId,
   StreamEvent
@@ -7,6 +8,7 @@ import type {
 export type AgentPinnedMessage = Pick<Message, "content" | "id" | "role">;
 
 export type AgentExecutionContext = {
+  harness?: HarnessRuntimeContext;
   pinnedMessages: AgentPinnedMessage[];
 };
 

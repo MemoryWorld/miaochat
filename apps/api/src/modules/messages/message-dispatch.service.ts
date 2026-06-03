@@ -12,16 +12,23 @@ import {
 
 import {
   createMessageInputSchema,
+  sanitizeAssistantVisibleContent,
+  sanitizeAssistantVisibleStreamEvents,
+  type Message,
   type ProviderId,
   type StreamEvent
 } from "@agenthub/contracts";
 import { mapToPublicError } from "@agenthub/domain";
-import type { OrchestratorState } from "@agenthub/domain/orchestration";
+import {
+  selectInitialOrchestratorTargets,
+  type OrchestratorState
+} from "@agenthub/domain/orchestration";
 import { Client, Connection } from "@temporalio/client";
 import { z } from "zod";
 
 import { ConversationsRepository } from "../conversations/conversations.repository.js";
 import { RateLimitService } from "../limits/rate-limit.service.js";
+import { MultiAgentHarnessService } from "../multi-agent-harness/multi-agent-harness.service.js";
 import { MetricsRegistry } from "../../observability/metrics-registry.service.js";
 import { StructuredLogger } from "../../observability/structured-logger.service.js";
 import { TraceRecorder } from "../../observability/trace-recorder.service.js";
@@ -32,7 +39,9 @@ import { PinMessageService } from "./pin-message.service.js";
 const resolvedConversationAgentSchema = z.object({
   agentId: z.string().min(1),
   agentName: z.string().min(1),
+  capabilityTags: z.array(z.string().min(1)).default([]),
   outputStyle: z.string().min(1).nullable().optional(),
+  participantId: z.string().min(1).optional(),
   provider: z.custom<ProviderId>((value) => typeof value === "string" && value.length > 0),
   scopeDescription: z.string().nullable().optional(),
   systemPrompt: z.string().min(1).nullable().optional()
@@ -53,6 +62,8 @@ export class MessageDispatchService implements OnModuleDestroy {
     private readonly conversationsRepository: ConversationsRepository,
     @Inject(MessagesService) private readonly messagesService: MessagesService,
     @Inject(MetricsRegistry) private readonly metrics: MetricsRegistry,
+    @Inject(MultiAgentHarnessService)
+    private readonly multiAgentHarnessService: MultiAgentHarnessService,
     @Inject(PinMessageService) private readonly pinMessageService: PinMessageService,
     @Inject(RateLimitService) private readonly rateLimitService: RateLimitService,
     @Inject(StreamBrokerService) private readonly streamBroker: StreamBrokerService,
@@ -130,24 +141,32 @@ export class MessageDispatchService implements OnModuleDestroy {
           agentName: directAgent.agentName,
           conversationId: parsed.conversationId,
           message: parsed.content,
+          mentionedAgentIds: userMessage.mentionedAgentIds,
           ownerUserId: sendAccess.ownerUserId,
           outputStyle: directAgent.outputStyle,
           provider: directAgent.provider,
           scopeDescription: directAgent.scopeDescription,
           systemPrompt: directAgent.systemPrompt,
+          userMessageId: userMessage.id,
           workspaceId: parsed.workspaceId
         })
       );
     } else {
+      const initialTargets = selectInitialOrchestratorTargets({
+        mentionedAgentIds: userMessage.mentionedAgentIds,
+        targets: resolvedConversation.agents
+      });
+
       this.runDetachedDispatch(
         this.dispatchGroupAssistantReply({
           conversationId: parsed.conversationId,
+          initialTargetAgentIds: initialTargets.map((target) => target.agentId),
+          lockInitialTargets: userMessage.mentionedAgentIds.length > 0,
           message: parsed.content,
+          mentionedAgentIds: userMessage.mentionedAgentIds,
           ownerUserId: sendAccess.ownerUserId,
-          targets: resolveTargetAgents(
-            resolvedConversation.agents,
-            userMessage.mentionedAgentIds
-          ),
+          targets: resolvedConversation.agents,
+          userMessageId: userMessage.id,
           workspaceId: parsed.workspaceId
         })
       );
@@ -161,11 +180,13 @@ export class MessageDispatchService implements OnModuleDestroy {
     agentName: string;
     conversationId: string;
     message: string;
+    mentionedAgentIds: string[];
     ownerUserId: string;
     outputStyle?: string | null;
     provider: ProviderId;
     scopeDescription?: string | null;
     systemPrompt?: string | null;
+    userMessageId: string;
     workspaceId: string;
   }): Promise<void> {
     const span = this.traceRecorder.startSpan("provider.dispatch.direct", {
@@ -199,9 +220,39 @@ export class MessageDispatchService implements OnModuleDestroy {
         finalContent: string;
         streamEvents: StreamEvent[];
       };
+      const visibleFinalContent = sanitizeAssistantVisibleContent(execution.finalContent);
       const assistantMessageId = randomUUID();
-      const streamEvents = remapStreamEventMessageIds(execution.streamEvents, assistantMessageId);
+      const streamEvents = remapStreamEventMessageIds(
+        execution.streamEvents,
+        assistantMessageId,
+        visibleFinalContent
+      );
 
+      const assistantMessage = await this.messagesService.createAssistantMessage({
+        content: visibleFinalContent,
+        conversationId: input.conversationId,
+        id: assistantMessageId,
+        ownerUserId: input.ownerUserId,
+        sourceAgentId: input.agentId,
+        workspaceId: input.workspaceId
+      });
+      await this.multiAgentHarnessService.recordDirectExecution({
+        assistantMessage,
+        channelId: input.conversationId,
+        mentionedAgentIds: input.mentionedAgentIds,
+        ownerUserId: input.ownerUserId,
+        result: {
+          agentId: input.agentId,
+          agentName: input.agentName,
+          finalContent: visibleFinalContent,
+          outputStyle: input.outputStyle,
+          provider: input.provider,
+          scopeDescription: input.scopeDescription,
+          systemPrompt: input.systemPrompt
+        },
+        userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
       for (const event of streamEvents) {
         this.streamBroker.publish({
           conversationId: input.conversationId,
@@ -209,15 +260,6 @@ export class MessageDispatchService implements OnModuleDestroy {
           workspaceId: input.workspaceId
         });
       }
-
-      await this.messagesService.createAssistantMessage({
-        content: execution.finalContent,
-        conversationId: input.conversationId,
-        id: assistantMessageId,
-        ownerUserId: input.ownerUserId,
-        sourceAgentId: input.agentId,
-        workspaceId: input.workspaceId
-      });
 
       this.metrics.incrementCounter("provider_dispatch_success_total", {
         mode: "direct",
@@ -243,9 +285,13 @@ export class MessageDispatchService implements OnModuleDestroy {
 
   private async dispatchGroupAssistantReply(input: {
     conversationId: string;
+    initialTargetAgentIds: string[];
+    lockInitialTargets: boolean;
     message: string;
+    mentionedAgentIds: string[];
     ownerUserId: string;
     targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
+    userMessageId: string;
     workspaceId: string;
   }): Promise<void> {
     const providerLabel = summarizeProviders(input.targets);
@@ -272,6 +318,8 @@ export class MessageDispatchService implements OnModuleDestroy {
           {
             context,
             conversationId: input.conversationId,
+            initialTargetAgentIds: input.initialTargetAgentIds,
+            lockInitialTargets: input.lockInitialTargets,
             message: input.message,
             ownerUserId: input.ownerUserId,
             targets: input.targets,
@@ -285,16 +333,17 @@ export class MessageDispatchService implements OnModuleDestroy {
         state: OrchestratorState;
         streamEvents: StreamEvent[];
       };
-      const assistantMessageId = randomUUID();
-      const streamEvents = remapStreamEventMessageIds(execution.streamEvents, assistantMessageId);
+      const streamEvents = sanitizeAssistantVisibleStreamEvents(execution.streamEvents);
 
       for (const event of streamEvents) {
-        if (event.kind === "conversation.status") {
-          this.metrics.incrementCounter("orchestrator_state_total", {
-            label: event.payload.label,
-            state: event.payload.state
-          });
+        if (event.kind !== "conversation.status") {
+          continue;
         }
+
+        this.metrics.incrementCounter("orchestrator_state_total", {
+          label: event.payload.label,
+          state: event.payload.state
+        });
 
         this.streamBroker.publish({
           conversationId: input.conversationId,
@@ -303,24 +352,60 @@ export class MessageDispatchService implements OnModuleDestroy {
         });
       }
 
+      const assistantMessages: Array<{
+        message: Message;
+        result: OrchestratorState["results"][number];
+      }> = [];
       for (const result of execution.state.results) {
-        await this.messagesService.createAssistantMessage({
-          content: result.finalContent,
+        const visibleResult = {
+          ...result,
+          finalContent: sanitizeAssistantVisibleContent(result.finalContent, {
+            stripCollaborationPlaceholders: true
+          })
+        };
+        const assistantMessage = await this.messagesService.createAssistantMessage({
+          content: visibleResult.finalContent,
           conversationId: input.conversationId,
           id: randomUUID(),
           ownerUserId: input.ownerUserId,
           sourceAgentId: result.agentId,
           workspaceId: input.workspaceId
         });
+        assistantMessages.push({
+          message: assistantMessage,
+          result: visibleResult
+        });
       }
 
+      await this.multiAgentHarnessService.recordGroupExecution({
+        assistantMessages,
+        channelId: input.conversationId,
+        initialTargetAgentIds: input.initialTargetAgentIds,
+        mentionedAgentIds: input.mentionedAgentIds,
+        ownerUserId: input.ownerUserId,
+        targets: input.targets,
+        userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
+
+      const completionMessages = assistantMessages.map((entry) => entry.message);
+
       if (execution.state.failures.length > 0) {
-        await this.messagesService.createAssistantMessage({
+        const failureMessage = await this.messagesService.createAssistantMessage({
           content: formatGroupFailureNotice(execution.state),
           conversationId: input.conversationId,
           id: randomUUID(),
           ownerUserId: input.ownerUserId,
           sourceAgentId: null,
+          workspaceId: input.workspaceId
+        });
+        completionMessages.push(failureMessage);
+      }
+
+      for (const message of completionMessages) {
+        this.streamBroker.publish({
+          conversationId: input.conversationId,
+          event: createAssistantCompletedEvent(message),
           workspaceId: input.workspaceId
         });
       }
@@ -329,7 +414,10 @@ export class MessageDispatchService implements OnModuleDestroy {
         mode: "group",
         provider: providerLabel
       });
-      span.end({ assistantMessageId });
+      span.end({
+        assistantMessageId: completionMessages[0]?.id,
+        assistantMessageIds: completionMessages.map((message) => message.id)
+      });
     } catch (error) {
       this.metrics.incrementCounter("provider_dispatch_error_total", {
         mode: "group",
@@ -395,7 +483,9 @@ export class MessageDispatchService implements OnModuleDestroy {
       agents: result.map((row) => ({
         agentId: row.agent_id,
         agentName: row.agent_name,
+        capabilityTags: row.capability_tags ?? [],
         outputStyle: row.output_style,
+        participantId: row.agent_id,
         provider: row.provider,
         scopeDescription: row.scope_description,
         systemPrompt: row.system_prompt
@@ -428,27 +518,12 @@ function formatGroupFailureNotice(state: OrchestratorState): string {
   ].join("\n");
 }
 
-function resolveTargetAgents(
-  agents: Array<z.infer<typeof resolvedConversationAgentSchema>>,
-  mentionedAgentIds: string[]
-): Array<z.infer<typeof resolvedConversationAgentSchema>> {
-  if (mentionedAgentIds.length === 0) {
-    return agents;
-  }
-
-  const agentMap = new Map(agents.map((agent) => [agent.agentId, agent]));
-
-  return mentionedAgentIds.flatMap((agentId) => {
-    const agent = agentMap.get(agentId);
-    return agent ? [agent] : [];
-  });
-}
-
 function remapStreamEventMessageIds(
   events: StreamEvent[],
-  messageId: string
+  messageId: string,
+  finalContent?: string
 ): StreamEvent[] {
-  return events.map((event) => {
+  return sanitizeAssistantVisibleStreamEvents(events).map((event) => {
     switch (event.kind) {
       case "conversation.message.started":
         return {
@@ -469,7 +544,7 @@ function remapStreamEventMessageIds(
         return {
           kind: event.kind,
           payload: {
-            finalContent: event.payload.finalContent,
+            finalContent: finalContent ?? event.payload.finalContent,
             messageId
           }
         };
@@ -477,6 +552,16 @@ function remapStreamEventMessageIds(
         return event;
     }
   });
+}
+
+function createAssistantCompletedEvent(message: Message): StreamEvent {
+  return {
+    kind: "conversation.message.completed",
+    payload: {
+      finalContent: sanitizeAssistantVisibleContent(message.content),
+      messageId: message.id
+    }
+  };
 }
 
 function summarizeProviders(

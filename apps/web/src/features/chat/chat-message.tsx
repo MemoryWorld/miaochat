@@ -1,6 +1,10 @@
 "use client";
 
-import type { Artifact, Message } from "@agenthub/contracts";
+import {
+  sanitizeAssistantVisibleContent,
+  type Artifact,
+  type Message
+} from "@agenthub/contracts";
 
 import { ArtifactCard } from "../artifacts/artifact-card";
 import { PinMessageAction } from "./pin-message-action";
@@ -27,6 +31,9 @@ export function ChatMessage({
   onReply
 }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const visibleContent = isUser
+    ? message.content
+    : sanitizeAssistantVisibleContent(message.content);
 
   return (
     <article
@@ -60,7 +67,7 @@ export function ChatMessage({
           </div>
         </div>
       ) : null}
-      <div style={{ lineHeight: 1.7 }}>{message.content}</div>
+      <div style={{ lineHeight: 1.7 }}>{visibleContent}</div>
       {artifacts.length > 0 ? (
         <div
           aria-label={`Artifacts attached to message ${message.id}`}
@@ -87,7 +94,7 @@ export function ChatMessage({
         <button
           className={isUser ? darkActionClassName : lightActionClassName}
           onClick={() => {
-            void navigator.clipboard?.writeText(message.content);
+            void navigator.clipboard?.writeText(visibleContent);
           }}
           type="button"
         >

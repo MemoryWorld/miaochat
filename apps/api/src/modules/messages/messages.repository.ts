@@ -125,7 +125,7 @@ export class MessagesRepository {
   ): Promise<MessageRow[]> {
     const result = await this.database.execute<MessageRow>(sql`
       SELECT
-        ${messageSelectFields(currentUserId)}
+        ${messageSelectFields()}
       FROM messages
       ${messageSelectJoins(currentUserId)}
       WHERE messages.conversation_id = ${conversationId}
@@ -147,7 +147,7 @@ export class MessagesRepository {
   ): Promise<MessageRow | null> {
     const result = await this.resolveExecutor(executor).execute<MessageRow>(sql`
       SELECT
-        ${messageSelectFields(currentUserId)}
+        ${messageSelectFields()}
       FROM messages
       ${messageSelectJoins(currentUserId)}
       WHERE messages.id = ${messageId}
@@ -167,7 +167,7 @@ export class MessagesRepository {
   ): Promise<MessageRow[]> {
     const result = await this.database.execute<MessageRow>(sql`
       SELECT
-        ${messageSelectFields(currentUserId)}
+        ${messageSelectFields()}
       FROM messages
       ${messageSelectJoins(currentUserId)}
       WHERE messages.thread_parent_message_id = ${parentMessageId}
@@ -369,7 +369,7 @@ export class MessagesRepository {
   ): Promise<MessageRow[]> {
     const result = await this.database.execute<MessageRow>(sql`
       SELECT
-        ${messageSelectFields(ownerUserId)}
+        ${messageSelectFields()}
       FROM messages
       ${messageSelectJoins(ownerUserId)}
       WHERE messages.conversation_id = ${conversationId}
@@ -387,7 +387,7 @@ export class MessagesRepository {
   }
 }
 
-function messageSelectFields(currentUserId: string) {
+function messageSelectFields() {
   return sql`
     messages.id,
     messages.conversation_id,

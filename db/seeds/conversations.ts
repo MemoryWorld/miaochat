@@ -14,11 +14,11 @@ export function buildSeedConversations(
         mode: "group",
         ownerUserId,
         participants: [
-          { agentId: "agent_hermes", agentName: "Hermes Planner" },
-          { agentId: "agent_codex", agentName: "Codex Builder" }
+          { agentId: "agent_hermes", agentName: "方案规划同事" },
+          { agentId: "agent_codex", agentName: "实现落地同事" }
         ],
         pinnedMessageIds: [],
-        title: "Seed planning conversation",
+        title: "种子协作频道",
         updatedAt: new Date(),
         workspaceId
       }

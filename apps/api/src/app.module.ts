@@ -11,6 +11,7 @@ import { CustomAgentsModule } from "./modules/custom-agents/custom-agents.module
 import { DeploysModule } from "./modules/deploys/deploys.module.js";
 import { LimitsModule } from "./modules/limits/limits.module.js";
 import { MessagesModule } from "./modules/messages/messages.module.js";
+import { MultiAgentHarnessModule } from "./modules/multi-agent-harness/multi-agent-harness.module.js";
 import { QuotaModule } from "./modules/quota/quota.module.js";
 import { StreamsModule } from "./modules/streams/streams.module.js";
 import { ToolsModule } from "./modules/tools/tools.module.js";
@@ -32,6 +33,7 @@ import { ObservabilityModule } from "./observability/observability.module.js";
     ConversationsModule,
     LimitsModule,
     MessagesModule,
+    MultiAgentHarnessModule,
     QuotaModule,
     StreamsModule,
     ToolsModule,

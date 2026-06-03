@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { Client, DatabaseError } from "pg";
 
+import { loadLocalEnvFiles } from "./env.js";
+
 const duplicateErrorCodes = new Set([
   "42701", // duplicate_column
   "42710", // duplicate_object
@@ -10,6 +12,8 @@ const duplicateErrorCodes = new Set([
 ]);
 
 async function run(): Promise<void> {
+  loadLocalEnvFiles();
+
   const client = new Client({
     connectionString:
       process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub"

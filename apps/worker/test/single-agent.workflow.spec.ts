@@ -1,16 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { proxyActivitiesMock } = vi.hoisted(() => ({
-  proxyActivitiesMock: vi.fn()
+const { proxyActivitiesMock, workflowInfoMock } = vi.hoisted(() => ({
+  proxyActivitiesMock: vi.fn(),
+  workflowInfoMock: vi.fn()
 }));
 
 vi.mock("@temporalio/workflow", () => ({
-  proxyActivities: proxyActivitiesMock
+  proxyActivities: proxyActivitiesMock,
+  workflowInfo: workflowInfoMock
 }));
 
 describe("singleAgentWorkflow", () => {
   beforeEach(() => {
     proxyActivitiesMock.mockReset();
+    workflowInfoMock.mockReset();
+    workflowInfoMock.mockReturnValue({ workflowId: "single-agent:conv_1:run_1" });
     vi.resetModules();
   });
 
@@ -58,6 +62,7 @@ describe("singleAgentWorkflow", () => {
     expect(executeDirectAgentActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         agentName: "软件工程师",
+        harnessRunId: "single-agent:conv_1:run_1",
         systemPrompt: "负责实现和测试。"
       })
     );

@@ -13,8 +13,8 @@ const decoder = new TextDecoder();
 const workspaceId = "workspace_group_orchestrator";
 const workerTaskQueue = "worker-task-group-orchestrator";
 const agentIds = {
-  codex: "agent_group_mock_codex",
-  hermes: "agent_group_orchestrator_mock_hermes"
+  builder: "agent_group_02_builder",
+  planner: "agent_group_01_planner"
 };
 
 describe("group orchestrator integration", () => {
@@ -67,10 +67,10 @@ describe("group orchestrator integration", () => {
     process.env.WORKER_TASK_QUEUE = previousWorkerTaskQueue;
   });
 
-  it("persists individual group replies and narrows dispatch when the user mentions one member", async () => {
+  it("persists collaborative group replies and narrows dispatch when mentioned", async () => {
     const conversationResponse = await fetch(`${baseUrl}/conversations`, {
       body: JSON.stringify({
-        agentIds: [agentIds.hermes, agentIds.codex],
+        agentIds: [agentIds.planner, agentIds.builder],
         mode: "group",
         workspaceId
       }),
@@ -146,24 +146,75 @@ describe("group orchestrator integration", () => {
           "assistant",
           "assistant"
         ]);
-        const hermesUntargetedMessage = untargetedMessages.find(
-          (message) => message.sourceAgentId === agentIds.hermes
+        expect(untargetedMessages.slice(1).map((message) => message.sourceAgentId)).toEqual([
+          agentIds.planner,
+          agentIds.builder
+        ]);
+        const plannerUntargetedMessage = untargetedMessages.find(
+          (message) => message.sourceAgentId === agentIds.planner
         );
-        const codexUntargetedMessage = untargetedMessages.find(
-          (message) => message.sourceAgentId === agentIds.codex
+        const builderUntargetedMessage = untargetedMessages.find(
+          (message) => message.sourceAgentId === agentIds.builder
         );
-        expect(hermesUntargetedMessage?.content).toContain(
-          "[mock-group:agent_group_orchestrator_mock_hermes]"
+        expect(plannerUntargetedMessage?.content).toContain(
+          "[mock-group:agent_group_01_planner]"
         );
-        expect(codexUntargetedMessage?.content).toContain(
-          "[mock-group:agent_group_mock_codex]"
+        expect(builderUntargetedMessage?.content).toContain(
+          "[mock-group:agent_group_02_builder]"
         );
+
+        const harnessEvents = await fetchJson<Array<{ type: string; sourceAgentId?: string }>>(
+          `${baseUrl}/channels/${conversationId}/events?workspaceId=${workspaceId}`,
+          authCookie
+        );
+        expect(harnessEvents.map((event) => event.type)).toEqual([
+          "user_message",
+          "agent_message",
+          "agent_message"
+        ]);
+
+        const harnessTurns = await fetchJson<
+          Array<{
+            agentId: string;
+            contextSnapshotId: string | null;
+            reason: string;
+            status: string;
+          }>
+        >(
+          `${baseUrl}/channels/${conversationId}/turns?workspaceId=${workspaceId}`,
+          authCookie
+        );
+        expect(harnessTurns).toHaveLength(2);
+        expect(harnessTurns.map((turn) => turn.agentId)).toEqual([
+          agentIds.planner,
+          agentIds.builder
+        ]);
+        expect(harnessTurns).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            agentId: agentIds.planner,
+            contextSnapshotId: expect.any(String),
+            reason: "scheduled_followup",
+            status: "completed"
+          }),
+          expect.objectContaining({
+            agentId: agentIds.builder,
+            contextSnapshotId: expect.any(String),
+            reason: "scheduled_followup",
+            status: "completed"
+          })
+        ]));
+
+        const contextSnapshots = await fetchJson<Array<{ agentTurnId: string }>>(
+          `${baseUrl}/channels/${conversationId}/context-snapshots?workspaceId=${workspaceId}`,
+          authCookie
+        );
+        expect(contextSnapshots).toHaveLength(2);
 
         const targetedSendResponse = await fetch(`${baseUrl}/messages/send`, {
           body: JSON.stringify({
-            content: "@codex write the implementation notes",
+            content: "@builder write the implementation notes",
             conversationId,
-            mentionedAgentIds: [agentIds.codex],
+            mentionedAgentIds: [agentIds.builder],
             role: "user",
             workspaceId
           }),
@@ -176,7 +227,7 @@ describe("group orchestrator integration", () => {
 
         expect(targetedSendResponse.status).toBe(202);
         expect((await targetedSendResponse.json()).mentionedAgentIds).toEqual([
-          agentIds.codex
+          agentIds.builder
         ]);
 
         const targetedEvents = await readEvents(streamReader!, 7);
@@ -203,9 +254,9 @@ describe("group orchestrator integration", () => {
           "assistant"
         ]);
         expect(latestAssistantMessage?.content).toContain(
-          "[mock-group:agent_group_mock_codex]"
+          "[mock-group:agent_group_02_builder]"
         );
-        expect(latestAssistantMessage?.sourceAgentId).toBe(agentIds.codex);
+        expect(latestAssistantMessage?.sourceAgentId).toBe(agentIds.builder);
 
         let expectedMessageCount = 5;
         const designQuestions = [
@@ -246,7 +297,7 @@ describe("group orchestrator integration", () => {
             "assistant"
           ]);
           expect(new Set(latestReplies.map((message) => message.sourceAgentId))).toEqual(
-            new Set([agentIds.hermes, agentIds.codex])
+            new Set([agentIds.planner, agentIds.builder])
           );
           expect(latestReplies.every((message) => message.content.includes(question))).toBe(true);
         }
@@ -273,11 +324,11 @@ async function seedMockAgents(client: Client, ownerUserId: string): Promise<void
         workspace_id
       )
       VALUES
-        ($1, null, '[]'::jsonb, 'Hermes Planner', $3, 'mock', 'Plan', '[]'::jsonb, $4),
-        ($2, null, '[]'::jsonb, 'Codex Builder', $3, 'mock', 'Build', '[]'::jsonb, $4)
+        ($1, null, '["channel:coordinator"]'::jsonb, 'Planning Teammate', $3, 'mock', 'Plan', '[]'::jsonb, $4),
+        ($2, null, '[]'::jsonb, 'Build Teammate', $3, 'mock', 'Build', '[]'::jsonb, $4)
       ON CONFLICT DO NOTHING
     `,
-    [agentIds.hermes, agentIds.codex, ownerUserId, workspaceId]
+    [agentIds.planner, agentIds.builder, ownerUserId, workspaceId]
   );
 }
 
@@ -352,4 +403,16 @@ async function waitForMessages(
   }
 
   throw new Error(`Timed out waiting for ${expectedCount} persisted messages.`);
+}
+
+async function fetchJson<T>(url: string, authCookie: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: {
+      cookie: authCookie
+    }
+  });
+
+  expect(response.status).toBe(200);
+
+  return (await response.json()) as T;
 }

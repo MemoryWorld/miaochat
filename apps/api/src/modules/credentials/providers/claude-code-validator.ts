@@ -6,5 +6,5 @@ import { validateByPrefix } from "./shared.js";
 export async function validateClaudeCodeCredential(
   input: CreateProviderCredentialInput
 ): Promise<CredentialValidationResult> {
-  return validateByPrefix(input, "Claude Code", ["anthropic_", "claude_", "sk-ant-"]);
+  return validateByPrefix(input, ["anthropic_", "claude_", "sk-ant-"]);
 }

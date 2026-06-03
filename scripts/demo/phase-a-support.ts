@@ -114,8 +114,8 @@ export async function runPhaseADemoCheck(
   const providers = environment.providers.map<PhaseADemoProviderStatus>((entry) => ({
     configured: entry.configured,
     detail: entry.configured
-      ? `using ${entry.accountIdEnvName} + ${entry.secretEnvName}`
-      : `missing ${missingCredentialFields(entry).join(" and ")}`,
+      ? "已配置"
+      : `缺少${missingCredentialFields(entry).join("和")}`,
     provider: entry.provider
   }));
   const readyForSeed = services.every((service) => service.ok);
@@ -151,10 +151,10 @@ export function formatPhaseADemoCheckReport(result: PhaseADemoCheckResult): stri
     );
   }
 
-  lines.push("", "Provider credentials:");
-  for (const provider of result.providers) {
+  lines.push("", "Model connections:");
+  for (const [index, provider] of result.providers.entries()) {
     lines.push(
-      `- ${provider.provider}: ${provider.configured ? "configured" : "missing"} (${provider.detail})`
+      `- 模型连接 ${index + 1}: ${provider.configured ? "configured" : "missing"} (${provider.detail})`
     );
   }
 
@@ -217,22 +217,23 @@ function buildNextAction(input: {
     return "Run `pnpm demo:seed:phase-a`, start the apps, and begin local demo recording.";
   }
 
-  const missingProviders = input.providers
-    .filter((provider) => !provider.configured)
-    .map((provider) => provider.provider);
+  const missingConnections = input.providers
+    .map((provider, index) => ({ index, provider }))
+    .filter((entry) => !entry.provider.configured)
+    .map((entry) => `模型连接 ${entry.index + 1}`);
 
-  return `Run \`pnpm demo:seed:phase-a\`, then open /setup after login to bind the missing providers: ${missingProviders.join(", ")}.`;
+  return `Run \`pnpm demo:seed:phase-a\`, then open /setup after login to bind the missing model connections: ${missingConnections.join(", ")}.`;
 }
 
 function missingCredentialFields(entry: PhaseADemoProviderEnvironment): string[] {
   const missing: string[] = [];
 
   if (!entry.accountId) {
-    missing.push(entry.accountIdEnvName);
+    missing.push("账号标识");
   }
 
   if (!entry.secret) {
-    missing.push(entry.secretEnvName);
+    missing.push("API Key");
   }
 
   return missing;

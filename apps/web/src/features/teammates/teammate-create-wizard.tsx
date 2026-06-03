@@ -625,6 +625,8 @@ function buildCapabilityTags(input: {
   return Array.from(
     new Set([
       ...input.selectedTemplate.suggestedTags,
+      input.selectedTemplate.id,
+      `role:${input.selectedTemplate.id}`,
       ...input.selectedTools,
       ...customTags,
       ...input.selectedHarnessOptionIds.flatMap((optionId) => {

@@ -1,6 +1,6 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
 import type { ProviderId } from "@agenthub/contracts";
-import { proxyActivities } from "@temporalio/workflow";
+import { proxyActivities, workflowInfo } from "@temporalio/workflow";
 import type {
   executeDirectAgentActivity as executeDirectAgentActivityFn
 } from "../activities/direct-agent.activity.js";
@@ -39,5 +39,8 @@ export type SingleAgentWorkflowInput = {
 export async function singleAgentWorkflow(
   input: SingleAgentWorkflowInput
 ): Promise<AgentExecutionResult> {
-  return executeDirectAgentActivity(input);
+  return executeDirectAgentActivity({
+    ...input,
+    harnessRunId: workflowInfo().workflowId
+  });
 }
