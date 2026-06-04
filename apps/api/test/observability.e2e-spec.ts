@@ -136,15 +136,25 @@ describe("api observability", () => {
     const span = tracer.startSpan("provider.dispatch.direct", {
       conversationId: "conv_obs_2"
     });
+    span.record("context.compiled", { promptSectionCount: 4 });
     span.end({ assistantMessageId: "msg_obs_1" });
 
     const events = stream.entries.map((entry) => JSON.parse(entry));
 
     expect(events.map((entry) => entry.event)).toEqual([
       "trace.span.start",
+      "trace.span.event",
       "trace.span.end"
     ]);
     expect(events[1]).toEqual(
+      expect.objectContaining({
+        conversationId: "conv_obs_2",
+        promptSectionCount: 4,
+        span: "provider.dispatch.direct",
+        traceEvent: "context.compiled"
+      })
+    );
+    expect(events[2]).toEqual(
       expect.objectContaining({
         assistantMessageId: "msg_obs_1",
         conversationId: "conv_obs_2",
@@ -153,6 +163,11 @@ describe("api observability", () => {
       })
     );
     expect(metrics.snapshot().counters).toEqual([
+      expect.objectContaining({
+        labels: { event: "context.compiled", span: "provider.dispatch.direct" },
+        name: "trace_span_event_total",
+        value: 1
+      }),
       expect.objectContaining({
         labels: { result: "ok", span: "provider.dispatch.direct" },
         name: "trace_span_total",
@@ -171,6 +186,16 @@ describe("api observability", () => {
         result: "ok"
       })
     );
+    expect(finishedSpans[0]?.events).toEqual([
+      expect.objectContaining({
+        attributes: expect.objectContaining({
+          conversationId: "conv_obs_2",
+          promptSectionCount: 4,
+          traceEvent: "context.compiled"
+        }),
+        name: "context.compiled"
+      })
+    ]);
 
     await otel.shutdown();
   });

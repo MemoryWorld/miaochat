@@ -10,6 +10,7 @@ export type TraceSpanFields = Record<string, unknown>;
 export type TraceSpan = {
   end(extraFields?: TraceSpanFields): void;
   fail(error: unknown, extraFields?: TraceSpanFields): void;
+  record(eventName: string, extraFields?: TraceSpanFields): void;
   spanId: string;
   traceId: string;
 };
@@ -85,6 +86,23 @@ export class TraceRecorder {
       },
       fail(error, extraFields = {}): void {
         finalize("error", extraFields, error);
+      },
+      record: (eventName, extraFields = {}) => {
+        const eventFields = {
+          ...fields,
+          ...extraFields,
+          span: name,
+          spanId,
+          traceEvent: eventName,
+          traceId
+        };
+
+        span.recordEvent(eventName, eventFields);
+        this.metrics.incrementCounter("trace_span_event_total", {
+          event: eventName,
+          span: name
+        });
+        this.logger.info("trace.span.event", eventFields);
       },
       spanId,
       traceId

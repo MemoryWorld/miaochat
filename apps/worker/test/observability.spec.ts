@@ -112,6 +112,7 @@ describe("worker observability", () => {
     const okSpan = tracer.startSpan("worker.dispatch_agent", {
       agentId: "agent_obs"
     });
+    okSpan.record("context.compiled", { promptSectionCount: 5 });
     okSpan.end({ contentLength: 12 });
 
     const failingSpan = tracer.startSpan("worker.dispatch_agent", {
@@ -123,11 +124,17 @@ describe("worker observability", () => {
 
     expect(events.map((entry) => `${entry.event}:${entry.result ?? ""}`)).toEqual([
       "trace.span.start:",
+      "trace.span.event:",
       "trace.span.end:ok",
       "trace.span.start:",
       "trace.span.end:error"
     ]);
     expect(metrics.snapshot().counters).toEqual([
+      expect.objectContaining({
+        labels: { event: "context.compiled", span: "worker.dispatch_agent" },
+        name: "trace_span_event_total",
+        value: 1
+      }),
       expect.objectContaining({
         labels: { result: "ok", span: "worker.dispatch_agent" },
         name: "trace_span_total",
@@ -151,6 +158,16 @@ describe("worker observability", () => {
         result: "ok"
       })
     );
+    expect(finishedSpans[0]?.events).toEqual([
+      expect.objectContaining({
+        attributes: expect.objectContaining({
+          agentId: "agent_obs",
+          promptSectionCount: 5,
+          traceEvent: "context.compiled"
+        }),
+        name: "context.compiled"
+      })
+    ]);
     expect(finishedSpans[1]?.status.message).toBe("boom");
     expect(finishedSpans[1]?.attributes).toEqual(
       expect.objectContaining({

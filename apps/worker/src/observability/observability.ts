@@ -177,6 +177,7 @@ export class WorkerMetricsRegistry {
 export type WorkerTraceSpan = {
   end(extraFields?: LogFields): void;
   fail(error: unknown, extraFields?: LogFields): void;
+  record(eventName: string, extraFields?: LogFields): void;
   spanId: string;
   traceId: string;
 };
@@ -248,6 +249,23 @@ export class WorkerTraceRecorder {
       },
       fail(error, extraFields = {}) {
         finalize("error", extraFields, error);
+      },
+      record: (eventName, extraFields = {}) => {
+        const eventFields = {
+          ...fields,
+          ...extraFields,
+          span: name,
+          spanId,
+          traceEvent: eventName,
+          traceId
+        };
+
+        span.recordEvent(eventName, eventFields);
+        this.metrics.incrementCounter("trace_span_event_total", {
+          event: eventName,
+          span: name
+        });
+        this.logger.info("trace.span.event", eventFields);
       },
       spanId,
       traceId

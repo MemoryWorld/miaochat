@@ -29,6 +29,7 @@ export type OpenTelemetryRuntimeOptions = {
 export type OpenTelemetrySpan = {
   end(extraAttributes?: TraceAttributes): void;
   fail(error: unknown, extraAttributes?: TraceAttributes): void;
+  recordEvent(name: string, attributes?: TraceAttributes): void;
   spanId: string;
   traceId: string;
 };
@@ -95,6 +96,9 @@ export class OpenTelemetryRuntime {
           });
         }
         span.end();
+      },
+      recordEvent: (eventName, eventAttributes = {}) => {
+        span.addEvent(eventName, toAttributes(eventAttributes));
       },
       spanId,
       traceId

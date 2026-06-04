@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { OpenTelemetryRuntime } from "../src/index";
-import type {
-  OpenTelemetryRuntimeOptions,
-  OpenTelemetrySpan,
-  TraceAttributes
-} from "../src/index";
+import type { OpenTelemetrySpan } from "../src/index";
 
 describe("OpenTelemetryRuntime", () => {
   it("exports types and class", () => {
@@ -18,7 +14,7 @@ describe("OpenTelemetryRuntime", () => {
     expect(runtime.serviceName).toBe("test");
   });
 
-  it("startSpan returns span with spanId, traceId, end, fail", () => {
+  it("startSpan returns span with spanId, traceId, lifecycle helpers, and events", () => {
     const runtime = new OpenTelemetryRuntime({ serviceName: "test" });
     const span: OpenTelemetrySpan = runtime.startSpan("test-span");
 
@@ -28,6 +24,7 @@ describe("OpenTelemetryRuntime", () => {
     expect(span.traceId).toMatch(/^[a-f0-9]{32}$/);
     expect(typeof span.end).toBe("function");
     expect(typeof span.fail).toBe("function");
+    expect(typeof span.recordEvent).toBe("function");
   });
 
   it("end() and fail() complete without error", () => {

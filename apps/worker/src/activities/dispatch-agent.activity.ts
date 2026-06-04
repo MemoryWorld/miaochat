@@ -54,6 +54,10 @@ export async function dispatchAgentActivity(
       provider: input.provider,
       workspaceId: input.workspaceId
     });
+    span.record("provider.runtime_ready", {
+      credentialBound: Boolean(runtime.credentialId),
+      runtimeProvider: runtime.provider
+    });
     const harness = buildAgentHarnessRuntimeContext({
       agentId: input.agentId,
       agentName: input.agentName,
@@ -62,6 +66,11 @@ export async function dispatchAgentActivity(
       pinnedMessageIds: input.context?.pinnedMessages.map((message) => message.id),
       runId: input.harnessRunId ?? `group:${input.conversationId}:${input.agentId}`,
       workspaceId: input.workspaceId
+    });
+    span.record("context.compiled", {
+      harnessRunId: harness.runId,
+      pinnedMessageCount: input.context?.pinnedMessages.length ?? 0,
+      promptSectionCount: harness.promptManifest.sections.length
     });
 
     const execution = await runtime.adapter.execute({
@@ -81,6 +90,10 @@ export async function dispatchAgentActivity(
       message: input.message,
       provider: runtime.provider,
       workspaceId: input.workspaceId
+    });
+    span.record("provider.execution_completed", {
+      artifactCount: execution.artifacts?.length ?? 0,
+      streamEventCount: execution.streamEvents.length
     });
 
     const parsedOutput = parseMultiAgentOutputEnvelope({
