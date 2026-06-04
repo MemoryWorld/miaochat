@@ -1,3 +1,5 @@
+import { assertCommandPolicyAllowed } from "@agenthub/tool-runtime";
+
 import type {
   DesktopToolBridge,
   DesktopToolInvocationResult
@@ -62,6 +64,10 @@ export function createLocalAgentSupervisor(
         throw new Error(`Agent "${input.config.agentId}" is already running.`);
       }
 
+      assertCommandPolicyAllowed({
+        args: input.config.args,
+        command: input.config.command
+      });
       const process = await options.launchProcess(input.config);
       runningAgents.set(input.config.agentId, {
         config: input.config,

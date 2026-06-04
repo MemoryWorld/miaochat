@@ -1,3 +1,4 @@
+export * from "./command-policy.js";
 export * from "./resource-policy.js";
 export * from "./sandbox.js";
 export * from "./tool-loader.js";

@@ -4,8 +4,8 @@ import { isAbsolute, resolve } from "node:path";
 import { toolBindingSchema, type ToolBinding } from "@agenthub/contracts";
 import { z } from "zod";
 
-import type { LoadedToolDefinition } from "./tool-registry.js";
-import { ToolRegistry } from "./tool-registry.js";
+import { assertCommandPolicyAllowed } from "./command-policy.js";
+import type { LoadedToolDefinition, ToolRegistry } from "./tool-registry.js";
 
 const configFileToolSchema = z.object({
   args: z.array(z.string()).default([]),
@@ -48,6 +48,10 @@ export class ToolLoader {
     const resolvedPath = resolveConfigPath(parsed.configPath, options.baseDir);
     const fileContents = await this.readTextFile(resolvedPath);
     const manifest = configFileToolSchema.parse(JSON.parse(fileContents));
+    assertCommandPolicyAllowed({
+      args: manifest.args,
+      command: manifest.command
+    });
 
     if (manifest.name !== parsed.name) {
       throw new Error(

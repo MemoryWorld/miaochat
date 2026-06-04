@@ -128,4 +128,27 @@ describe("local agent supervisor", () => {
       })
     ).rejects.toThrow('Agent "local_repeat" is already running.');
   });
+  it("rejects dangerous local agent launch commands", async () => {
+    const supervisor = createLocalAgentSupervisor({
+      launchProcess: async () => ({
+        pid: 100,
+        stop: async () => undefined
+      }),
+      toolBridge: createDesktopToolBridge({
+        handlers: {}
+      })
+    });
+
+    await expect(
+      supervisor.startAgent({
+        actorUserId: "user_owner",
+        config: {
+          agentId: "local_danger",
+          args: ["-rf", "/"],
+          command: "rm",
+          workspaceId: "workspace_desktop"
+        }
+      })
+    ).rejects.toThrow(/not allowed/i);
+  });
 });
