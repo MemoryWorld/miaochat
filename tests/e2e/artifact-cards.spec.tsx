@@ -108,19 +108,39 @@ describe("artifact cards rendering", () => {
       kind: "diff",
       messageId: assistantMessage.id,
       mimeType: "text/x-diff",
-      previewUrl: null,
+      previewUrl: "http://localhost:9000/agenthub-dev/release.diff",
       storageKey: "artifacts/default-workspace/msg_assistant_artifacts/release.diff",
       title: "Release diff",
       workspaceId: conversation.workspaceId
     };
 
-    fetchMock.mockImplementation(async (input: RequestInfo | URL): Promise<Response> => {
+    const revisionBodies: unknown[] = [];
+
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = typeof input === "string" ? input : input.toString();
 
       if (url === attachmentArtifact.previewUrl) {
         return new Response("# Release checklist\n\n- Verify artifact preview\n- Dispatch follow-up edit", {
           headers: { "content-type": "text/markdown" },
           status: 200
+        });
+      }
+
+      if (url === diffArtifact.previewUrl) {
+        return new Response("diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n", {
+          headers: { "content-type": "text/x-diff" },
+          status: 200
+        });
+      }
+
+      if (
+        url === `/api/artifacts/${diffArtifact.id}/revisions?workspaceId=${conversation.workspaceId}` &&
+        init?.method === "POST"
+      ) {
+        revisionBodies.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify({ id: "rev_diff_1", revisionIndex: 1 }), {
+          headers: { "content-type": "application/json" },
+          status: 201
         });
       }
 
@@ -233,6 +253,23 @@ describe("artifact cards rendering", () => {
     expect(diffCard).toHaveAttribute("data-artifact-card", "diff");
     expect(diffCard).toHaveTextContent("Release diff");
     expect(diffCard).toHaveTextContent("Baseline diff card");
+
+    fireEvent.click(screen.getByRole("button", { name: "应用 Diff" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("message-actions-status")).toHaveTextContent(
+        "Diff 已应用并记录为版本 #1。"
+      );
+    });
+    expect(revisionBodies).toHaveLength(1);
+    expect(revisionBodies[0]).toMatchObject({
+      previewUrl: diffArtifact.previewUrl,
+      storageKey: diffArtifact.storageKey,
+      summary: `Applied diff from message ${assistantMessage.id}`
+    });
+    expect((revisionBodies[0] as { contentDigest?: string }).contentDigest).toMatch(
+      /^[a-f0-9]{64}$/
+    );
 
     const artifactGroup = await screen.findByLabelText(
       `Artifacts attached to message ${assistantMessage.id}`

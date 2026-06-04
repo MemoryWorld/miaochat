@@ -20,7 +20,7 @@ type ChatThreadProps = {
     id: string;
   } | null;
   messages: Message[];
-  onApplyDiffMessage?: (message: Message) => void;
+  onApplyDiffMessage?: (message: Message) => Promise<string | void> | string | void;
   onPinMessage: (messageId: string) => Promise<void>;
   onQuoteMessage?: (quoted: string) => void;
   onReplyMessage?: (message: Message) => void;

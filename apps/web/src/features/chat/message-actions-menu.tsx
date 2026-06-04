@@ -12,7 +12,7 @@ type MessageActionsMenuProps = {
   diffActionStatus?: string;
   messageContent: string;
   messageId: string;
-  onApplyDiff?: () => void;
+  onApplyDiff?: () => Promise<string | void> | string | void;
   onQuote?: (quoted: string) => void;
   showApplyDiff?: boolean;
   showCopy?: boolean;
@@ -71,9 +71,14 @@ export function MessageActionsMenu({
     }
   }
 
-  function handleApplyDiff(): void {
-    onApplyDiff?.();
-    setStatus(diffActionStatus);
+  async function handleApplyDiff(): Promise<void> {
+    setStatus("正在应用 Diff...");
+    try {
+      const nextStatus = await onApplyDiff?.();
+      setStatus(nextStatus ?? diffActionStatus);
+    } catch (cause) {
+      setStatus(cause instanceof Error ? cause.message : "应用 Diff 失败。");
+    }
   }
 
   return (
@@ -96,7 +101,7 @@ export function MessageActionsMenu({
         </button>
       ) : null}
       {showApplyDiff ? (
-        <button className={actionButtonClassName} type="button" onClick={handleApplyDiff}>
+        <button className={actionButtonClassName} type="button" onClick={() => void handleApplyDiff()}>
           {diffActionLabel}
         </button>
       ) : null}

@@ -18,6 +18,7 @@ import { AppShell } from "../../components/app-shell";
 import { Badge } from "../../components/ui/badge";
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
+import { digestSha256 } from "../artifacts/digest";
 import {
   isBuiltInCodingTeammate
 } from "../agents/built-in-coding-team";
@@ -791,8 +792,57 @@ export function ChatExperience() {
     setComposerDraft(quoted);
   }
 
-  function handleApplyDiffMessage(): void {
-    setErrorMessage("已定位到 Diff 变更，请在产物卡片中展开并确认应用。");
+  async function handleApplyDiffMessage(message: Message): Promise<string> {
+    const diffArtifact = (artifactsByMessageId[message.id] ?? []).find(
+      (artifact) => artifact.kind === "diff"
+    );
+
+    if (!diffArtifact) {
+      const status = "该消息没有可应用的 Diff 产物。";
+      setErrorMessage(status);
+      return status;
+    }
+
+    if (!diffArtifact.previewUrl) {
+      const status = "该 Diff 产物没有可读取的预览 URL，暂时无法应用。";
+      setErrorMessage(status);
+      return status;
+    }
+
+    const diffResponse = await fetch(diffArtifact.previewUrl);
+
+    if (!diffResponse.ok) {
+      throw new Error(`读取 Diff 内容失败（${diffResponse.status}）。`);
+    }
+
+    const patch = await diffResponse.text();
+    const contentDigest = await digestSha256(patch);
+    const revisionResponse = await fetch(
+      `${apiBaseUrl}/artifacts/${encodeURIComponent(diffArtifact.id)}/revisions?workspaceId=${encodeURIComponent(diffArtifact.workspaceId)}`,
+      {
+        body: JSON.stringify({
+          contentDigest,
+          previewUrl: diffArtifact.previewUrl,
+          storageKey: diffArtifact.storageKey,
+          summary: `Applied diff from message ${message.id}`
+        }),
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      }
+    );
+    const payload = await readJson(revisionResponse);
+
+    if (!revisionResponse.ok) {
+      throw new Error(readErrorMessage(payload, "应用 Diff 失败。"));
+    }
+
+    setErrorMessage(null);
+
+    const revision = payload as { revisionIndex?: number } | null;
+    return typeof revision?.revisionIndex === "number"
+      ? `Diff 已应用并记录为版本 #${revision.revisionIndex}。`
+      : "Diff 已应用并记录为产物版本。";
   }
 
   async function handlePinMessage(messageId: string): Promise<void> {

@@ -29,7 +29,7 @@
 | 群聊协作与 Orchestrator 分派 | 已完成 | `tests/integration/group-orchestrator.spec.ts`、`tests/e2e/group-failure.spec.tsx`、`packages/domain/test/multi-agent-harness.spec.ts` |
 | 聊天上下文连续与 pin 长期上下文 | 已完成 | `tests/e2e/pinned-context.spec.tsx`、`tests/integration/pinned-context.spec.ts` |
 | 文本、代码、附件、网页预览、Diff、部署状态卡片 | 已完成 | `tests/e2e/inline-attachments.spec.tsx`、`tests/e2e/artifact-cards.spec.tsx`、`tests/e2e/diff-card-rich.spec.tsx`、`tests/e2e/deploy-command.spec.tsx` |
-| 回复、引用、重新生成、复制、Diff 操作、展开预览 | 已完成 | `tests/e2e/message-actions.spec.tsx`、`apps/web/src/features/chat/chat-message.spec.tsx`、`tests/e2e/artifact-code-editor.spec.tsx` |
+| 回复、引用、重新生成、复制、Diff 操作、展开预览 | 已完成 | `tests/e2e/message-actions.spec.tsx`、`tests/e2e/artifact-cards.spec.tsx`、`apps/web/src/features/chat/chat-message.spec.tsx`、`tests/e2e/artifact-code-editor.spec.tsx` |
 | Orchestrator 拆解、聚合、失败降级、冲突处理 | 已完成 | `packages/domain/src/orchestration/orchestrator-state.ts`、`packages/domain/test/orchestrator-state.spec.ts`、`apps/api/test/multi-agent-harness.service.spec.ts` |
 | 至少 2 个主流 Agent 平台适配 | 已完成 | Claude Code 走官方 `@anthropic-ai/claude-agent-sdk`，Codex 走官方 `@openai/codex-sdk`；覆盖见 `packages/agent-adapters/test/claude-code-adapter.spec.ts`、`packages/agent-adapters/test/codex-adapter.spec.ts`、`tests/e2e/claude-code-real.spec.ts`、`tests/e2e/codex-real.spec.ts` |
 | 用户自建 Agent / AI 同事 | 已完成 | `tests/e2e/custom-agent-ui.spec.tsx`、`tests/e2e/heavy-agent-management.spec.tsx`、`apps/api/test/custom-agents.e2e-spec.ts` |
@@ -39,6 +39,9 @@
 | 部署指令、部署状态卡片、预览 URL、静态/容器/源码交付链路 | 已完成（比赛 Demo 级） | `tests/e2e/deploy-command.spec.tsx`、`apps/worker/test/deploy-artifact.workflow.spec.ts`、`tests/integration/deploy-workflow.spec.ts`、`tests/integration/deploy-targets.spec.ts` |
 | Web 主力端、桌面端/移动端 P2 骨架 | 已完成 | `tests/e2e/desktop-agent-supervisor.spec.tsx`、`ai/specs/2026-05-22-task-62-desktop-shell.md`、`ai/specs/2026-05-22-task-64-mobile-shell.md` |
 
+## Diff 应用边界
+
+消息级 `应用 Diff` 会读取对应 diff artifact 的 `previewUrl`，计算 patch 内容 digest，并调用 `POST /artifacts/:id/revisions` 记录为新的 artifact revision。这个闭环提供了可审计的“已接受/已应用”产物版本记录；当前不会直接改写用户本地 git 工作树或外部仓库文件。
 
 ## 部署边界
 
@@ -62,6 +65,9 @@
 | `./node_modules/.bin/vitest run --no-file-parallelism tests/e2e/message-actions.spec.tsx tests/e2e/diff-card-rich.spec.tsx tests/e2e/deploy-command.spec.tsx apps/web/src/features/chat/chat-composer.spec.tsx apps/web/src/features/chat/chat-message.spec.tsx apps/web/src/features/chat/chat-experience.spec.tsx apps/web/src/features/channels/channel-shell.spec.tsx tests/demo-phase-a-check.spec.ts tests/demo-phase-a-seed.spec.ts` | 28 passed |
 | `./node_modules/.bin/eslint tests/e2e-playwright/harness.spec.ts apps/web/src/features/chat/message-actions-menu.tsx apps/web/src/features/chat/chat-message.tsx apps/web/src/features/chat/chat-thread.tsx apps/web/src/features/chat/chat-composer.tsx apps/web/src/features/chat/chat-experience.tsx tests/e2e/message-actions.spec.tsx tests/e2e/deploy-command.spec.tsx tests/demo-phase-a-seed.spec.ts apps/web/src/features/chat/chat-message.spec.tsx apps/web/src/features/chat/chat-experience.spec.tsx` | passed |
 | `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit --pretty false` | passed |
-| `./node_modules/.bin/vitest run --no-file-parallelism apps/worker/test/deploy-source-archive.activity.spec.ts apps/worker/test/deploy-source-archive.activity.spec.ts apps/worker/test/deploy-artifact.workflow.spec.ts apps/web/src/features/chat/deploy-command.spec.tsx tests/e2e/deploy-command.spec.tsx` | 8 passed |
+| `./node_modules/.bin/vitest run --no-file-parallelism apps/worker/test/deploy-source-archive.activity.spec.ts apps/worker/test/deploy-artifact.workflow.spec.ts apps/web/src/features/chat/deploy-command.spec.tsx tests/e2e/deploy-command.spec.tsx` | 8 passed |
 | `cd apps/worker && ../../node_modules/.bin/tsc -p tsconfig.build.json --noEmit --pretty false` | passed |
 | `./node_modules/.bin/eslint apps/worker/src/activities/deploy-source-archive.activity.ts apps/worker/src/activities/index.ts apps/worker/src/worker-options.ts apps/worker/src/workflows/deploy-artifact.workflow.ts apps/worker/test/deploy-source-archive.activity.spec.ts apps/worker/test/deploy-artifact.workflow.spec.ts apps/web/src/features/chat/deploy-command.spec.tsx tests/e2e/deploy-command.spec.tsx` | passed |
+| `./node_modules/.bin/vitest run --no-file-parallelism tests/e2e/message-actions.spec.tsx tests/e2e/artifact-cards.spec.tsx tests/e2e/artifact-code-editor.spec.tsx apps/web/src/features/chat/chat-message.spec.tsx apps/web/src/features/chat/chat-experience.spec.tsx` | 15 passed |
+| `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit --pretty false` | passed |
+| `./node_modules/.bin/eslint apps/web/src/features/artifacts/digest.ts apps/web/src/features/chat/artifact-edit-dispatcher.tsx apps/web/src/features/chat/chat-experience.tsx apps/web/src/features/chat/chat-message.tsx apps/web/src/features/chat/chat-thread.tsx apps/web/src/features/chat/message-actions-menu.tsx tests/e2e/message-actions.spec.tsx tests/e2e/artifact-cards.spec.tsx tests/e2e/artifact-code-editor.spec.tsx apps/web/src/features/chat/chat-message.spec.tsx apps/web/src/features/chat/chat-experience.spec.tsx` | passed |

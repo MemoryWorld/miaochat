@@ -19,7 +19,7 @@ type ChatMessageProps = {
   isPinPending: boolean;
   isPinDisabled: boolean;
   message: Message;
-  onApplyDiff?: (message: Message) => void;
+  onApplyDiff?: (message: Message) => Promise<string | void> | string | void;
   onPin: () => void;
   onQuote?: (quoted: string) => void;
   onReply?: (message: Message) => void;
@@ -156,8 +156,8 @@ export function ChatMessage({
         <MessageActionsMenu
           buttonClassName={isUser ? darkActionClassName : lightActionClassName}
           conversationId={message.conversationId}
-          diffActionLabel="查看 Diff"
-          diffActionStatus="已定位到 Diff 变更。"
+          diffActionLabel="应用 Diff"
+          diffActionStatus="Diff 已应用并记录为产物版本。"
           messageContent={visibleContent}
           messageId={message.id}
           onApplyDiff={hasDiffArtifact ? () => onApplyDiff?.(message) : undefined}

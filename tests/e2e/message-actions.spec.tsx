@@ -46,7 +46,7 @@ describe("message actions", () => {
     );
 
     const onQuote = vi.fn();
-    const onApplyDiff = vi.fn();
+    const onApplyDiff = vi.fn().mockResolvedValue("Diff 已应用并记录为版本 #1。");
 
     render(
       <MessageActionsMenu
@@ -68,6 +68,11 @@ describe("message actions", () => {
     expect(onQuote).toHaveBeenCalledWith("> Hello world\n\n");
 
     fireEvent.click(screen.getByRole("button", { name: "应用 Diff" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("message-actions-status")).toHaveTextContent(
+        "Diff 已应用并记录为版本 #1。"
+      );
+    });
     expect(onApplyDiff).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));

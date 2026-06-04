@@ -6,6 +6,7 @@ import type { Artifact } from "@agenthub/contracts";
 
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { CodeEditorOverlay } from "../artifacts/code-editor-overlay";
+import { digestSha256 } from "../artifacts/digest";
 
 type ArtifactEditDispatcherProps = {
   artifact: Artifact;
@@ -13,18 +14,6 @@ type ArtifactEditDispatcherProps = {
   initialContent: string;
   onClose: () => void;
 };
-
-async function digestSha256(text: string): Promise<string> {
-  if (typeof window !== "undefined" && window.crypto?.subtle) {
-    const encoded = new TextEncoder().encode(text);
-    const buffer = await window.crypto.subtle.digest("SHA-256", encoded);
-    return Array.from(new Uint8Array(buffer))
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
-  }
-  // jsdom polyfill fallback for the test environment.
-  return Array.from({ length: 64 }, () => "0").join("");
-}
 
 export function ArtifactEditDispatcher({
   artifact,
