@@ -16,8 +16,9 @@ with official execution surfaces.
   child SDK/CLI environment for the single run.
 - The worker runtime gate now allows `claude-code` and `codex` providers through
   the same BYOK credential resolver used by other real providers.
-- Claude Code and Codex runs capture a non-empty tracked-file `git diff` from
-  the configured runtime workspace and return it as a runtime `diff` artifact.
+- Claude Code and Codex runs capture tracked-file `git diff` output plus
+  synthetic `/dev/null` new-file diffs for untracked files from the configured
+  runtime workspace, then return the result as a runtime `diff` artifact.
 - The API persists runtime `diff` artifacts as `kind: "diff"` with
   `text/x-diff` content.
 - Real-provider e2e specs for Claude Code and Codex are skipped unless staging
@@ -26,7 +27,7 @@ with official execution surfaces.
 
 ## Follow-Up Boundary
 
-This slice proves real SDK/CLI execution wiring plus basic tracked-file diff
-capture. Product-level workspace mapping, isolated git worktrees per run,
-synthetic diffs for new untracked files, and max-output operational tuning should
-be the next hardening step before calling the integration production ready.
+This slice proves real SDK/CLI execution wiring plus diff capture including
+tracked edits and untracked new files. Product-level workspace mapping, isolated
+git worktrees per run, binary/new-file size policy, and max-output operational
+tuning should be the next hardening step before calling the integration production ready.

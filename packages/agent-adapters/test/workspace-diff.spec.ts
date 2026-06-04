@@ -41,6 +41,39 @@ describe("workspace diff capture", () => {
     expect(draft?.patch).toContain("-export const value = 'old';");
     expect(draft?.patch).toContain("+export const value = 'new';");
   });
+
+  it("includes untracked files as synthetic new-file diffs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "miaochat-agent-diff-"));
+    const trackedFilePath = join(cwd, "app.ts");
+    const untrackedFilePath = join(cwd, "created.ts");
+
+    await git(cwd, "init");
+    await git(cwd, "config", "user.email", "miaochat@example.com");
+    await git(cwd, "config", "user.name", "Miaochat Test");
+    await writeFile(trackedFilePath, "export const value = 'old';\n", "utf8");
+    await git(cwd, "add", "app.ts");
+    await git(cwd, "commit", "-m", "initial");
+    await writeFile(untrackedFilePath, "export const created = true;\n", "utf8");
+
+    const draft = await captureWorkspaceDiff({
+      cwd,
+      fileName: "claude-code-runtime.diff",
+      title: "Claude Code 代码 Diff"
+    });
+
+    expect(draft).toEqual(
+      expect.objectContaining({
+        fileName: "claude-code-runtime.diff",
+        mimeType: "text/x-diff",
+        title: "Claude Code 代码 Diff",
+        truncated: false,
+        type: "diff"
+      })
+    );
+    expect(draft?.patch).toContain("new file mode");
+    expect(draft?.patch).toContain("+++ b/created.ts");
+    expect(draft?.patch).toContain("+export const created = true;");
+  });
 });
 
 async function git(cwd: string, ...args: string[]): Promise<void> {

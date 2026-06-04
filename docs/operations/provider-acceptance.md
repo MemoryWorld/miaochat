@@ -30,11 +30,12 @@ real provider credits. The `tests/e2e/claude-code-real.spec.ts` and
 skipped unless `AGENTHUB_REAL_PROVIDER_MODE=staging` and the corresponding real
 secret is present.
 
-After a Claude Code or Codex run, the adapter captures a non-empty tracked-file
-`git diff` from the configured runtime workspace and returns it as a runtime
-`diff` artifact. The API persists that artifact as `kind: "diff"` with
-`text/x-diff` content, so the chat timeline can show the coding agent's actual
-patch instead of only a prose summary.
+After a Claude Code or Codex run, the adapter captures tracked-file `git diff`
+output plus synthetic `/dev/null` new-file diffs for untracked files from the
+configured runtime workspace and returns the result as a runtime `diff` artifact.
+The API persists that artifact as `kind: "diff"` with `text/x-diff` content, so
+the chat timeline can show the coding agent's actual patch instead of only a
+prose summary.
 
 ## Phase A Hermes And OpenClaw Runtime Baseline
 

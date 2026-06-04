@@ -11,15 +11,15 @@ export async function captureWorkspaceDiff(input: {
   fileName: string;
   title: string;
 }): Promise<RuntimeDiffArtifactDraft | null> {
-  const result = await runGitDiff(input.cwd);
+  const collectedPatch = await collectWorkspaceDiff(input.cwd);
 
-  if (result.exitCode !== 0) {
+  if (!collectedPatch) {
     return null;
   }
 
-  const patch = result.stdout.trim();
+  const patch = collectedPatch.trim();
 
-  if (patch.length === 0) {
+  if (!patch) {
     return null;
   }
 
@@ -36,12 +36,64 @@ export async function captureWorkspaceDiff(input: {
   return draft.success ? draft.data : null;
 }
 
-function runGitDiff(cwd: string): Promise<{
+async function collectWorkspaceDiff(cwd: string): Promise<string | null> {
+  const trackedDiff = await runGit(cwd, ["diff", "--no-ext-diff", "--", "."]);
+
+  if (trackedDiff.exitCode !== 0) {
+    return null;
+  }
+
+  const patches = compactPatches([trackedDiff.stdout]);
+  const untrackedFiles = await listUntrackedFiles(cwd);
+
+  for (const file of untrackedFiles) {
+    const untrackedDiff = await runGit(cwd, [
+      "diff",
+      "--no-ext-diff",
+      "--no-index",
+      "--",
+      "/dev/null",
+      file
+    ]);
+
+    if (
+      (untrackedDiff.exitCode === 0 || untrackedDiff.exitCode === 1) &&
+      untrackedDiff.stdout.trim()
+    ) {
+      patches.push(untrackedDiff.stdout.trim());
+    }
+  }
+
+  return patches.length > 0 ? patches.join("\n\n") : null;
+}
+
+async function listUntrackedFiles(cwd: string): Promise<string[]> {
+  const result = await runGit(cwd, [
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+    "-z",
+    "--",
+    "."
+  ]);
+
+  if (result.exitCode !== 0 || !result.stdout) {
+    return [];
+  }
+
+  return result.stdout.split("\0").filter(Boolean);
+}
+
+function compactPatches(patches: string[]): string[] {
+  return patches.map((patch) => patch.trim()).filter(Boolean);
+}
+
+function runGit(cwd: string, args: string[]): Promise<{
   exitCode: number;
   stdout: string;
 }> {
   return new Promise((resolve) => {
-    const child = spawn("git", ["diff", "--no-ext-diff", "--", "."], {
+    const child = spawn("git", args, {
       cwd,
       stdio: ["ignore", "pipe", "ignore"]
     });
