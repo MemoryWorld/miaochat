@@ -37,6 +37,7 @@ describe("MultiAgentHarnessService", () => {
       upsertParticipant: vi.fn(async (input: ParticipantInput) =>
         participantRow(input)
       ),
+      upsertAgentRunLedger: vi.fn(async (input: AgentRunLedgerInput) => input),
       upsertTurn: vi.fn(async (input: TurnInput) => turnRow(input))
     };
     const service = new MultiAgentHarnessService(
@@ -92,6 +93,23 @@ describe("MultiAgentHarnessService", () => {
       expect.objectContaining({
         lastEventId: "event:message:msg_exec_r2",
         turnCount: 4
+      }),
+      tx
+    );
+    expect(repository.upsertAgentRunLedger).toHaveBeenCalledTimes(4);
+    expect(repository.upsertAgentRunLedger).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agentId: "agent_executor",
+        artifactCount: 0,
+        checkpoint: "completed",
+        contextSnapshotId: expect.stringMatching(
+          /^context:turn:conv_group:agent_executor:/
+        ),
+        metadata: { workspaceSandbox: { strategy: "git_worktree" } },
+        producedEventIds: ["event:message:msg_exec_r2"],
+        provider: "mock",
+        status: "completed",
+        turnId: expect.stringMatching(/^turn:conv_group:agent_executor:/)
       }),
       tx
     );
@@ -159,6 +177,21 @@ type TurnInput = {
   workspaceId: string;
 };
 
+type AgentRunLedgerInput = {
+  agentId: string;
+  artifactCount: number;
+  channelId: string;
+  checkpoint: string;
+  contextSnapshotId: string | null;
+  id: string;
+  metadata: Record<string, unknown>;
+  producedEventIds: string[];
+  provider: string;
+  status: string;
+  turnId: string;
+  workspaceId: string;
+};
+
 function groupEntry(
   messageId: string,
   agentId: string,
@@ -177,6 +210,7 @@ function groupEntry(
       agentName,
       finalContent,
       provider: "mock",
+      runtimeMetadata: { workspaceSandbox: { strategy: "git_worktree" } },
       roundIndex,
       turnIndex
     }

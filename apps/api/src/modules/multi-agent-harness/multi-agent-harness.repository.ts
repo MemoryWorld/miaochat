@@ -111,6 +111,23 @@ export type MultiAgentHandoffRow = {
   workspace_id: string;
 };
 
+export type AgentRunLedgerRow = {
+  agent_id: string;
+  artifact_count: number;
+  channel_id: string;
+  checkpoint: string;
+  context_snapshot_id: string | null;
+  created_at: Date;
+  id: string;
+  metadata: Record<string, unknown>;
+  produced_event_ids: string[];
+  provider: string;
+  status: string;
+  turn_id: string;
+  updated_at: Date;
+  workspace_id: string;
+};
+
 @Injectable()
 export class MultiAgentHarnessRepository {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
@@ -496,6 +513,81 @@ export class MultiAgentHarnessRepository {
     `);
 
     return requireRow(result.rows[0], "Multi-agent turn row not found after upsert.");
+  }
+
+  async upsertAgentRunLedger(
+    input: {
+      agentId: string;
+      artifactCount: number;
+      channelId: string;
+      checkpoint: string;
+      contextSnapshotId?: string | null;
+      id: string;
+      metadata?: Record<string, unknown>;
+      producedEventIds?: string[];
+      provider: string;
+      status: string;
+      turnId: string;
+      workspaceId: string;
+    },
+    executor?: DatabaseExecutor
+  ): Promise<AgentRunLedgerRow> {
+    const result = await this.resolveExecutor(executor).execute<AgentRunLedgerRow>(sql`
+      INSERT INTO agent_run_ledger (
+        id,
+        workspace_id,
+        channel_id,
+        agent_id,
+        provider,
+        turn_id,
+        status,
+        checkpoint,
+        context_snapshot_id,
+        produced_event_ids,
+        artifact_count,
+        metadata
+      )
+      VALUES (
+        ${input.id},
+        ${input.workspaceId},
+        ${input.channelId},
+        ${input.agentId},
+        ${input.provider},
+        ${input.turnId},
+        ${input.status},
+        ${input.checkpoint},
+        ${input.contextSnapshotId ?? null},
+        ${JSON.stringify(input.producedEventIds ?? [])}::jsonb,
+        ${input.artifactCount},
+        ${JSON.stringify(input.metadata ?? {})}::jsonb
+      )
+      ON CONFLICT (id) DO UPDATE
+        SET
+          status = EXCLUDED.status,
+          checkpoint = EXCLUDED.checkpoint,
+          context_snapshot_id = EXCLUDED.context_snapshot_id,
+          produced_event_ids = EXCLUDED.produced_event_ids,
+          artifact_count = EXCLUDED.artifact_count,
+          metadata = EXCLUDED.metadata,
+          updated_at = now()
+      RETURNING
+        agent_id,
+        artifact_count,
+        channel_id,
+        checkpoint,
+        context_snapshot_id,
+        created_at,
+        id,
+        metadata,
+        produced_event_ids,
+        provider,
+        status,
+        turn_id,
+        updated_at,
+        workspace_id
+    `);
+
+    return requireRow(result.rows[0], "Agent run ledger row not found after upsert.");
   }
 
   async upsertHandoff(

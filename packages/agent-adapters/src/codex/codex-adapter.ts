@@ -156,6 +156,9 @@ export class CodexAdapter implements AgentAdapter {
 
       return {
         ...execution,
+        runtimeMetadata: {
+          workspaceSandbox: workspaceSandbox.metadata
+        },
         ...(diffArtifact ? { artifacts: [diffArtifact] } : {})
       };
     } finally {

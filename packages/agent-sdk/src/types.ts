@@ -27,6 +27,7 @@ export type AgentExecutionRequest = {
 export type AgentExecutionResult = {
   artifacts?: RuntimeArtifactDraft[];
   finalContent: string;
+  runtimeMetadata?: Record<string, unknown>;
   streamEvents: StreamEvent[];
 };
 

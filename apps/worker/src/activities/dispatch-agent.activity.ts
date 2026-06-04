@@ -126,6 +126,7 @@ export async function dispatchAgentActivity(
       ...(parsedOutput.errors.length === 0
         ? { harnessOutput: parsedOutput.envelope }
         : {}),
+      ...(execution.runtimeMetadata ? { runtimeMetadata: execution.runtimeMetadata } : {}),
       provider: input.provider
     };
   } catch (error) {

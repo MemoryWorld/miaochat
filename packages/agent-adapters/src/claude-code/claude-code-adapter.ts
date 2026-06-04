@@ -147,6 +147,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       return {
         ...(diffArtifact ? { artifacts: [diffArtifact] } : {}),
         finalContent,
+        runtimeMetadata: {
+          workspaceSandbox: workspaceSandbox.metadata
+        },
         streamEvents
       };
     } finally {

@@ -560,6 +560,24 @@ export const activityRoundSteps = pgTable("activity_round_steps", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+export const agentRunLedger = pgTable("agent_run_ledger", {
+  agentId: text("agent_id").notNull(),
+  artifactCount: integer("artifact_count").notNull().default(0),
+  channelId: text("channel_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  checkpoint: text("checkpoint").notNull().default("created"),
+  contextSnapshotId: text("context_snapshot_id"),
+  id: text("id").primaryKey(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  producedEventIds: jsonb("produced_event_ids").$type<string[]>().notNull().default([]),
+  provider: text("provider").notNull(),
+  status: text("status").notNull().default("created"),
+  turnId: text("turn_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
 export const memoryRecords = pgTable("memory_records", {
   content: text("content").notNull(),
   conversationId: text("conversation_id").references(() => conversations.id, {

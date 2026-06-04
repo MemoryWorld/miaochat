@@ -226,6 +226,7 @@ export class MessageDispatchService implements OnModuleDestroy {
       })) as {
         artifacts?: RuntimeArtifactDraft[];
         finalContent: string;
+        runtimeMetadata?: Record<string, unknown>;
         streamEvents: StreamEvent[];
       };
       const visibleFinalContent = sanitizeAssistantVisibleContent(execution.finalContent);
@@ -251,6 +252,7 @@ export class MessageDispatchService implements OnModuleDestroy {
       });
       await this.multiAgentHarnessService.recordDirectExecution({
         assistantMessage,
+        artifactCount: execution.artifacts?.length ?? 0,
         channelId: input.conversationId,
         mentionedAgentIds: input.mentionedAgentIds,
         ownerUserId: input.ownerUserId,
@@ -260,6 +262,7 @@ export class MessageDispatchService implements OnModuleDestroy {
           finalContent: visibleFinalContent,
           outputStyle: input.outputStyle,
           provider: input.provider,
+          runtimeMetadata: execution.runtimeMetadata ?? {},
           scopeDescription: input.scopeDescription,
           systemPrompt: input.systemPrompt
         },

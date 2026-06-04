@@ -30,6 +30,7 @@ export type OrchestratorResult = OrchestratorTarget & {
   finalContent: string;
   harnessOutput?: MultiAgentOutputEnvelope;
   roundIndex?: number;
+  runtimeMetadata?: Record<string, unknown>;
   turnIndex?: number;
 };
 

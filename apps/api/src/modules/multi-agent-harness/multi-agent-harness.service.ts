@@ -54,6 +54,7 @@ export type RecordGroupExecutionInput = {
 
 export type RecordDirectExecutionInput = {
   assistantMessage: Message;
+  artifactCount?: number;
   channelId: string;
   mentionedAgentIds: string[];
   ownerUserId: string;
@@ -144,10 +145,13 @@ export class MultiAgentHarnessService {
           causalChainId: chainIdForMessage(input.userMessageId),
           channelId: input.channelId,
           producedEventId: assistantEvent.id,
+          provider: input.result.provider,
           reason: input.mentionedAgentIds.includes(input.result.agentId)
             ? "human_mention"
             : "scheduled_followup",
+          artifactCount: input.artifactCount ?? 0,
           renderedPromptPreview: input.result.finalContent,
+          runtimeMetadata: input.result.runtimeMetadata ?? {},
           sourceAgentParticipantId: null,
           triggeringEventId: eventIdForMessage(input.userMessageId),
           workspaceId: input.workspaceId
@@ -333,8 +337,11 @@ export class MultiAgentHarnessService {
             causalChainId: chainId,
             channelId: input.channelId,
             producedEventId,
+            provider: entry.result.provider,
             reason,
+            artifactCount: entry.result.artifacts?.length ?? 0,
             renderedPromptPreview: entry.result.finalContent,
+            runtimeMetadata: entry.result.runtimeMetadata ?? {},
             sourceAgentParticipantId: handoff?.sourceAgentParticipantId ?? null,
             triggeringEventId: handoff?.eventId ?? userEventId,
             turnKey: entry.message.id,
@@ -518,8 +525,11 @@ export class MultiAgentHarnessService {
       causalChainId: string;
       channelId: string;
       producedEventId: string;
+      provider: string;
       reason: MultiAgentTurn["reason"];
+      artifactCount?: number;
       renderedPromptPreview: string;
+      runtimeMetadata?: Record<string, unknown>;
       sourceAgentParticipantId: string | null;
       triggeringEventId: string;
       turnKey?: string;
@@ -595,6 +605,23 @@ export class MultiAgentHarnessService {
         startedAt: new Date().toISOString(),
         status: "completed",
         triggeringEventId: input.triggeringEventId,
+        workspaceId: input.workspaceId
+      },
+      executor
+    );
+    await this.repository.upsertAgentRunLedger(
+      {
+        agentId: input.agentId,
+        artifactCount: input.artifactCount ?? 0,
+        channelId: input.channelId,
+        checkpoint: "completed",
+        contextSnapshotId: snapshotId,
+        id: `agent-run:${turnId}`,
+        metadata: input.runtimeMetadata ?? {},
+        producedEventIds: [input.producedEventId],
+        provider: input.provider,
+        status: "completed",
+        turnId,
         workspaceId: input.workspaceId
       },
       executor

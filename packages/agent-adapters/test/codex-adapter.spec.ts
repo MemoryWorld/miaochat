@@ -172,6 +172,12 @@ describe("CodexAdapter", () => {
       "export const value = source;\n"
     );
     expect(result.finalContent).toBe("Sandboxed change ready");
+    expect(result.runtimeMetadata?.workspaceSandbox).toEqual(
+      expect.objectContaining({
+        provider: "codex",
+        strategy: "git_worktree"
+      })
+    );
     expect(result.artifacts?.[0]).toEqual(
       expect.objectContaining({
         fileName: "codex-runtime.diff",
