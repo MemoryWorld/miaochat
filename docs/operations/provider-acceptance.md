@@ -20,11 +20,11 @@ endpoint. Their adapters now target the official execution surfaces:
 
 - `ClaudeCodeAdapter` calls the official `@anthropic-ai/claude-agent-sdk`
   `query()` interface.
-- `CodexAdapter` launches the official `codex exec --json` non-interactive CLI
-  path and parses JSONL events.
+- `CodexAdapter` calls the official `@openai/codex-sdk` TypeScript SDK,
+  starts a Codex thread, and consumes `runStreamed()` structured events.
 
-The package-level adapter unit specs use injected SDK/CLI runners so local CI can
-verify parsing, credential injection, and stream normalization without spending
+The package-level adapter unit specs use injected SDK clients/runners so local CI
+can verify parsing, credential injection, and stream normalization without spending
 real provider credits. The `tests/e2e/claude-code-real.spec.ts` and
 `tests/e2e/codex-real.spec.ts` files are honest gated acceptance specs: they are
 skipped unless `AGENTHUB_REAL_PROVIDER_MODE=staging` and the corresponding real
@@ -153,9 +153,11 @@ provide the following environment variables before running
 | `OPENCLAW_BASE_URL` | Real OpenClaw base URL |
 | `OPENCLAW_REAL_ACCOUNT_ID` | Rotated OpenClaw BYOK account id for staging |
 | `OPENCLAW_REAL_SECRET` | Rotated OpenClaw BYOK secret for staging |
-| `CODEX_REAL_SECRET` | OpenAI/Codex API key used only for the `codex exec` process environment |
-| `CODEX_EXECUTABLE` | Optional path to the `codex` CLI when it is not on `PATH` |
+| `CODEX_REAL_SECRET` | OpenAI/Codex API key passed to the Codex SDK `apiKey` option for the single run |
+| `CODEX_PATH_OVERRIDE` | Optional path to the Codex runtime used by the SDK |
+| `CODEX_EXECUTABLE` | Legacy alias for `CODEX_PATH_OVERRIDE` during migration |
 | `CODEX_MODEL` | Optional Codex model override |
+| `CODEX_NETWORK_ACCESS_ENABLED` | Optional `1`/`true` flag to allow SDK thread network access; defaults to disabled |
 | `CLAUDE_CODE_REAL_SECRET` | Anthropic API key used only for the Claude Agent SDK call |
 | `CLAUDE_CODE_EXECUTABLE` | Optional path to a separately installed `claude` binary |
 | `CLAUDE_CODE_MODEL` | Optional Claude model override |
@@ -221,7 +223,7 @@ specs under `packages/agent-adapters/test/`. They cover:
 - Non-2xx upstream responses (mapped to `provider_failed`).
 - Structured upstream error payloads (preserving the `retryable` hint from the
   upstream payload when present).
-- Missing Codex CLI or Claude Agent SDK runtime (mapped to `missing_runtime`).
+- Missing Codex SDK/runtime or Claude Agent SDK runtime (mapped to `missing_runtime`).
 
 The retry policy in `apps/worker/src/activities/retry-policy.ts` is exercised
 through `apps/worker/test/retry-policy.spec.ts` and is wired to the four real
@@ -234,7 +236,7 @@ against a live upstream path:
 
 - `Hermes` and `OpenClaw`: either the documented Xiaomi MiMo shim path above or
   direct staging SaaS endpoints
-- `Codex`: official `codex exec --json` with a valid `CODEX_REAL_SECRET`
+- `Codex`: official `@openai/codex-sdk` with a valid `CODEX_REAL_SECRET`
 - `Claude Code`: official Claude Agent SDK with a valid
   `CLAUDE_CODE_REAL_SECRET`
 

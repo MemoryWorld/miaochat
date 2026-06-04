@@ -31,7 +31,7 @@
 | 文本、代码、附件、网页预览、Diff、部署状态卡片 | 已完成 | `tests/e2e/inline-attachments.spec.tsx`、`tests/e2e/artifact-cards.spec.tsx`、`tests/e2e/diff-card-rich.spec.tsx`、`tests/e2e/deploy-command.spec.tsx` |
 | 回复、引用、重新生成、复制、Diff 操作、展开预览 | 已完成 | `tests/e2e/message-actions.spec.tsx`、`apps/web/src/features/chat/chat-message.spec.tsx`、`tests/e2e/artifact-code-editor.spec.tsx` |
 | Orchestrator 拆解、聚合、失败降级、冲突处理 | 已完成 | `packages/domain/src/orchestration/orchestrator-state.ts`、`packages/domain/test/orchestrator-state.spec.ts`、`apps/api/test/multi-agent-harness.service.spec.ts` |
-| 至少 2 个主流 Agent 平台适配 | 已完成 | Claude Code 走官方 `@anthropic-ai/claude-agent-sdk`，Codex 走官方 `codex exec --json`；覆盖见 `packages/agent-adapters/test/claude-code-adapter.spec.ts`、`packages/agent-adapters/test/codex-adapter.spec.ts`、`tests/e2e/claude-code-real.spec.ts`、`tests/e2e/codex-real.spec.ts` |
+| 至少 2 个主流 Agent 平台适配 | 已完成 | Claude Code 走官方 `@anthropic-ai/claude-agent-sdk`，Codex 走官方 `@openai/codex-sdk`；覆盖见 `packages/agent-adapters/test/claude-code-adapter.spec.ts`、`packages/agent-adapters/test/codex-adapter.spec.ts`、`tests/e2e/claude-code-real.spec.ts`、`tests/e2e/codex-real.spec.ts` |
 | 用户自建 Agent / AI 同事 | 已完成 | `tests/e2e/custom-agent-ui.spec.tsx`、`tests/e2e/heavy-agent-management.spec.tsx`、`apps/api/test/custom-agents.e2e-spec.ts` |
 | Agent 作为联系人展示头像、名称、能力标签 | 已完成 | `tests/e2e/custom-agent-ui.spec.tsx`、`apps/web/src/features/teammates/*.spec.tsx` |
 | 产物内联预览、全屏预览、代码编辑器、版本历史 | 已完成 | `tests/e2e/artifact-cards.spec.tsx`、`tests/e2e/artifact-code-editor.spec.tsx`、`tests/integration/artifact-revisions.spec.ts` |

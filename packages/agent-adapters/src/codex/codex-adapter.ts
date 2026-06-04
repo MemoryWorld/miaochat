@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-
 import type {
   AgentAdapter,
   AgentExecutionRequest,
@@ -12,39 +10,80 @@ import type { StreamEvent } from "@agenthub/contracts";
 import type { StreamingClientOptions } from "../shared/streaming-client.js";
 import { captureWorkspaceDiff } from "../shared/workspace-diff.js";
 import type {
-  CodexCommandRunner,
-  CodexExecEvent,
-  CodexSandboxMode
+  CodexApprovalPolicy,
+  CodexClientFactory,
+  CodexConfigObject,
+  CodexSandboxMode,
+  CodexThreadEvent
 } from "./codex-types.js";
 
+const codexEnvPassThroughKeys = [
+  "HOME",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "LANG",
+  "LC_ALL",
+  "LOGNAME",
+  "NO_PROXY",
+  "PATH",
+  "SHELL",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "USER"
+];
+
 export type CodexAdapterOptions = StreamingClientOptions & {
+  approvalPolicy?: CodexApprovalPolicy;
+  baseUrl?: string;
+  clientFactory?: CodexClientFactory;
+  codexPathOverride?: string;
+  config?: CodexConfigObject;
   cwd?: string;
   env?: Record<string, string | undefined>;
   executable?: string;
   model?: string;
-  runner?: CodexCommandRunner;
+  networkAccessEnabled?: boolean;
   sandbox?: CodexSandboxMode;
+  skipGitRepoCheck?: boolean;
 };
 
 export class CodexAdapter implements AgentAdapter {
   readonly provider = "codex" as const;
 
+  private readonly approvalPolicy: CodexApprovalPolicy;
+  private readonly baseUrl?: string;
+  private readonly clientFactory?: CodexClientFactory;
+  private readonly codexPathOverride?: string;
+  private readonly config?: CodexConfigObject;
   private readonly cwd: string;
   private readonly credentialResolver: StreamingClientOptions["credentialResolver"];
   private readonly env: Record<string, string | undefined>;
-  private readonly executable: string;
   private readonly model?: string;
-  private readonly runner: CodexCommandRunner;
+  private readonly networkAccessEnabled: boolean;
   private readonly sandbox: CodexSandboxMode;
+  private readonly skipGitRepoCheck?: boolean;
 
   constructor(options: CodexAdapterOptions) {
+    this.approvalPolicy = options.approvalPolicy ?? "never";
+    this.baseUrl = options.baseUrl;
+    this.clientFactory = options.clientFactory;
+    this.codexPathOverride =
+      options.codexPathOverride ??
+      options.executable ??
+      process.env.CODEX_PATH_OVERRIDE ??
+      process.env.CODEX_EXECUTABLE;
+    this.config = options.config;
     this.cwd = options.cwd ?? process.env.MIAOCHAT_AGENT_WORKSPACE_ROOT ?? process.cwd();
     this.credentialResolver = options.credentialResolver;
     this.env = options.env ?? {};
-    this.executable = options.executable ?? process.env.CODEX_EXECUTABLE ?? "codex";
     this.model = options.model ?? process.env.CODEX_MODEL;
-    this.runner = options.runner ?? runCodexCommand;
+    this.networkAccessEnabled =
+      options.networkAccessEnabled ?? parseOptionalBoolean(process.env.CODEX_NETWORK_ACCESS_ENABLED) ?? false;
     this.sandbox = options.sandbox ?? "workspace-write";
+    this.skipGitRepoCheck = options.skipGitRepoCheck;
   }
 
   async execute(request: AgentExecutionRequest): Promise<AgentExecutionResult> {
@@ -65,33 +104,39 @@ export class CodexAdapter implements AgentAdapter {
       credentialId: request.credentialId,
       workspaceId: request.workspaceId
     });
-    const args = buildCodexArgs({
-      model: this.model,
-      sandbox: this.sandbox
-    });
-    const result = await this.runner({
-      args,
-      command: this.executable,
-      cwd: this.cwd,
-      env: {
-        ...process.env,
-        ...this.env,
-        CODEX_API_KEY: credential.secret
-      },
-      stdin: buildCodexPrompt(request)
-    });
+    let execution: AgentExecutionResult;
 
-    if (result.exitCode !== 0) {
-      throw new AgentAdapterError(formatCodexFailure(result), {
-        code: result.exitCode === 127 ? "missing_runtime" : "provider_failed",
-        retryable: /timeout|temporar|rate|429|5\d\d/i.test(result.stderr)
+    try {
+      const clientFactory = this.clientFactory ?? (await loadCodexClientFactory());
+      const client = clientFactory(
+        pruneUndefined({
+          apiKey: credential.secret,
+          baseUrl: this.baseUrl,
+          codexPathOverride: this.codexPathOverride,
+          config: this.config,
+          env: buildCodexEnv(this.env)
+        })
+      );
+      const thread = client.startThread(
+        pruneUndefined({
+          approvalPolicy: this.approvalPolicy,
+          model: this.model,
+          networkAccessEnabled: this.networkAccessEnabled,
+          sandboxMode: this.sandbox,
+          skipGitRepoCheck: this.skipGitRepoCheck,
+          workingDirectory: this.cwd
+        })
+      );
+
+      execution = await runCodexSdkThread({
+        conversationId: request.conversationId,
+        prompt: buildCodexPrompt(request),
+        thread
       });
+    } catch (error) {
+      throw normalizeCodexSdkError(error);
     }
 
-    const execution = parseCodexExecution({
-      conversationId: request.conversationId,
-      stdout: result.stdout
-    });
     const diffArtifact = await captureWorkspaceDiff({
       cwd: this.cwd,
       fileName: "codex-runtime.diff",
@@ -105,26 +150,112 @@ export class CodexAdapter implements AgentAdapter {
   }
 }
 
-function buildCodexArgs(input: {
-  model?: string;
-  sandbox: CodexSandboxMode;
-}): string[] {
-  const args = [
-    "exec",
-    "--json",
-    "--ephemeral",
-    "--sandbox",
-    input.sandbox,
-    "--ask-for-approval",
-    "never"
-  ];
+async function loadCodexClientFactory(): Promise<CodexClientFactory> {
+  try {
+    const sdk = (await import("@openai/codex-sdk")) as {
+      Codex?: new (options?: Parameters<CodexClientFactory>[0]) => ReturnType<CodexClientFactory>;
+    };
 
-  if (input.model) {
-    args.push("--model", input.model);
+    if (typeof sdk.Codex !== "function") {
+      throw new Error("Package @openai/codex-sdk does not export Codex.");
+    }
+
+    return (options) => new sdk.Codex!(options);
+  } catch {
+    throw new AgentAdapterError(
+      "Codex SDK 不可用，请安装 @openai/codex-sdk 或配置 Codex 运行环境。",
+      {
+        code: "missing_runtime"
+      }
+    );
+  }
+}
+
+async function runCodexSdkThread(input: {
+  conversationId: string;
+  prompt: string;
+  thread: { runStreamed(prompt: string): Promise<{ events: AsyncGenerator<CodexThreadEvent> }> };
+}): Promise<AgentExecutionResult> {
+  const messageId = `${input.conversationId}:codex`;
+  const streamEvents: StreamEvent[] = [
+    {
+      kind: "conversation.message.started",
+      payload: { messageId }
+    }
+  ];
+  const deltas: string[] = [];
+  const streamedTurn = await input.thread.runStreamed(input.prompt);
+
+  for await (const event of streamedTurn.events) {
+    appendCodexEvent({
+      deltas,
+      event,
+      messageId,
+      streamEvents
+    });
   }
 
-  args.push("-");
-  return args;
+  const finalContent = deltas.join("\n").trim();
+
+  streamEvents.push({
+    kind: "conversation.message.completed",
+    payload: { finalContent, messageId }
+  });
+
+  return {
+    finalContent,
+    streamEvents
+  };
+}
+
+function appendCodexEvent(input: {
+  deltas: string[];
+  event: CodexThreadEvent;
+  messageId: string;
+  streamEvents: StreamEvent[];
+}): void {
+  if (input.event.type === "error") {
+    throw new AgentAdapterError(`Codex SDK 执行失败。${input.event.message}`, {
+      code: "provider_failed",
+      retryable: isRetryableCodexMessage(input.event.message)
+    });
+  }
+
+  if (input.event.type === "turn.failed") {
+    const message = input.event.error.message;
+
+    throw new AgentAdapterError(`Codex SDK 执行失败。${message}`, {
+      code: "provider_failed",
+      retryable: isRetryableCodexMessage(message)
+    });
+  }
+
+  if (input.event.type !== "item.completed") {
+    return;
+  }
+
+  if (input.event.item.type === "error") {
+    throw new AgentAdapterError(`Codex SDK 执行失败。${input.event.item.message}`, {
+      code: "provider_failed",
+      retryable: isRetryableCodexMessage(input.event.item.message)
+    });
+  }
+
+  if (input.event.item.type !== "agent_message") {
+    return;
+  }
+
+  const delta = input.event.item.text.trim();
+
+  if (!delta) {
+    return;
+  }
+
+  input.deltas.push(delta);
+  input.streamEvents.push({
+    kind: "conversation.message.delta",
+    payload: { delta, messageId: input.messageId }
+  });
 }
 
 function buildCodexPrompt(request: AgentExecutionRequest): string {
@@ -148,121 +279,64 @@ function formatPinnedMessages(pinnedMessages: AgentPinnedMessage[]): string {
     .join("\n\n");
 }
 
-async function runCodexCommand(input: {
-  args: string[];
-  command: string;
-  cwd: string;
-  env: Record<string, string | undefined>;
-  stdin: string;
-}): Promise<{ exitCode: number; stderr: string; stdout: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(input.command, input.args, {
-      cwd: input.cwd,
-      env: input.env,
-      stdio: ["pipe", "pipe", "pipe"]
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
+function buildCodexEnv(overrides: Record<string, string | undefined>): Record<string, string> {
+  const env: Record<string, string> = {};
 
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+  for (const key of codexEnvPassThroughKeys) {
+    const value = process.env[key];
 
-    child.on("error", (error) => {
-      resolve({
-        exitCode: 127,
-        stderr: error.message,
-        stdout: ""
-      });
-    });
-
-    child.on("close", (exitCode) => {
-      resolve({
-        exitCode: exitCode ?? 1,
-        stderr: Buffer.concat(stderr).toString("utf8"),
-        stdout: Buffer.concat(stdout).toString("utf8")
-      });
-    });
-
-    child.stdin.end(input.stdin);
-  });
-}
-
-function parseCodexExecution(input: {
-  conversationId: string;
-  stdout: string;
-}): AgentExecutionResult {
-  const messageId = `${input.conversationId}:codex`;
-  const streamEvents: StreamEvent[] = [
-    {
-      kind: "conversation.message.started",
-      payload: { messageId }
+    if (typeof value === "string") {
+      env[key] = value;
     }
-  ];
-  const deltas: string[] = [];
-  const fallbackText = input.stdout.trim();
+  }
 
-  for (const line of input.stdout.split(/\r?\n/)) {
-    const event = parseCodexEvent(line);
-
-    if (!event) {
+  for (const [key, value] of Object.entries(overrides)) {
+    if (typeof value === "string") {
+      env[key] = value;
       continue;
     }
 
-    if (event.type === "error") {
-      throw new AgentAdapterError(extractCodexErrorMessage(event.error), {
-        code: "provider_failed",
-        retryable: true
-      });
-    }
-
-    if (event.type === "item.completed" && event.item?.type === "agent_message") {
-      const delta = event.item.text;
-
-      if (typeof delta === "string" && delta.length > 0) {
-        deltas.push(delta);
-        streamEvents.push({
-          kind: "conversation.message.delta",
-          payload: { delta, messageId }
-        });
-      }
-    }
+    delete env[key];
   }
 
-  const finalContent = deltas.join("\n").trim() || fallbackText;
-
-  streamEvents.push({
-    kind: "conversation.message.completed",
-    payload: { finalContent, messageId }
-  });
-
-  return {
-    finalContent,
-    streamEvents
-  };
+  return env;
 }
 
-function parseCodexEvent(line: string): CodexExecEvent | null {
-  const trimmed = line.trim();
-
-  if (!trimmed.startsWith("{")) {
-    return null;
+function parseOptionalBoolean(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
   }
 
-  try {
-    return JSON.parse(trimmed) as CodexExecEvent;
-  } catch {
-    return null;
+  if (/^(1|true|yes)$/i.test(value)) {
+    return true;
   }
+
+  if (/^(0|false|no)$/i.test(value)) {
+    return false;
+  }
+
+  return undefined;
 }
 
-function formatCodexFailure(result: { exitCode: number; stderr: string }): string {
-  const details = result.stderr.trim();
-
-  if (result.exitCode === 127) {
-    return `Codex CLI 不可用，请安装 codex 或配置 CODEX_EXECUTABLE。${details ? ` ${details}` : ""}`;
+function normalizeCodexSdkError(error: unknown): AgentAdapterError {
+  if (error instanceof AgentAdapterError) {
+    return error;
   }
 
-  return `Codex 执行失败。${details ? ` ${details}` : ""}`;
+  const message = extractCodexErrorMessage(error);
+  const missingRuntime = /ENOENT|not found|cannot find package|codex sdk|codex.*unavailable/i.test(
+    message
+  );
+
+  return new AgentAdapterError(
+    missingRuntime
+      ? `Codex SDK 不可用，请安装 @openai/codex-sdk 或配置 Codex 运行环境。${message ? ` ${message}` : ""}`
+      : `Codex SDK 执行失败。${message ? ` ${message}` : ""}`,
+    {
+      code: missingRuntime ? "missing_runtime" : "provider_failed",
+      retryable: !missingRuntime && isRetryableCodexMessage(message)
+    }
+  );
 }
 
 function extractCodexErrorMessage(error: unknown): string {
@@ -277,7 +351,17 @@ function extractCodexErrorMessage(error: unknown): string {
     }
   }
 
-  return "Codex 执行失败。";
+  return "";
+}
+
+function isRetryableCodexMessage(message: string): boolean {
+  return /timeout|temporar|rate|429|5\d\d|ECONNRESET|ETIMEDOUT/i.test(message);
+}
+
+function pruneUndefined<T extends Record<string, unknown>>(input: T): T {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined)
+  ) as T;
 }
 
 export function createCodexAdapter(options: CodexAdapterOptions): CodexAdapter {

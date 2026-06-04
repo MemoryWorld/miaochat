@@ -49,7 +49,7 @@ secrets-backed acceptance and records the capacity evidence.
 - [x] Model connection contract is covered in `packages/contracts`.
 - [x] Claude Code adapter uses the official Claude Agent SDK path instead of a
       Miaochat-owned fake HTTP endpoint.
-- [x] Codex adapter uses the official `codex exec --json` path instead of a
+- [x] Codex adapter uses the official `@openai/codex-sdk` path instead of a
       Miaochat-owned fake HTTP endpoint.
 - [x] DeepSeek connection validate/create/list flow is covered by
       `tests/integration/deepseek-connection.spec.ts`.
