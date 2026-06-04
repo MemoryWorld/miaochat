@@ -9,7 +9,8 @@ import type {
   MultiAgentHandoff,
   MultiAgentOutputIntent,
   MultiAgentParticipant,
-  MultiAgentTurn
+  MultiAgentTurn,
+  ProviderId
 } from "@agenthub/contracts";
 import {
   multiAgentChannelEventSchema,
@@ -61,6 +62,26 @@ export type RecordDirectExecutionInput = {
   result: OrchestratorResult;
   userMessageId: string;
   workspaceId: string;
+};
+
+export type AgentRunCheckpointDescriptor = {
+  agentId: string;
+  provider: ProviderId;
+  reason: MultiAgentTurn["reason"];
+  turnKey?: string;
+};
+
+export type RecordAgentRunsStartedInput = {
+  channelId: string;
+  ownerUserId: string;
+  runs: AgentRunCheckpointDescriptor[];
+  userMessageId: string;
+  workspaceId: string;
+};
+
+export type RecordAgentRunsFailedInput = RecordAgentRunsStartedInput & {
+  errorCode: string;
+  errorMessage: string;
 };
 
 @Injectable()
@@ -166,6 +187,42 @@ export class MultiAgentHarnessService {
           rootEventId: eventIdForMessage(input.userMessageId),
           turnCount: 1,
           workspaceId: input.workspaceId
+        },
+        tx
+      );
+    });
+  }
+
+  async recordAgentRunsStarted(
+    input: RecordAgentRunsStartedInput
+  ): Promise<void> {
+    if (input.runs.length === 0) {
+      return;
+    }
+
+    await this.database.transaction(async (tx) => {
+      await this.recordAgentRunCheckpoints(
+        {
+          ...input,
+          checkpoint: "context_prepared",
+          status: "running"
+        },
+        tx
+      );
+    });
+  }
+
+  async recordAgentRunsFailed(input: RecordAgentRunsFailedInput): Promise<void> {
+    if (input.runs.length === 0) {
+      return;
+    }
+
+    await this.database.transaction(async (tx) => {
+      await this.recordAgentRunCheckpoints(
+        {
+          ...input,
+          checkpoint: "failed",
+          status: "failed"
         },
         tx
       );
@@ -344,7 +401,11 @@ export class MultiAgentHarnessService {
             runtimeMetadata: entry.result.runtimeMetadata ?? {},
             sourceAgentParticipantId: handoff?.sourceAgentParticipantId ?? null,
             triggeringEventId: handoff?.eventId ?? userEventId,
-            turnKey: entry.message.id,
+            turnKey: turnKeyForGroupResult(
+              input.userMessageId,
+              entry.result,
+              entry.message.id
+            ),
             workspaceId: input.workspaceId
           },
           tx
@@ -518,6 +579,87 @@ export class MultiAgentHarnessService {
     return mapChannelEventRow(row);
   }
 
+  private async recordAgentRunCheckpoints(
+    input: RecordAgentRunsStartedInput & {
+      checkpoint: "context_prepared" | "failed";
+      errorCode?: string;
+      errorMessage?: string;
+      status: "failed" | "running";
+    },
+    executor: DatabaseExecutor
+  ): Promise<void> {
+    const participants = await this.ensureChannelParticipants(input, executor);
+    const causalChainId = chainIdForMessage(input.userMessageId);
+    const triggeringEventId = eventIdForMessage(input.userMessageId);
+    const checkpointedAt = new Date().toISOString();
+
+    for (const run of input.runs) {
+      const participant = participants.get(run.agentId);
+
+      if (!participant) {
+        continue;
+      }
+
+      const turnKey = run.turnKey ?? triggeringEventId;
+      const turnId = turnIdForAgentEvent(input.channelId, run.agentId, turnKey);
+      const metadata = {
+        checkpointSource: "message_dispatch",
+        reason: run.reason,
+        triggeringEventId,
+        ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+        ...(input.errorMessage ? { errorMessage: input.errorMessage } : {})
+      };
+
+      await this.repository.upsertTurn(
+        {
+          agentId: run.agentId,
+          agentParticipantId: participant.id,
+          causalChainId,
+          channelId: input.channelId,
+          completedAt: input.status === "failed" ? checkpointedAt : null,
+          contextSnapshotId: null,
+          errorCode: input.errorCode ?? null,
+          errorMessage: input.errorMessage ?? null,
+          id: turnId,
+          idempotencyKey: idempotencyKeyForTurn({
+            agentParticipantId: participant.id,
+            causalChainId,
+            channelId: input.channelId,
+            reason: run.reason,
+            triggeringEventId,
+            turnKey
+          }),
+          producedEventIds: [],
+          priority: priorityForTurnReason(run.reason),
+          reason: run.reason,
+          sourceAgentParticipantId: null,
+          startedAt: checkpointedAt,
+          status: input.status,
+          triggeringEventId,
+          workspaceId: input.workspaceId
+        },
+        executor
+      );
+      await this.repository.upsertAgentRunLedger(
+        {
+          agentId: run.agentId,
+          artifactCount: 0,
+          channelId: input.channelId,
+          checkpoint: input.checkpoint,
+          contextSnapshotId: null,
+          id: `agent-run:${turnId}`,
+          metadata,
+          producedEventIds: [],
+          provider: run.provider,
+          status: input.status,
+          turnId,
+          workspaceId: input.workspaceId
+        },
+        executor
+      );
+    }
+  }
+
   private async recordCompletedTurn(
     input: {
       agentId: string;
@@ -588,16 +730,14 @@ export class MultiAgentHarnessService {
         completedAt: new Date().toISOString(),
         contextSnapshotId: snapshotId,
         id: turnId,
-        idempotencyKey: hashText(
-          [
-            input.channelId,
-            input.triggeringEventId,
-            turnKey,
-            input.agentParticipantId,
-            input.reason,
-            input.causalChainId
-          ].join(":")
-        ),
+        idempotencyKey: idempotencyKeyForTurn({
+          agentParticipantId: input.agentParticipantId,
+          causalChainId: input.causalChainId,
+          channelId: input.channelId,
+          reason: input.reason,
+          triggeringEventId: input.triggeringEventId,
+          turnKey
+        }),
         producedEventIds: [input.producedEventId],
         priority: priorityForTurnReason(input.reason),
         reason: input.reason,
@@ -843,6 +983,26 @@ function normalizeRoleKey(value: string): string {
   return value.trim().replace(/^@/, "").replace(/[\s_]+/g, "-").toLowerCase();
 }
 
+function turnKeyForGroupResult(
+  userMessageId: string,
+  result: OrchestratorResult,
+  fallbackKey: string
+): string {
+  if (typeof result.turnIndex === "number") {
+    return groupTurnKeyForTurnIndex(userMessageId, result.turnIndex, result.agentId);
+  }
+
+  return fallbackKey;
+}
+
+function groupTurnKeyForTurnIndex(
+  userMessageId: string,
+  turnIndex: number,
+  agentId: string
+): string {
+  return `group:${userMessageId}:turn:${turnIndex}:${agentId}`;
+}
+
 function participantIdForAgent(channelId: string, agentId: string): string {
   return `participant:${channelId}:${agentId}`;
 }
@@ -857,6 +1017,26 @@ function chainIdForMessage(messageId: string): string {
 
 function turnIdForAgentEvent(channelId: string, agentId: string, eventId: string): string {
   return `turn:${channelId}:${agentId}:${hashText(eventId).slice(0, 16)}`;
+}
+
+function idempotencyKeyForTurn(input: {
+  agentParticipantId: string;
+  causalChainId: string;
+  channelId: string;
+  reason: MultiAgentTurn["reason"];
+  triggeringEventId: string;
+  turnKey: string;
+}): string {
+  return hashText(
+    [
+      input.channelId,
+      input.triggeringEventId,
+      input.turnKey,
+      input.agentParticipantId,
+      input.reason,
+      input.causalChainId
+    ].join(":")
+  );
 }
 
 function hashText(text: string): string {

@@ -114,6 +114,113 @@ describe("MultiAgentHarnessService", () => {
       tx
     );
   });
+
+  it("records started and failed run ledger checkpoints for recovery", async () => {
+    const tx = {};
+    const database = {
+      transaction: vi.fn(async (callback: (executor: unknown) => Promise<void>) =>
+        callback(tx)
+      )
+    };
+    const repository = {
+      listConversationAgentProfiles: vi.fn(async () => [
+        {
+          agent_id: "agent_planner",
+          agent_name: "Planner",
+          capability_tags: ["role:planning"]
+        }
+      ]),
+      upsertAgentRunLedger: vi.fn(async (input: AgentRunLedgerInput) => input),
+      upsertParticipant: vi.fn(async (input: ParticipantInput) =>
+        participantRow(input)
+      ),
+      upsertTurn: vi.fn(async (input: TurnInput) => turnRow(input))
+    };
+    const service = new MultiAgentHarnessService(
+      {} as never,
+      database as never,
+      repository as never
+    );
+
+    await service.recordAgentRunsStarted({
+      channelId: "conv_group",
+      ownerUserId: "user_owner",
+      runs: [
+        {
+          agentId: "agent_planner",
+          provider: "mock",
+          reason: "scheduled_followup",
+          turnKey: "group:msg_user:turn:0:agent_planner"
+        }
+      ],
+      userMessageId: "msg_user",
+      workspaceId: "workspace_1"
+    });
+
+    expect(repository.upsertTurn).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agentId: "agent_planner",
+        completedAt: null,
+        producedEventIds: [],
+        startedAt: expect.any(String),
+        status: "running",
+        triggeringEventId: "event:message:msg_user"
+      }),
+      tx
+    );
+    expect(repository.upsertAgentRunLedger).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agentId: "agent_planner",
+        artifactCount: 0,
+        checkpoint: "context_prepared",
+        contextSnapshotId: null,
+        producedEventIds: [],
+        provider: "mock",
+        status: "running"
+      }),
+      tx
+    );
+
+    await service.recordAgentRunsFailed({
+      channelId: "conv_group",
+      errorCode: "provider_dispatch_failed",
+      errorMessage: "provider offline",
+      ownerUserId: "user_owner",
+      runs: [
+        {
+          agentId: "agent_planner",
+          provider: "mock",
+          reason: "scheduled_followup",
+          turnKey: "group:msg_user:turn:0:agent_planner"
+        }
+      ],
+      userMessageId: "msg_user",
+      workspaceId: "workspace_1"
+    });
+
+    expect(repository.upsertTurn).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agentId: "agent_planner",
+        completedAt: expect.any(String),
+        errorCode: "provider_dispatch_failed",
+        errorMessage: "provider offline",
+        status: "failed"
+      }),
+      tx
+    );
+    expect(repository.upsertAgentRunLedger).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        checkpoint: "failed",
+        metadata: expect.objectContaining({
+          errorCode: "provider_dispatch_failed",
+          errorMessage: "provider offline"
+        }),
+        status: "failed"
+      }),
+      tx
+    );
+  });
+
 });
 
 type ChannelEventInput = {
@@ -168,6 +275,8 @@ type TurnInput = {
   idempotencyKey: string;
   producedEventIds?: string[];
   priority: number;
+  errorCode?: string | null;
+  errorMessage?: string | null;
   queuedAt?: string;
   reason: string;
   sourceAgentParticipantId?: string | null;

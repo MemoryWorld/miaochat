@@ -431,6 +431,8 @@ export class MultiAgentHarnessRepository {
       idempotencyKey: string;
       producedEventIds?: string[];
       priority: number;
+      errorCode?: string | null;
+      errorMessage?: string | null;
       queuedAt?: string;
       reason: MultiAgentTurn["reason"];
       sourceAgentParticipantId?: string | null;
@@ -459,6 +461,8 @@ export class MultiAgentHarnessRepository {
         queued_at,
         started_at,
         completed_at,
+        error_code,
+        error_message,
         produced_event_ids
       )
       VALUES (
@@ -478,6 +482,8 @@ export class MultiAgentHarnessRepository {
         ${input.queuedAt ?? new Date().toISOString()},
         ${input.startedAt ?? null},
         ${input.completedAt ?? null},
+        ${input.errorCode ?? null},
+        ${input.errorMessage ?? null},
         ${JSON.stringify(input.producedEventIds ?? [])}::jsonb
       )
       ON CONFLICT (workspace_id, idempotency_key) DO UPDATE
@@ -487,6 +493,8 @@ export class MultiAgentHarnessRepository {
           priority = EXCLUDED.priority,
           started_at = COALESCE(multi_agent_turns.started_at, EXCLUDED.started_at),
           completed_at = COALESCE(EXCLUDED.completed_at, multi_agent_turns.completed_at),
+          error_code = EXCLUDED.error_code,
+          error_message = EXCLUDED.error_message,
           produced_event_ids = EXCLUDED.produced_event_ids
       RETURNING
         agent_id,
@@ -568,7 +576,7 @@ export class MultiAgentHarnessRepository {
           context_snapshot_id = EXCLUDED.context_snapshot_id,
           produced_event_ids = EXCLUDED.produced_event_ids,
           artifact_count = EXCLUDED.artifact_count,
-          metadata = EXCLUDED.metadata,
+          metadata = agent_run_ledger.metadata || EXCLUDED.metadata,
           updated_at = now()
       RETURNING
         agent_id,

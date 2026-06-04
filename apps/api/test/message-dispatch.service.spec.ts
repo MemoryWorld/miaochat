@@ -1014,4 +1014,121 @@ ${visibleMarkdown}
     ]);
     expect(JSON.stringify(publishedEvents)).not.toContain("handoff_request");
   });
+
+  it("records direct agent run checkpoints when provider dispatch fails", async () => {
+    const executeWorkflow = vi.fn(async () => {
+      throw new Error("provider offline");
+    });
+    const recordAgentRunsStarted = vi.fn(async () => undefined);
+    const recordAgentRunsFailed = vi.fn(async () => undefined);
+    const recordDirectExecution = vi.fn(async () => undefined);
+    const messagesService = {
+      create: vi.fn(async () => ({
+        content: "生成发布说明",
+        conversationId: "conv_direct",
+        id: "msg_user",
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        role: "user"
+      })),
+      resolveSendAccess: vi.fn(async () => ({
+        ownerUserId: "user_owner",
+        permission: "comment"
+      }))
+    };
+    const service = new MessageDispatchService(
+      {
+        listConversationAgentsWithProviders: vi.fn(async () => [
+          {
+            agent_id: "agent_writer",
+            agent_name: "Writer",
+            capability_tags: [],
+            mode: "direct",
+            output_style: null,
+            provider: "mock",
+            scope_description: null,
+            system_prompt: null
+          }
+        ])
+      } as never,
+      messagesService as never,
+      { incrementCounter: vi.fn() } as never,
+      {
+        recordAgentRunsFailed,
+        recordAgentRunsStarted,
+        recordDirectExecution
+      } as never,
+      { loadConversationContext: vi.fn(async () => undefined) } as never,
+      { consume: vi.fn(async () => ({ allowed: true })) } as never,
+      { publish: vi.fn() } as never,
+      { error: vi.fn(), warn: vi.fn() } as never,
+      {
+        startSpan: vi.fn(() => ({
+          end: vi.fn(),
+          fail: vi.fn()
+        }))
+      } as never
+    );
+
+    Object.assign(
+      service as unknown as {
+        getTemporalClient: () => Promise<{
+          workflow: {
+            execute: typeof executeWorkflow;
+          };
+        }>;
+      },
+      {
+        getTemporalClient: async () => ({
+          workflow: {
+            execute: executeWorkflow
+          }
+        })
+      }
+    );
+
+    await service.send(
+      {
+        content: "生成发布说明",
+        conversationId: "conv_direct",
+        role: "user",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(recordAgentRunsStarted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelId: "conv_direct",
+        runs: [
+          expect.objectContaining({
+            agentId: "agent_writer",
+            provider: "mock",
+            reason: "scheduled_followup"
+          })
+        ],
+        userMessageId: "msg_user",
+        workspaceId: "workspace_1"
+      })
+    );
+    expect(recordAgentRunsFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelId: "conv_direct",
+        errorCode: "provider_dispatch_failed",
+        errorMessage: "provider offline",
+        runs: [
+          expect.objectContaining({
+            agentId: "agent_writer",
+            provider: "mock",
+            reason: "scheduled_followup"
+          })
+        ],
+        userMessageId: "msg_user",
+        workspaceId: "workspace_1"
+      })
+    );
+    expect(recordDirectExecution).not.toHaveBeenCalled();
+  });
+
 });

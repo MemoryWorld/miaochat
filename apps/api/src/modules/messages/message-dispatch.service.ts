@@ -206,6 +206,11 @@ export class MessageDispatchService implements OnModuleDestroy {
       mode: "direct",
       provider: input.provider
     });
+    const directRun = {
+      agentId: input.agentId,
+      provider: input.provider,
+      reason: resolveHumanTriggeredRunReason(input.mentionedAgentIds, input.agentId)
+    };
 
     try {
       const context = await this.pinMessageService.loadConversationContext(
@@ -214,6 +219,13 @@ export class MessageDispatchService implements OnModuleDestroy {
         input.ownerUserId
       );
       const client = await this.getTemporalClient();
+      await this.multiAgentHarnessService.recordAgentRunsStarted?.({
+        channelId: input.conversationId,
+        ownerUserId: input.ownerUserId,
+        runs: [directRun],
+        userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
       const execution = (await client.workflow.execute("singleAgentWorkflow", {
         args: [
           {
@@ -283,6 +295,16 @@ export class MessageDispatchService implements OnModuleDestroy {
       });
       span.end({ assistantMessageId });
     } catch (error) {
+      await this.recordAgentRunFailureCheckpoint({
+        channelId: input.conversationId,
+        error,
+        mode: "direct",
+        ownerUserId: input.ownerUserId,
+        provider: input.provider,
+        runs: [directRun],
+        userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
       this.metrics.incrementCounter("provider_dispatch_error_total", {
         mode: "direct",
         provider: input.provider
@@ -321,6 +343,7 @@ export class MessageDispatchService implements OnModuleDestroy {
       mode: "group",
       provider: providerLabel
     });
+    const initialGroupRuns = buildInitialGroupRunDescriptors(input);
 
     try {
       const context = await this.pinMessageService.loadConversationContext(
@@ -329,6 +352,13 @@ export class MessageDispatchService implements OnModuleDestroy {
         input.ownerUserId
       );
       const client = await this.getTemporalClient();
+      await this.multiAgentHarnessService.recordAgentRunsStarted?.({
+        channelId: input.conversationId,
+        ownerUserId: input.ownerUserId,
+        runs: initialGroupRuns,
+        userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
       const execution = (await client.workflow.execute("groupOrchestratorWorkflow", {
         args: [
           {
@@ -409,6 +439,18 @@ export class MessageDispatchService implements OnModuleDestroy {
         workspaceId: input.workspaceId
       });
 
+      if (execution.state.failures.length > 0) {
+        await this.multiAgentHarnessService.recordAgentRunsFailed?.({
+          channelId: input.conversationId,
+          errorCode: "provider_dispatch_failed",
+          errorMessage: summarizeGroupFailures(execution.state.failures),
+          ownerUserId: input.ownerUserId,
+          runs: buildFailedGroupRunDescriptors(input, execution.state.failures),
+          userMessageId: input.userMessageId,
+          workspaceId: input.workspaceId
+        });
+      }
+
       const completionMessages = assistantMessages.map((entry) => entry.message);
 
       if (execution.state.failures.length > 0) {
@@ -440,6 +482,16 @@ export class MessageDispatchService implements OnModuleDestroy {
         assistantMessageIds: completionMessages.map((message) => message.id)
       });
     } catch (error) {
+      await this.recordAgentRunFailureCheckpoint({
+        channelId: input.conversationId,
+        error,
+        mode: "group",
+        ownerUserId: input.ownerUserId,
+        provider: providerLabel,
+        runs: initialGroupRuns,
+        userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
       this.metrics.incrementCounter("provider_dispatch_error_total", {
         mode: "group",
         provider: providerLabel
@@ -452,6 +504,41 @@ export class MessageDispatchService implements OnModuleDestroy {
       });
       span.fail(error);
       throw error;
+    }
+  }
+
+  private async recordAgentRunFailureCheckpoint(input: {
+    channelId: string;
+    error: unknown;
+    mode: "direct" | "group";
+    ownerUserId: string;
+    provider: string;
+    runs: Array<{
+      agentId: string;
+      provider: ProviderId;
+      reason: "human_mention" | "scheduled_followup";
+      turnKey?: string;
+    }>;
+    userMessageId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    try {
+      await this.multiAgentHarnessService.recordAgentRunsFailed?.({
+        channelId: input.channelId,
+        errorCode: "provider_dispatch_failed",
+        errorMessage: errorMessageForCheckpoint(input.error),
+        ownerUserId: input.ownerUserId,
+        runs: input.runs,
+        userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
+    } catch (ledgerError) {
+      this.logger.warn("provider.dispatch.ledger_failed", {
+        error: ledgerError instanceof Error ? ledgerError.message : String(ledgerError),
+        mode: input.mode,
+        provider: input.provider,
+        workspaceId: input.workspaceId
+      });
     }
   }
 
@@ -663,6 +750,92 @@ function runtimeArtifactStatusSummary(status: RuntimeArtifactStatus): string {
 
 function truncateRuntimeArtifactError(error: string): string {
   return error.length > 500 ? error.slice(0, 497) + "..." : error;
+}
+
+function buildInitialGroupRunDescriptors(input: {
+  initialTargetAgentIds: string[];
+  mentionedAgentIds: string[];
+  targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
+  userMessageId: string;
+}): Array<{
+  agentId: string;
+  provider: ProviderId;
+  reason: "human_mention" | "scheduled_followup";
+  turnKey: string;
+}> {
+  return input.initialTargetAgentIds.flatMap((agentId, turnIndex) => {
+    const target = input.targets.find((candidate) => candidate.agentId === agentId);
+
+    if (!target) {
+      return [];
+    }
+
+    return [
+      {
+        agentId,
+        provider: target.provider,
+        reason: resolveHumanTriggeredRunReason(input.mentionedAgentIds, agentId),
+        turnKey: groupTurnKeyForTurnIndex(input.userMessageId, turnIndex, agentId)
+      }
+    ];
+  });
+}
+
+function buildFailedGroupRunDescriptors(
+  input: {
+    initialTargetAgentIds: string[];
+    mentionedAgentIds: string[];
+    userMessageId: string;
+  },
+  failures: OrchestratorState["failures"]
+): Array<{
+  agentId: string;
+  provider: ProviderId;
+  reason: "human_mention" | "scheduled_followup";
+  turnKey: string;
+}> {
+  return failures.map((failure) => {
+    const initialTurnIndex = input.initialTargetAgentIds.indexOf(failure.agentId);
+    return {
+      agentId: failure.agentId,
+      provider: failure.provider,
+      reason: resolveHumanTriggeredRunReason(input.mentionedAgentIds, failure.agentId),
+      turnKey:
+        initialTurnIndex >= 0
+          ? groupTurnKeyForTurnIndex(
+              input.userMessageId,
+              initialTurnIndex,
+              failure.agentId
+            )
+          : `group:${input.userMessageId}:failure:${failure.agentId}`
+    };
+  });
+}
+
+function groupTurnKeyForTurnIndex(
+  userMessageId: string,
+  turnIndex: number,
+  agentId: string
+): string {
+  return `group:${userMessageId}:turn:${turnIndex}:${agentId}`;
+}
+
+function resolveHumanTriggeredRunReason(
+  mentionedAgentIds: string[],
+  agentId: string
+): "human_mention" | "scheduled_followup" {
+  return mentionedAgentIds.includes(agentId) ? "human_mention" : "scheduled_followup";
+}
+
+function summarizeGroupFailures(failures: OrchestratorState["failures"]): string {
+  return failures
+    .map((failure) => `${failure.agentName}: ${failure.detail}`)
+    .join("; ")
+    .slice(0, 1_000);
+}
+
+function errorMessageForCheckpoint(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function formatGroupFailureNotice(state: OrchestratorState): string {
