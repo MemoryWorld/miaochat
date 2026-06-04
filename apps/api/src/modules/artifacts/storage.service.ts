@@ -10,6 +10,7 @@ import {
   prepareArtifactUploadInputSchema,
   type ArtifactUploadTarget,
   type PrepareArtifactUploadInput,
+  type RuntimeDiffArtifactDraft,
   type RuntimeMarkdownArtifactDraft
 } from "@agenthub/contracts";
 
@@ -95,6 +96,41 @@ export class StorageService {
       Metadata: {
         artifactId,
         artifactKind: "attachment",
+        messageId: input.messageId,
+        runtimeArtifactType: input.draft.type,
+        workspaceId: input.workspaceId
+      }
+    });
+
+    await this.s3.send(command);
+
+    return {
+      artifactId,
+      previewUrl: buildObjectUrl(this.endpoint, this.bucket, storageKey),
+      storageKey
+    };
+  }
+
+  async writeRuntimeDiffArtifact(input: {
+    draft: RuntimeDiffArtifactDraft;
+    messageId: string;
+    workspaceId: string;
+  }): Promise<RuntimeArtifactWriteResult> {
+    const artifactId = randomUUID();
+    const storageKey = buildStorageKey({
+      artifactId,
+      fileName: input.draft.fileName,
+      messageId: input.messageId,
+      workspaceId: input.workspaceId
+    });
+    const command = new PutObjectCommand({
+      Body: Buffer.from(input.draft.patch, "utf8"),
+      Bucket: this.bucket,
+      ContentType: input.draft.mimeType,
+      Key: storageKey,
+      Metadata: {
+        artifactId,
+        artifactKind: "diff",
         messageId: input.messageId,
         runtimeArtifactType: input.draft.type,
         workspaceId: input.workspaceId

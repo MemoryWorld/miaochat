@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@agenthub/agent-sdk": "workspace:*",
-    "@agenthub/contracts": "workspace:*"
+    "@agenthub/contracts": "workspace:*",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.162",
+    "zod": "^4.4.3"
   }
 }

@@ -1,101 +1,85 @@
 import { describe, expect, it } from "vitest";
 
 import { ClaudeCodeAdapter } from "../src/claude-code/claude-code-adapter.js";
+import type { ClaudeAgentQuery } from "../src/claude-code/claude-code-types.js";
 
 const credentialResolver = async () => ({
   providerAccountId: "acct_claude",
   secret: "sk-ant-test-123"
 });
 
-function createSseResponseBody(events: Array<{ data: string; event: string }>): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const body =
-    events
-      .map((entry) => `event: ${entry.event}\ndata: ${entry.data}`)
-      .join("\n\n") + "\n\n";
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(encoder.encode(body));
-      controller.close();
-    }
-  });
-}
-
 describe("ClaudeCodeAdapter", () => {
-  it("translates content_block_delta SSE events into the normalized contract", async () => {
-    const requestLog: { body?: unknown; headers?: HeadersInit; url?: string } = {};
-    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      requestLog.url = input.toString();
-      requestLog.body = init?.body;
-      requestLog.headers = init?.headers;
-
-      return new Response(
-        createSseResponseBody([
-          {
-            data: '{"index":0,"delta":{"type":"text_delta","text":"Hello "},"type":"content_block_delta"}',
-            event: "content_block_delta"
-          },
-          {
-            data: '{"index":0,"delta":{"type":"text_delta","text":"world"},"type":"content_block_delta"}',
-            event: "content_block_delta"
-          },
-          {
-            data: '{"type":"message_stop"}',
-            event: "message_stop"
-          }
-        ]),
-        {
-          headers: { "content-type": "text/event-stream" },
-          status: 200
-        }
-      );
-    }) as unknown as typeof fetch;
+  it("runs Claude through the Agent SDK query interface and normalizes streamed text", async () => {
+    const calls: Array<{ options?: Record<string, unknown>; prompt: string }> = [];
+    const queryImpl: ClaudeAgentQuery = async function* (input) {
+      calls.push(input);
+      yield {
+        content: [{ text: "Hello " }, { name: "Read", type: "tool_use" }],
+        type: "assistant"
+      };
+      yield {
+        content: [{ text: "from Claude Code" }],
+        type: "assistant"
+      };
+      yield {
+        result: "Hello from Claude Code",
+        subtype: "success",
+        type: "result"
+      };
+    };
 
     const adapter = new ClaudeCodeAdapter({
-      baseUrl: "https://api.claude-code.test",
       credentialResolver,
-      fetchImpl
+      cwd: "/tmp/miaochat-claude",
+      model: "claude-sonnet-test",
+      queryImpl
     });
     const result = await adapter.execute({
       agentId: "agent_claude_code",
+      context: {
+        pinnedMessages: [{ content: "Use strict TypeScript.", id: "pin_1", role: "user" }]
+      },
       conversationId: "conv_claude_code",
       credentialId: "cred_claude_code",
+      instructions: "你是代码评审 AI 同事。",
       message: "Plan the rollout",
       provider: "claude-code",
       workspaceId: "workspace_claude_code"
     });
 
-    expect(result.finalContent).toBe("Hello world");
+    expect(result.finalContent).toBe("Hello from Claude Code");
     expect(result.streamEvents.map((event) => event.kind)).toEqual([
       "conversation.message.started",
       "conversation.message.delta",
       "conversation.message.delta",
       "conversation.message.completed"
     ]);
-    expect(requestLog.url).toBe("https://api.claude-code.test/v1/messages");
-    expect(JSON.parse(String(requestLog.body))).toEqual(
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.prompt).toContain("Use strict TypeScript.");
+    expect(calls[0]?.prompt).toContain("Plan the rollout");
+    expect(calls[0]?.options).toEqual(
       expect.objectContaining({
-        agent_id: "agent_claude_code",
-        conversation_id: "conv_claude_code",
-        model: "claude-code-default",
-        stream: true,
-        workspace_id: "workspace_claude_code"
+        allowedTools: ["Read", "Edit", "Glob", "Grep"],
+        cwd: "/tmp/miaochat-claude",
+        model: "claude-sonnet-test",
+        permissionMode: "acceptEdits",
+        systemPrompt: "你是代码评审 AI 同事。"
       })
     );
-    expect(requestLog.headers).toEqual(
-      expect.objectContaining({
-        "Anthropic-Version": "2023-06-01",
-        "Claude-Code-Account": "acct_claude",
-        "X-Api-Key": "sk-ant-test-123"
-      })
+    expect((calls[0]?.options?.env as Record<string, string>).ANTHROPIC_API_KEY).toBe(
+      "sk-ant-test-123"
+    );
+    expect((calls[0]?.options?.env as Record<string, string>).CLAUDE_AGENT_SDK_CLIENT_APP).toBe(
+      "miaochat"
     );
   });
 
   it("rejects requests without a BYOK credentialId", async () => {
     const adapter = new ClaudeCodeAdapter({
       credentialResolver,
-      fetchImpl: (async () => new Response("", { status: 200 })) as unknown as typeof fetch
+      queryImpl: async function* () {
+        yield { type: "result", result: "unused" };
+      }
     });
 
     await expect(
@@ -106,15 +90,16 @@ describe("ClaudeCodeAdapter", () => {
         provider: "claude-code",
         workspaceId: "workspace_claude_code"
       })
-    ).rejects.toThrow(/credentialId/);
+    ).rejects.toThrow(/Claude API Key/);
   });
 
-  it("rejects empty streams as a retryable provider failure", async () => {
-    const fetchImpl = (async () =>
-      new Response(createSseResponseBody([]), { status: 200 })) as unknown as typeof fetch;
+  it("translates SDK failures into provider_failed adapter errors", async () => {
     const adapter = new ClaudeCodeAdapter({
       credentialResolver,
-      fetchImpl
+      queryImpl: async function* () {
+        yield { result: "unused", type: "result" };
+        throw new Error("temporary upstream timeout");
+      }
     });
 
     await expect(

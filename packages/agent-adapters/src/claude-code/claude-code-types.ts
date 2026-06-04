@@ -1,31 +1,19 @@
-/**
- * Claude Code uses an SSE protocol with named events. Content deltas arrive as
- * `event: content_block_delta\ndata: { ... }`. The adapter normalizes the
- * relevant events into the shared streaming contract and ignores any other
- * named events surfaced by the upstream API.
- */
-export type ClaudeCodeContentBlockDeltaEvent = {
-  delta: {
-    text: string;
-    type: "text_delta";
-  };
-  index: number;
-  type: "content_block_delta";
+export type ClaudeAgentSdkMessage = {
+  content?: unknown;
+  result?: unknown;
+  session_id?: string;
+  subtype?: string;
+  type?: string;
 };
 
-export type ClaudeCodeMessageStopEvent = {
-  type: "message_stop";
-};
+export type ClaudeAgentQuery = (input: {
+  options?: Record<string, unknown>;
+  prompt: string;
+}) => AsyncIterable<ClaudeAgentSdkMessage>;
 
-export type ClaudeCodeStreamEvent =
-  | ClaudeCodeContentBlockDeltaEvent
-  | ClaudeCodeMessageStopEvent;
-
-export type ClaudeCodeRequestBody = {
-  agent_id: string;
-  conversation_id: string;
-  messages: Array<{ content: string; role: "assistant" | "system" | "user" }>;
-  model: string;
-  stream: true;
-  workspace_id: string;
-};
+export type ClaudeCodePermissionMode =
+  | "acceptEdits"
+  | "auto"
+  | "bypassPermissions"
+  | "default"
+  | "dontAsk";

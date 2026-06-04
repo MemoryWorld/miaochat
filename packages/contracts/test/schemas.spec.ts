@@ -30,6 +30,7 @@ import {
   messageSchema,
   normalizeRecommendedRoleIds,
   prepareArtifactUploadInputSchema,
+  runtimeDiffArtifactDraftSchema,
   runtimeMarkdownArtifactDraftSchema,
   runtimeBackendCatalog,
   skillBindingSchema,
@@ -275,6 +276,39 @@ describe("@agenthub/contracts", () => {
     expect(parsed.payload.failures).toHaveLength(1);
     expect(parsed.payload.artifactStatus?.status).toBe("failed");
     expect(parsed.payload.label).toBe("orchestrator.partial_failure");
+  });
+
+  it("accepts runtime diff artifact drafts and status updates", () => {
+    expect(runtimeDiffArtifactDraftSchema.parse({
+      fileName: "agent-runtime.diff",
+      patch: "diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+      title: "Agent runtime diff",
+      type: "diff"
+    })).toMatchObject({
+      mimeType: "text/x-diff",
+      truncated: false,
+      type: "diff"
+    });
+
+    const parsed = streamEventSchema.parse({
+      kind: "conversation.status",
+      payload: {
+        artifactStatus: {
+          messageId: "msg_diff",
+          status: "created",
+          title: "Agent runtime diff",
+          type: "diff"
+        },
+        failures: [],
+        label: "orchestrator.aggregated",
+        state: "succeeded",
+        successfulAgentCount: 1,
+        summary: "Diff 文件已生成：Agent runtime diff",
+        totalAgentCount: 1
+      }
+    });
+
+    expect(parsed.payload.artifactStatus?.type).toBe("diff");
   });
 
   it("requires group conversations to include at least two agents", () => {

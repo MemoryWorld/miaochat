@@ -13,16 +13,14 @@ type ProviderByokConfig = {
 
 const providerEnvMap: Record<
   ProviderKey,
-  { accountId: string; baseUrl: string; secret: string }
+  { accountId: string; baseUrl?: string; secret: string }
 > = {
   "claude-code": {
     accountId: "CLAUDE_CODE_REAL_ACCOUNT_ID",
-    baseUrl: "CLAUDE_CODE_BASE_URL",
     secret: "CLAUDE_CODE_REAL_SECRET"
   },
   codex: {
     accountId: "CODEX_REAL_ACCOUNT_ID",
-    baseUrl: "CODEX_BASE_URL",
     secret: "CODEX_REAL_SECRET"
   },
   hermes: {
@@ -66,6 +64,10 @@ export function isStagingRealProviderMode(): boolean {
 export function getStagingProviderRuntimeConfig(provider: ProviderKey): ProviderRuntimeConfig {
   const mapping = providerEnvMap[provider];
 
+  if (!mapping.baseUrl) {
+    throw new Error(`Provider ${provider} does not use a staging base URL.`);
+  }
+
   return {
     baseUrl: requireEnv(mapping.baseUrl),
     providerAccountId: requireEnv(mapping.accountId),
@@ -80,6 +82,24 @@ export function getStagingByokCredential(provider: ProviderKey): ProviderByokCon
     providerAccountId: requireEnv(mapping.accountId),
     secret: requireEnv(mapping.secret)
   };
+}
+
+export function getStagingProviderCredential(provider: ProviderKey): ProviderByokConfig {
+  const mapping = providerEnvMap[provider];
+
+  return {
+    providerAccountId: process.env[mapping.accountId] ?? provider,
+    secret: requireEnv(mapping.secret)
+  };
+}
+
+export function shouldRunStagingProvider(provider: ProviderKey): boolean {
+  if (!isStagingRealProviderMode()) {
+    return false;
+  }
+
+  const mapping = providerEnvMap[provider];
+  return Boolean(process.env[mapping.secret]);
 }
 
 export function assertStagingProviderResult(result: {
@@ -115,11 +135,7 @@ export function getRequiredStagingEnvironment(): string[] {
     "OPENCLAW_BASE_URL",
     "OPENCLAW_REAL_ACCOUNT_ID",
     "OPENCLAW_REAL_SECRET",
-    "CODEX_BASE_URL",
-    "CODEX_REAL_ACCOUNT_ID",
     "CODEX_REAL_SECRET",
-    "CLAUDE_CODE_BASE_URL",
-    "CLAUDE_CODE_REAL_ACCOUNT_ID",
     "CLAUDE_CODE_REAL_SECRET"
   ];
 }

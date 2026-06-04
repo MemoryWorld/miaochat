@@ -527,10 +527,6 @@ export class MessageDispatchService implements OnModuleDestroy {
     }
 
     for (const artifact of input.artifacts) {
-      if (artifact.type !== "markdown") {
-        continue;
-      }
-
       if (!this.artifactsService) {
         this.publishRuntimeArtifactStatus({
           error: "Artifact service is unavailable.",
@@ -550,11 +546,18 @@ export class MessageDispatchService implements OnModuleDestroy {
       });
 
       try {
-        const persistedArtifact = await this.artifactsService.createRuntimeMarkdownArtifact({
-          draft: artifact,
-          messageId: input.message.id,
-          workspaceId: input.message.workspaceId
-        }, input.ownerUserId);
+        const persistedArtifact =
+          artifact.type === "markdown"
+            ? await this.artifactsService.createRuntimeMarkdownArtifact({
+                draft: artifact,
+                messageId: input.message.id,
+                workspaceId: input.message.workspaceId
+              }, input.ownerUserId)
+            : await this.artifactsService.createRuntimeDiffArtifact({
+                draft: artifact,
+                messageId: input.message.id,
+                workspaceId: input.message.workspaceId
+              }, input.ownerUserId);
         this.publishRuntimeArtifactStatus({
           artifactId: persistedArtifact.id,
           message: input.message,
@@ -643,13 +646,15 @@ function runtimeArtifactStatusState(status: RuntimeArtifactStatus["status"]) {
 }
 
 function runtimeArtifactStatusSummary(status: RuntimeArtifactStatus): string {
+  const artifactKind = status.type === "diff" ? "Diff 文件" : "Markdown 文件";
+
   switch (status.status) {
     case "created":
-      return "Markdown 文件已生成：" + status.title;
+      return artifactKind + "已生成：" + status.title;
     case "failed":
-      return "Markdown 文件生成失败：" + status.title;
+      return artifactKind + "生成失败：" + status.title;
     case "creating":
-      return "正在生成 Markdown 文件：" + status.title;
+      return "正在生成" + artifactKind + "：" + status.title;
   }
 }
 

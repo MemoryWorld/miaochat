@@ -1,132 +1,36 @@
-import { createServer, type Server } from "node:http";
-import { AddressInfo } from "node:net";
-
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ClaudeCodeAdapter } from "../../packages/agent-adapters/src/claude-code/claude-code-adapter.js";
 import {
   assertStagingProviderResult,
-  getStagingProviderRuntimeConfig,
-  isStagingRealProviderMode
+  getStagingProviderCredential,
+  shouldRunStagingProvider
 } from "./real-provider-test-support.js";
 
-let server: Server;
-let baseUrl: string;
-let providerAccountId: string;
-let secret: string;
-const requestLog: { body?: string; headers?: Record<string, string | string[] | undefined>; url?: string } = {};
-const stagingMode = isStagingRealProviderMode();
+const shouldRun = shouldRunStagingProvider("claude-code");
 
-beforeAll(async () => {
-  if (stagingMode) {
-    const config = getStagingProviderRuntimeConfig("claude-code");
-    baseUrl = config.baseUrl;
-    providerAccountId = config.providerAccountId;
-    secret = config.secret;
-    return;
-  }
-
-  server = createServer((request, response) => {
-    requestLog.url = request.url ?? "";
-    requestLog.headers = request.headers;
-    let bodyChunks = "";
-    request.on("data", (chunk) => {
-      bodyChunks += chunk.toString("utf8");
-    });
-    request.on("end", () => {
-      requestLog.body = bodyChunks;
-      response.writeHead(200, {
-        "cache-control": "no-cache",
-        "content-type": "text/event-stream"
-      });
-      response.write(
-        `event: content_block_delta\ndata: ${JSON.stringify({
-          delta: { text: "Hello ", type: "text_delta" },
-          index: 0,
-          type: "content_block_delta"
-        })}\n\n`
-      );
-      response.write(
-        `event: content_block_delta\ndata: ${JSON.stringify({
-          delta: { text: "from ", type: "text_delta" },
-          index: 0,
-          type: "content_block_delta"
-        })}\n\n`
-      );
-      response.write(
-        `event: content_block_delta\ndata: ${JSON.stringify({
-          delta: { text: "Claude Code", type: "text_delta" },
-          index: 0,
-          type: "content_block_delta"
-        })}\n\n`
-      );
-      response.end(`event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`);
-    });
-  });
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-
-  const address = server.address() as AddressInfo;
-  baseUrl = `http://127.0.0.1:${address.port}`;
-  providerAccountId = "acct_claude_code_real";
-  secret = "sk-ant-real-123";
-});
-
-afterAll(async () => {
-  if (stagingMode) {
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-});
-
-describe("Claude Code real-provider acceptance", () => {
-  it("completes one end-to-end conversation through the real Claude Code adapter", async () => {
+describe.skipIf(!shouldRun)("Claude Code real-provider acceptance", () => {
+  it("runs one real Claude Agent SDK turn through the Miaochat adapter", async () => {
+    const credential = getStagingProviderCredential("claude-code");
     const adapter = new ClaudeCodeAdapter({
-      baseUrl,
-      credentialResolver: async () => ({
-        providerAccountId,
-        secret
-      })
+      allowedTools: ["Read", "Glob", "Grep"],
+      credentialResolver: async () => credential,
+      maxTurns: 1,
+      permissionMode: "dontAsk"
     });
+
     const result = await adapter.execute({
       agentId: "agent_claude_code_real",
       conversationId: "conv_claude_code_real",
       credentialId: "cred_claude_code_real",
-      message: "Plan the rollout",
+      instructions:
+        "你是 Miaochat 的 Claude Code 真实接入验收同事。不要修改文件，只用一句中文回答。",
+      message: "请回复：Claude Code 已通过真实 SDK 接入。",
       provider: "claude-code",
       workspaceId: "workspace_claude_code_real"
     });
 
-    if (stagingMode) {
-      assertStagingProviderResult(result);
-      return;
-    }
-
-    expect(result.finalContent).toBe("Hello from Claude Code");
-    expect(result.streamEvents.map((event) => event.kind)).toEqual([
-      "conversation.message.started",
-      "conversation.message.delta",
-      "conversation.message.delta",
-      "conversation.message.delta",
-      "conversation.message.completed"
-    ]);
-    expect(requestLog.url).toBe("/v1/messages");
-    expect(JSON.parse(requestLog.body ?? "{}")).toEqual(
-      expect.objectContaining({
-        agent_id: "agent_claude_code_real",
-        conversation_id: "conv_claude_code_real",
-        model: "claude-code-default",
-        stream: true,
-        workspace_id: "workspace_claude_code_real"
-      })
-    );
-    expect(requestLog.headers?.["x-api-key"]).toBe(secret);
-    expect(requestLog.headers?.["claude-code-account"]).toBe(providerAccountId);
-    expect(requestLog.headers?.["anthropic-version"]).toBe("2023-06-01");
+    assertStagingProviderResult(result);
+    expect(result.finalContent).toContain("Claude");
   });
 });

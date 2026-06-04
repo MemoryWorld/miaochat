@@ -1,89 +1,89 @@
 import { describe, expect, it } from "vitest";
 
 import { CodexAdapter } from "../src/codex/codex-adapter.js";
+import type { CodexCommandInput } from "../src/codex/codex-types.js";
 
 const credentialResolver = async () => ({
   providerAccountId: "acct_codex",
   secret: "sk-codex-test-123"
 });
 
-function createSseResponseBody(events: string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const body = events.join("\n\n") + "\n\n";
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(encoder.encode(body));
-      controller.close();
-    }
-  });
-}
-
 describe("CodexAdapter", () => {
-  it("translates OpenAI-compatible delta SSE events into the normalized contract", async () => {
-    const requestLog: { body?: unknown; headers?: HeadersInit; url?: string } = {};
-    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      requestLog.url = input.toString();
-      requestLog.body = init?.body;
-      requestLog.headers = init?.headers;
-
-      return new Response(
-        createSseResponseBody([
-          'data: {"choices":[{"delta":{"role":"assistant"},"index":0}],"id":"chatcmpl_1","model":"codex-default","object":"chat.completion.chunk"}',
-          'data: {"choices":[{"delta":{"content":"Hello "},"index":0}],"id":"chatcmpl_1","model":"codex-default","object":"chat.completion.chunk"}',
-          'data: {"choices":[{"delta":{"content":"world"},"index":0,"finish_reason":"stop"}],"id":"chatcmpl_1","model":"codex-default","object":"chat.completion.chunk"}',
-          "data: [DONE]"
-        ]),
-        {
-          headers: { "content-type": "text/event-stream" },
-          status: 200
-        }
-      );
-    }) as unknown as typeof fetch;
-
+  it("runs codex exec --json and normalizes agent message events", async () => {
+    const commandLog: CodexCommandInput[] = [];
     const adapter = new CodexAdapter({
-      baseUrl: "https://api.codex.test",
       credentialResolver,
-      fetchImpl
+      cwd: "/tmp/miaochat-codex",
+      executable: "/usr/local/bin/codex",
+      model: "gpt-5.3-codex",
+      runner: async (input) => {
+        commandLog.push(input);
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: [
+            JSON.stringify({
+              thread_id: "thread_1",
+              type: "thread.started"
+            }),
+            JSON.stringify({
+              item: {
+                text: "Hello from Codex",
+                type: "agent_message"
+              },
+              type: "item.completed"
+            }),
+            JSON.stringify({
+              type: "turn.completed",
+              usage: { input_tokens: 10, output_tokens: 3 }
+            })
+          ].join("\n")
+        };
+      }
     });
     const result = await adapter.execute({
       agentId: "agent_codex",
+      context: {
+        pinnedMessages: [{ content: "Prefer small diffs.", id: "pin_1", role: "user" }]
+      },
       conversationId: "conv_codex",
       credentialId: "cred_codex",
+      instructions: "你是实现 AI 同事。",
       message: "Build the slice",
       provider: "codex",
       workspaceId: "workspace_codex"
     });
 
-    expect(result.finalContent).toBe("Hello world");
+    expect(result.finalContent).toBe("Hello from Codex");
     expect(result.streamEvents.map((event) => event.kind)).toEqual([
       "conversation.message.started",
       "conversation.message.delta",
-      "conversation.message.delta",
       "conversation.message.completed"
     ]);
-    expect(requestLog.url).toBe("https://api.codex.test/v1/chat/completions");
-    expect(JSON.parse(String(requestLog.body))).toEqual(
-      expect.objectContaining({
-        agent_id: "agent_codex",
-        conversation_id: "conv_codex",
-        model: "codex-default",
-        stream: true,
-        workspace_id: "workspace_codex"
-      })
-    );
-    expect(requestLog.headers).toEqual(
-      expect.objectContaining({
-        Authorization: "Bearer sk-codex-test-123",
-        "Codex-Account": "acct_codex"
-      })
-    );
+    expect(commandLog).toHaveLength(1);
+    expect(commandLog[0]?.command).toBe("/usr/local/bin/codex");
+    expect(commandLog[0]?.args).toEqual([
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--sandbox",
+      "workspace-write",
+      "--ask-for-approval",
+      "never",
+      "--model",
+      "gpt-5.3-codex",
+      "-"
+    ]);
+    expect(commandLog[0]?.cwd).toBe("/tmp/miaochat-codex");
+    expect(commandLog[0]?.env.CODEX_API_KEY).toBe("sk-codex-test-123");
+    expect(commandLog[0]?.stdin).toContain("Prefer small diffs.");
+    expect(commandLog[0]?.stdin).toContain("Build the slice");
   });
 
   it("rejects requests without a BYOK credentialId", async () => {
     const adapter = new CodexAdapter({
       credentialResolver,
-      fetchImpl: (async () => new Response("", { status: 200 })) as unknown as typeof fetch
+      runner: async () => ({ exitCode: 0, stderr: "", stdout: "" })
     });
 
     await expect(
@@ -94,15 +94,17 @@ describe("CodexAdapter", () => {
         provider: "codex",
         workspaceId: "workspace_codex"
       })
-    ).rejects.toThrow(/credentialId/);
+    ).rejects.toThrow(/Codex API Key/);
   });
 
-  it("translates non-2xx upstream responses to provider_failed errors", async () => {
-    const fetchImpl = (async () =>
-      new Response("rate limited", { status: 429 })) as unknown as typeof fetch;
+  it("translates missing CLI failures into missing_runtime adapter errors", async () => {
     const adapter = new CodexAdapter({
       credentialResolver,
-      fetchImpl
+      runner: async () => ({
+        exitCode: 127,
+        stderr: "spawn codex ENOENT",
+        stdout: ""
+      })
     });
 
     await expect(
@@ -114,6 +116,6 @@ describe("CodexAdapter", () => {
         provider: "codex",
         workspaceId: "workspace_codex"
       })
-    ).rejects.toMatchObject({ code: "provider_failed" });
+    ).rejects.toMatchObject({ code: "missing_runtime" });
   });
 });

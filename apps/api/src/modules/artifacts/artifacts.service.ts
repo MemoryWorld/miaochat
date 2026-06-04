@@ -16,6 +16,7 @@ import {
   createArtifactInputSchema,
   messageIdSchema,
   prepareArtifactUploadInputSchema,
+  runtimeDiffArtifactDraftSchema,
   runtimeMarkdownArtifactDraftSchema,
   workspaceIdSchema,
   type Artifact,
@@ -44,6 +45,12 @@ type ArtifactRow = {
 
 const createRuntimeMarkdownArtifactInputSchema = z.object({
   draft: runtimeMarkdownArtifactDraftSchema,
+  messageId: messageIdSchema,
+  workspaceId: workspaceIdSchema.optional()
+});
+
+const createRuntimeDiffArtifactInputSchema = z.object({
+  draft: runtimeDiffArtifactDraftSchema,
   messageId: messageIdSchema,
   workspaceId: workspaceIdSchema.optional()
 });
@@ -195,6 +202,38 @@ export class ArtifactsService {
     return this.create({
       id: upload.artifactId,
       kind: "attachment",
+      messageId: parsed.messageId,
+      mimeType: parsed.draft.mimeType,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      title: parsed.draft.title,
+      workspaceId
+    }, actorUserId);
+  }
+
+  async createRuntimeDiffArtifact(
+    input: unknown,
+    actorUserId: string
+  ): Promise<Artifact> {
+    const parsed = createRuntimeDiffArtifactInputSchema.parse(input);
+    const workspaceId = parsed.workspaceId ?? "default-workspace";
+
+    await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "send",
+      workspaceId
+    });
+
+    const upload = await this.storageService.writeRuntimeDiffArtifact({
+      draft: parsed.draft,
+      messageId: parsed.messageId,
+      workspaceId
+    });
+
+    return this.create({
+      id: upload.artifactId,
+      kind: "diff",
       messageId: parsed.messageId,
       mimeType: parsed.draft.mimeType,
       previewUrl: upload.previewUrl,

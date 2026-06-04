@@ -395,6 +395,14 @@ ${visibleMarkdown}
           mimeType: "text/markdown",
           title: "Release notes",
           type: "markdown"
+        },
+        {
+          fileName: "codex-runtime.diff",
+          mimeType: "text/x-diff",
+          patch: "diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+          title: "Codex 代码 Diff",
+          truncated: false,
+          type: "diff"
         }
       ],
       finalContent: "已生成发布说明。",
@@ -445,11 +453,24 @@ ${visibleMarkdown}
         messageId: string;
         workspaceId: string;
       }) => {
-        operations.push(`artifact:${input.messageId}`);
+        operations.push(`markdown:${input.messageId}`);
         return {
           id: "artifact_release_notes",
           messageId: input.messageId,
           previewUrl: "http://storage.local/release-notes.md",
+          title: input.draft.title
+        };
+      }),
+      createRuntimeDiffArtifact: vi.fn(async (input: {
+        draft: { title: string };
+        messageId: string;
+        workspaceId: string;
+      }) => {
+        operations.push(`diff:${input.messageId}`);
+        return {
+          id: "artifact_codex_diff",
+          messageId: input.messageId,
+          previewUrl: "http://storage.local/codex-runtime.diff",
           title: input.draft.title
         };
       })
@@ -534,6 +555,21 @@ ${visibleMarkdown}
       },
       "user_owner"
     );
+    expect(artifactsService.createRuntimeDiffArtifact).toHaveBeenCalledWith(
+      {
+        draft: {
+          fileName: "codex-runtime.diff",
+          mimeType: "text/x-diff",
+          patch: "diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+          title: "Codex 代码 Diff",
+          truncated: false,
+          type: "diff"
+        },
+        messageId: assistantMessage?.id,
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
     const artifactStatusEvents = publishedEvents.filter(
       (event): event is {
         kind: "conversation.status";
@@ -588,11 +624,40 @@ ${visibleMarkdown}
           label: "orchestrator.aggregated",
           state: "succeeded"
         })
+      },
+      {
+        kind: "conversation.status",
+        payload: expect.objectContaining({
+          artifactStatus: expect.objectContaining({
+            messageId: assistantMessage?.id,
+            status: "creating",
+            title: "Codex 代码 Diff",
+            type: "diff"
+          }),
+          label: "orchestrator.running",
+          state: "running"
+        })
+      },
+      {
+        kind: "conversation.status",
+        payload: expect.objectContaining({
+          artifactStatus: expect.objectContaining({
+            artifactId: "artifact_codex_diff",
+            messageId: assistantMessage?.id,
+            previewUrl: "http://storage.local/codex-runtime.diff",
+            status: "created",
+            title: "Codex 代码 Diff",
+            type: "diff"
+          }),
+          label: "orchestrator.aggregated",
+          state: "succeeded"
+        })
       }
     ]);
     expect(operations).toEqual([
       `create:${assistantMessage?.id}`,
-      `artifact:${assistantMessage?.id}`
+      `markdown:${assistantMessage?.id}`,
+      `diff:${assistantMessage?.id}`
     ]);
   });
 

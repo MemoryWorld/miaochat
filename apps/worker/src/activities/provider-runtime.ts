@@ -6,7 +6,10 @@ import { type ClientConfig, Client } from "pg";
 
 import { ProviderCredentialError } from "./activity-errors.js";
 
-type PhaseARuntimeProvider = Extract<ProviderId, "deepseek" | "hermes" | "mock" | "openclaw">;
+type PhaseARuntimeProvider = Extract<
+  ProviderId,
+  "claude-code" | "codex" | "deepseek" | "hermes" | "mock" | "openclaw"
+>;
 
 type RuntimeCredentialRow = {
   encrypted_secret: string;
@@ -79,15 +82,12 @@ export async function createPhaseARuntimeExecution(input: {
 export function assertPhaseARuntimeProvider(provider: ProviderId): PhaseARuntimeProvider {
   switch (provider) {
     case "mock":
+    case "claude-code":
+    case "codex":
     case "deepseek":
     case "hermes":
     case "openclaw":
       return provider;
-    case "codex":
-    case "claude-code":
-      throw new Error(
-        `Provider ${provider} is outside the current AI colleague runtime baseline.`
-      );
   }
 }
 

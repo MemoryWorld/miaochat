@@ -1,37 +1,40 @@
 # Provider Acceptance
 
-This document describes how AgentHub Release 1 validates real-provider behavior
-for `Hermes`, `OpenClaw`, `Codex`, and `Claude Code` without relying on mock
-adapters for core acceptance.
+This document describes how AgentHub Release 1 validates provider behavior for
+`Hermes`, `OpenClaw`, `Codex`, and `Claude Code` without claiming fake
+endpoints as real platform integrations.
 
 ## Test Strategy
 
-Each provider has a dedicated end-to-end spec under `tests/e2e/`:
+Each provider has a dedicated spec under `tests/e2e/`:
 
 - `tests/e2e/hermes-real.spec.ts`
 - `tests/e2e/openclaw-real.spec.ts`
 - `tests/e2e/codex-real.spec.ts`
 - `tests/e2e/claude-code-real.spec.ts`
 
-Each spec:
+Hermes and OpenClaw keep local streaming replay specs because their current
+acceptance path still targets HTTP-compatible shims or SaaS endpoints. Codex
+and Claude Code are different: they do not use a Miaochat-owned fake HTTP
+endpoint. Their adapters now target the official execution surfaces:
 
-1. Boots a local Node `http` server bound to `127.0.0.1` on a random port.
-2. Configures the corresponding adapter with `baseUrl` set to that local
-   server.
-3. Replays the provider-specific streaming protocol shape:
-   - Hermes streams NDJSON records (`started`, `delta`, `completed`).
-   - OpenClaw streams JSON-encoded SSE events (`chunk`, `completed`, `[DONE]`).
-   - Codex streams OpenAI-compatible SSE chunks with
-     `choices[0].delta.content` deltas terminated by `[DONE]`.
-   - Claude Code streams named SSE events (`content_block_delta`,
-     `message_stop`).
-4. Asserts that the adapter normalizes the upstream traffic into the shared
-   `conversation.message.{started,delta,completed}` contract and records the
-   correct authorization headers.
+- `ClaudeCodeAdapter` calls the official `@anthropic-ai/claude-agent-sdk`
+  `query()` interface.
+- `CodexAdapter` launches the official `codex exec --json` non-interactive CLI
+  path and parses JSONL events.
 
-The local HTTP server is intentionally used instead of an in-process JS mock so
-the adapter exercises the full network stack including HTTP/1.1 framing,
-streaming response bodies, and header normalization.
+The package-level adapter unit specs use injected SDK/CLI runners so local CI can
+verify parsing, credential injection, and stream normalization without spending
+real provider credits. The `tests/e2e/claude-code-real.spec.ts` and
+`tests/e2e/codex-real.spec.ts` files are honest gated acceptance specs: they are
+skipped unless `AGENTHUB_REAL_PROVIDER_MODE=staging` and the corresponding real
+secret is present.
+
+After a Claude Code or Codex run, the adapter captures a non-empty tracked-file
+`git diff` from the configured runtime workspace and returns it as a runtime
+`diff` artifact. The API persists that artifact as `kind: "diff"` with
+`text/x-diff` content, so the chat timeline can show the coding agent's actual
+patch instead of only a prose summary.
 
 ## Phase A Hermes And OpenClaw Runtime Baseline
 
@@ -135,12 +138,11 @@ Important caveats from that slice:
 - `OpenClaw` was isolated under `~/.openclaw-miaochat`; `Hermes` reused the
   developer's `~/.hermes` state during that local slice.
 
-## Replacing Local Endpoints With Real SaaS
+## Replacing Local Endpoints With Real Providers
 
-To run these specs against the real provider SaaS instead of the in-process
-server, set `AGENTHUB_REAL_PROVIDER_MODE=staging` and provide the following
-environment variables before running `pnpm test:e2e:providers` or
-`pnpm test:e2e:staging`:
+To run the real-provider specs, set `AGENTHUB_REAL_PROVIDER_MODE=staging` and
+provide the following environment variables before running
+`pnpm test:e2e:providers` or `pnpm test:e2e:staging`:
 
 | Variable | Description |
 | --- | --- |
@@ -150,16 +152,18 @@ environment variables before running `pnpm test:e2e:providers` or
 | `OPENCLAW_BASE_URL` | Real OpenClaw base URL |
 | `OPENCLAW_REAL_ACCOUNT_ID` | Rotated OpenClaw BYOK account id for staging |
 | `OPENCLAW_REAL_SECRET` | Rotated OpenClaw BYOK secret for staging |
-| `CODEX_BASE_URL` | Real Codex base URL |
-| `CODEX_REAL_ACCOUNT_ID` | Rotated Codex BYOK account id for staging |
-| `CODEX_REAL_SECRET` | Rotated Codex BYOK secret for staging |
-| `CLAUDE_CODE_BASE_URL` | Real Claude Code base URL |
-| `CLAUDE_CODE_REAL_ACCOUNT_ID` | Rotated Claude Code BYOK account id for staging |
-| `CLAUDE_CODE_REAL_SECRET` | Rotated Claude Code BYOK secret for staging |
+| `CODEX_REAL_SECRET` | OpenAI/Codex API key used only for the `codex exec` process environment |
+| `CODEX_EXECUTABLE` | Optional path to the `codex` CLI when it is not on `PATH` |
+| `CODEX_MODEL` | Optional Codex model override |
+| `CLAUDE_CODE_REAL_SECRET` | Anthropic API key used only for the Claude Agent SDK call |
+| `CLAUDE_CODE_EXECUTABLE` | Optional path to a separately installed `claude` binary |
+| `CLAUDE_CODE_MODEL` | Optional Claude model override |
 
-The specs keep the local replay server as the default path. In staging mode
-they switch to the real SaaS endpoints, skip request-body introspection, and
-assert only the shared adapter contract:
+Hermes and OpenClaw specs keep the local replay server as the default path. In
+staging mode they switch to the configured upstream endpoints. Codex and Claude
+Code specs do not have a local replay default; they are skipped until real
+credentials are supplied. In staging mode all four specs assert the shared
+adapter contract:
 
 - non-empty final content
 - `conversation.message.started`
@@ -216,6 +220,7 @@ specs under `packages/agent-adapters/test/`. They cover:
 - Non-2xx upstream responses (mapped to `provider_failed`).
 - Structured upstream error payloads (preserving the `retryable` hint from the
   upstream payload when present).
+- Missing Codex CLI or Claude Agent SDK runtime (mapped to `missing_runtime`).
 
 The retry policy in `apps/worker/src/activities/retry-policy.ts` is exercised
 through `apps/worker/test/retry-policy.spec.ts` and is wired to the four real
@@ -228,7 +233,9 @@ against a live upstream path:
 
 - `Hermes` and `OpenClaw`: either the documented Xiaomi MiMo shim path above or
   direct staging SaaS endpoints
-- `Codex` and `Claude Code`: staging SaaS endpoints
+- `Codex`: official `codex exec --json` with a valid `CODEX_REAL_SECRET`
+- `Claude Code`: official Claude Agent SDK with a valid
+  `CLAUDE_CODE_REAL_SECRET`
 
 The browser BYOK suite must also pass for all four providers with valid
 staging credentials.

@@ -22,6 +22,7 @@ export * from "./mock/group-adapter.js";
 export * from "./openclaw/openclaw-adapter.js";
 export * from "./openclaw/openclaw-types.js";
 export * from "./shared/streaming-client.js";
+export * from "./shared/workspace-diff.js";
 
 export type AgentExecutionMode = "direct" | "group";
 

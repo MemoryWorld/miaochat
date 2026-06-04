@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ClaudeCodeAdapter,
+  CodexAdapter,
   HermesAdapter,
   MockDirectAdapter,
   MockGroupAdapter,
@@ -54,6 +56,30 @@ describe("createAgentAdapter", () => {
     });
 
     expect(adapter).toBeInstanceOf(OpenClawAdapter);
+  });
+
+  it("returns the Claude Code adapter when runtime streaming options are provided", () => {
+    const adapter = createAgentAdapter({
+      executionMode: "direct",
+      provider: "claude-code",
+      streamingClientOptions: {
+        credentialResolver
+      }
+    });
+
+    expect(adapter).toBeInstanceOf(ClaudeCodeAdapter);
+  });
+
+  it("returns the Codex adapter when runtime streaming options are provided", () => {
+    const adapter = createAgentAdapter({
+      executionMode: "group",
+      provider: "codex",
+      streamingClientOptions: {
+        credentialResolver
+      }
+    });
+
+    expect(adapter).toBeInstanceOf(CodexAdapter);
   });
 
   it("rejects real providers when runtime streaming options are missing", () => {

@@ -1,139 +1,36 @@
-import { createServer, type Server } from "node:http";
-import { AddressInfo } from "node:net";
-
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { CodexAdapter } from "../../packages/agent-adapters/src/codex/codex-adapter.js";
 import {
   assertStagingProviderResult,
-  getStagingProviderRuntimeConfig,
-  isStagingRealProviderMode
+  getStagingProviderCredential,
+  shouldRunStagingProvider
 } from "./real-provider-test-support.js";
 
-let server: Server;
-let baseUrl: string;
-let providerAccountId: string;
-let secret: string;
-const requestLog: { body?: string; headers?: Record<string, string | string[] | undefined>; url?: string } = {};
-const stagingMode = isStagingRealProviderMode();
+const shouldRun = shouldRunStagingProvider("codex");
 
-beforeAll(async () => {
-  if (stagingMode) {
-    const config = getStagingProviderRuntimeConfig("codex");
-    baseUrl = config.baseUrl;
-    providerAccountId = config.providerAccountId;
-    secret = config.secret;
-    return;
-  }
-
-  server = createServer((request, response) => {
-    requestLog.url = request.url ?? "";
-    requestLog.headers = request.headers;
-    let bodyChunks = "";
-    request.on("data", (chunk) => {
-      bodyChunks += chunk.toString("utf8");
-    });
-    request.on("end", () => {
-      requestLog.body = bodyChunks;
-      response.writeHead(200, {
-        "cache-control": "no-cache",
-        "content-type": "text/event-stream"
-      });
-      response.write(
-        `data: ${JSON.stringify({
-          choices: [{ delta: { role: "assistant" }, index: 0 }],
-          id: "chatcmpl_real",
-          model: "codex-default",
-          object: "chat.completion.chunk"
-        })}\n\n`
-      );
-      response.write(
-        `data: ${JSON.stringify({
-          choices: [{ delta: { content: "Hello " }, index: 0 }],
-          id: "chatcmpl_real",
-          model: "codex-default",
-          object: "chat.completion.chunk"
-        })}\n\n`
-      );
-      response.write(
-        `data: ${JSON.stringify({
-          choices: [
-            {
-              delta: { content: "from Codex" },
-              finish_reason: "stop",
-              index: 0
-            }
-          ],
-          id: "chatcmpl_real",
-          model: "codex-default",
-          object: "chat.completion.chunk"
-        })}\n\n`
-      );
-      response.end("data: [DONE]\n\n");
-    });
-  });
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-
-  const address = server.address() as AddressInfo;
-  baseUrl = `http://127.0.0.1:${address.port}`;
-  providerAccountId = "acct_codex_real";
-  secret = "sk-codex-real-123";
-});
-
-afterAll(async () => {
-  if (stagingMode) {
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-});
-
-describe("Codex real-provider acceptance", () => {
-  it("completes one end-to-end conversation through the real Codex adapter", async () => {
+describe.skipIf(!shouldRun)("Codex real-provider acceptance", () => {
+  it("runs one real codex exec turn through the Miaochat adapter", async () => {
+    const credential = getStagingProviderCredential("codex");
     const adapter = new CodexAdapter({
-      baseUrl,
-      credentialResolver: async () => ({
-        providerAccountId,
-        secret
-      })
+      credentialResolver: async () => credential,
+      executable: process.env.CODEX_EXECUTABLE,
+      model: process.env.CODEX_MODEL,
+      sandbox: "read-only"
     });
+
     const result = await adapter.execute({
       agentId: "agent_codex_real",
       conversationId: "conv_codex_real",
       credentialId: "cred_codex_real",
-      message: "Build the slice",
+      instructions:
+        "你是 Miaochat 的 Codex 真实接入验收同事。不要修改文件，只用一句中文回答。",
+      message: "请回复：Codex 已通过真实 CLI 接入。",
       provider: "codex",
       workspaceId: "workspace_codex_real"
     });
 
-    if (stagingMode) {
-      assertStagingProviderResult(result);
-      return;
-    }
-
-    expect(result.finalContent).toBe("Hello from Codex");
-    expect(result.streamEvents.map((event) => event.kind)).toEqual([
-      "conversation.message.started",
-      "conversation.message.delta",
-      "conversation.message.delta",
-      "conversation.message.completed"
-    ]);
-    expect(requestLog.url).toBe("/v1/chat/completions");
-    expect(JSON.parse(requestLog.body ?? "{}")).toEqual(
-      expect.objectContaining({
-        agent_id: "agent_codex_real",
-        conversation_id: "conv_codex_real",
-        model: "codex-default",
-        stream: true,
-        workspace_id: "workspace_codex_real"
-      })
-    );
-    expect(requestLog.headers?.authorization).toBe(`Bearer ${secret}`);
-    expect(requestLog.headers?.["codex-account"]).toBe(providerAccountId);
+    assertStagingProviderResult(result);
+    expect(result.finalContent).toContain("Codex");
   });
 });

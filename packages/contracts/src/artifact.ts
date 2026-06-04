@@ -6,6 +6,7 @@ import { messageIdSchema } from "./message.js";
 
 export const runtimeMarkdownArtifactMaxMarkdownChars = 64 * 1024;
 export const runtimeMarkdownArtifactToolName = "artifact.markdown.create" as const;
+export const runtimeDiffArtifactMaxPatchChars = 128 * 1024;
 
 export const artifactSchema = z.object({
   id: z.string().min(1),
@@ -80,8 +81,23 @@ export const runtimeMarkdownArtifactDraftSchema = z.object({
   type: z.literal("markdown")
 });
 
+export const runtimeDiffArtifactDraftSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).regex(/\.diff$/i),
+  mimeType: z.literal("text/x-diff").default("text/x-diff"),
+  patch: z.string()
+    .min(1)
+    .max(runtimeDiffArtifactMaxPatchChars)
+    .refine((value) => value.trim().length > 0, {
+      message: "Diff patch cannot be blank."
+    }),
+  title: z.string().trim().min(1).max(120),
+  truncated: z.boolean().default(false),
+  type: z.literal("diff")
+});
+
 export const runtimeArtifactDraftSchema = z.discriminatedUnion("type", [
-  runtimeMarkdownArtifactDraftSchema
+  runtimeMarkdownArtifactDraftSchema,
+  runtimeDiffArtifactDraftSchema
 ]);
 
 export const runtimeArtifactStatusSchema = z.object({
@@ -91,7 +107,7 @@ export const runtimeArtifactStatusSchema = z.object({
   previewUrl: z.string().url().optional(),
   status: z.enum(["creating", "created", "failed"]),
   title: z.string().trim().min(1).max(120),
-  type: z.literal("markdown")
+  type: z.enum(["diff", "markdown"])
 });
 
 export type Artifact = z.infer<typeof artifactSchema>;
@@ -107,3 +123,4 @@ export type RuntimeArtifactStatus = z.infer<typeof runtimeArtifactStatusSchema>;
 export type RuntimeMarkdownArtifactDraft = z.infer<
   typeof runtimeMarkdownArtifactDraftSchema
 >;
+export type RuntimeDiffArtifactDraft = z.infer<typeof runtimeDiffArtifactDraftSchema>;
