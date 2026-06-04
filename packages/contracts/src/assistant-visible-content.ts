@@ -138,6 +138,10 @@ function containsInternalCollaborationArtifact(value: unknown): boolean {
     return true;
   }
 
+  if (isInternalOutputEnvelope(value) || isInternalOutputIntent(value)) {
+    return true;
+  }
+
   return Object.values(value).some(containsInternalCollaborationArtifact);
 }
 
@@ -162,6 +166,20 @@ function isInternalHandoffControl(value: Record<string, unknown>): boolean {
     hasTarget &&
     hasAcceptanceCriteria &&
     (hasConstraints || hasGoal || hasArtifactHint)
+  );
+}
+
+function isInternalOutputEnvelope(value: Record<string, unknown>): boolean {
+  const intents = value.intents;
+
+  return Array.isArray(intents) && intents.some(containsInternalCollaborationArtifact);
+}
+
+function isInternalOutputIntent(value: Record<string, unknown>): boolean {
+  return (
+    value.type === "tool_plan" ||
+    value.type === "memory_candidate" ||
+    value.type === "no_action"
   );
 }
 
@@ -228,6 +246,9 @@ function findInternalArtifactCandidate(
 
 function containsInternalArtifactMarkers(raw: string): boolean {
   const hasHandoffType = /["']type["']\s*:\s*["']handoff_request["']/.test(raw);
+  const hasOutputIntentType =
+    /["']type["']\s*:\s*["'](?:tool_plan|memory_candidate|no_action)["']/.test(raw);
+  const hasEnvelopeShape = /["']intents["']\s*:/.test(raw);
   const targetMarkerCount = [
     /["']targetAgentId["']\s*:/.test(raw),
     /["']targetParticipantId["']\s*:/.test(raw),
@@ -242,6 +263,8 @@ function containsInternalArtifactMarkers(raw: string): boolean {
   ].filter(Boolean).length;
 
   return (
+    (hasEnvelopeShape && (hasHandoffType || hasOutputIntentType)) ||
+    hasOutputIntentType ||
     (hasHandoffType && (targetMarkerCount > 0 || controlMarkerCount > 0)) ||
     (targetMarkerCount > 0 && controlMarkerCount >= 2)
   );

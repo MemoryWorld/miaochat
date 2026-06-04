@@ -83,11 +83,36 @@ export function ArtifactEditDispatcher({
     <div data-testid="artifact-edit-dispatcher">
       <CodeEditorOverlay
         artifactId={artifact.id}
+        error={error}
         initialContent={initialContent}
+        language={languageFromArtifact(artifact)}
         onCancel={onClose}
         onSave={handleSave}
+        title={artifact.title}
       />
-      {error ? <p role="alert">{error}</p> : null}
     </div>
   );
+}
+
+function languageFromArtifact(artifact: Artifact): string {
+  const mimeType = artifact.mimeType.toLowerCase();
+  const title = artifact.title.toLowerCase();
+
+  if (mimeType.includes("markdown") || title.endsWith(".md")) {
+    return "markdown";
+  }
+
+  if (mimeType.includes("json") || title.endsWith(".json")) {
+    return "json";
+  }
+
+  if (artifact.kind === "diff" || mimeType.includes("diff") || title.endsWith(".diff")) {
+    return "diff";
+  }
+
+  if (mimeType.includes("html") || title.endsWith(".html")) {
+    return "html";
+  }
+
+  return "plaintext";
 }

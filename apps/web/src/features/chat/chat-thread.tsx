@@ -1,7 +1,8 @@
 import {
   sanitizeAssistantVisibleContent,
   type Artifact,
-  type Message
+  type Message,
+  type RuntimeArtifactStatus
 } from "@agenthub/contracts";
 
 import { DeployStatusCard } from "../artifacts/deploy-status-card";
@@ -10,6 +11,7 @@ import { ChatMessage } from "./chat-message";
 
 type ChatThreadProps = {
   artifactsByMessageId: Record<string, Artifact[]>;
+  artifactStatusesByMessageId?: Record<string, RuntimeArtifactStatus[]>;
   connectionState: "connecting" | "error" | "idle" | "open";
   deployments: DeployCommandResult[];
   isPinningMessageId: string | null;
@@ -18,19 +20,24 @@ type ChatThreadProps = {
     id: string;
   } | null;
   messages: Message[];
+  onApplyDiffMessage?: (message: Message) => void;
   onPinMessage: (messageId: string) => Promise<void>;
+  onQuoteMessage?: (quoted: string) => void;
   onReplyMessage?: (message: Message) => void;
   resolveAuthorLabel?: (message: Message) => string | undefined;
 };
 
 export function ChatThread({
   artifactsByMessageId,
+  artifactStatusesByMessageId = {},
   connectionState,
   deployments,
   isPinningMessageId,
   liveAssistantMessage,
   messages,
+  onApplyDiffMessage,
   onPinMessage,
+  onQuoteMessage,
   onReplyMessage,
   resolveAuthorLabel
 }: ChatThreadProps) {
@@ -102,13 +109,16 @@ export function ChatThread({
             <ChatMessage
               authorLabel={authorLabel}
               artifacts={artifactsByMessageId[message.id] ?? []}
+              artifactStatuses={artifactStatusesByMessageId[message.id] ?? []}
               isGroupedWithPrevious={isGroupedWithPrevious}
               isPinDisabled={isPinningMessageId !== null && isPinningMessageId !== message.id}
               isPinPending={isPinningMessageId === message.id}
               message={message}
+              onApplyDiff={onApplyDiffMessage}
               onPin={() => {
                 void onPinMessage(message.id);
               }}
+              onQuote={onQuoteMessage}
               onReply={onReplyMessage}
             />
           </div>

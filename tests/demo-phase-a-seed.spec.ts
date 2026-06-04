@@ -25,15 +25,15 @@ describe("phase a demo seed", () => {
     expect(firstRun.conversations).toEqual([
       expect.objectContaining({
         mode: "direct",
-        title: "Phase A Direct Conversation"
+        title: "单人协作频道"
       }),
       expect.objectContaining({
         mode: "group",
-        title: "Phase A Group Orchestration"
+        title: "方案落地协作频道"
       }),
       expect.objectContaining({
         mode: "direct",
-        title: "Phase A Artifact Review"
+        title: "交付物评审频道"
       })
     ]);
     expect(firstRun.credentials).toEqual([
@@ -57,7 +57,7 @@ describe("phase a demo seed", () => {
         workspaceCount: 1
       })
     );
-    expect(formatPhaseADemoSeedReport(firstRun)).toContain("Phase A Direct Conversation");
+    expect(formatPhaseADemoSeedReport(firstRun)).toContain("单人协作频道");
   });
 
   it("skips provider binding when demo credentials are absent and points the operator to setup", async () => {

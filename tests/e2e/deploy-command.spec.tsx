@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "../../apps/web/src/app/page";
 
 const fetchMock = vi.fn<typeof fetch>();
+const apiBaseUrl = "/api";
 
 class MockEventSource {
   static instances: MockEventSource[] = [];
@@ -136,37 +137,83 @@ describe("deploy command", () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
 
-      if (url === "http://localhost:3001/workspaces") {
+      if (url === `${apiBaseUrl}/auth/session`) {
+        return jsonResponse(
+          {
+            authenticated: true,
+            user: {
+              displayName: "Deploy Owner",
+              email: "deploy-owner@example.com",
+              id: "user_owner"
+            }
+          },
+          200
+        );
+      }
+
+      if (url === `${apiBaseUrl}/workspaces`) {
         return jsonResponse([workspace], 200);
       }
 
-      if (url === "http://localhost:3001/conversations?workspaceId=default-workspace") {
+      if (url === `${apiBaseUrl}/conversations?workspaceId=default-workspace`) {
         return jsonResponse([], 200);
       }
 
-      if (url === `http://localhost:3001/conversations?workspaceId=${workspace.id}`) {
+      if (url === `${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`) {
+        return jsonResponse([], 200);
+      }
+
+      if (url === `${apiBaseUrl}/conversations?workspaceId=${workspace.id}`) {
         return jsonResponse([conversation], 200);
+      }
+
+      if (url === `${apiBaseUrl}/credentials/model-connections?workspaceId=${workspace.id}`) {
+        return jsonResponse(
+          [
+            {
+              id: "model_conn_deploy",
+              kind: "deepseek_api",
+              label: "DeepSeek 工作区连接",
+              model: "deepseek-chat",
+              preset: "balanced",
+              status: "valid",
+              workspaceId: workspace.id
+            }
+          ],
+          200
+        );
+      }
+
+      if (url === `${apiBaseUrl}/custom-agents?workspaceId=${workspace.id}`) {
+        return jsonResponse([], 200);
       }
 
       if (
         url ===
-        `http://localhost:3001/messages?conversationId=${conversation.id}&workspaceId=${workspace.id}`
+        `${apiBaseUrl}/messages?conversationId=${conversation.id}&workspaceId=${workspace.id}`
       ) {
         return jsonResponse([assistantMessage], 200);
       }
 
       if (
         url ===
-        `http://localhost:3001/artifacts?messageId=${assistantMessage.id}&workspaceId=${workspace.id}`
+        `${apiBaseUrl}/artifacts?messageId=${assistantMessage.id}&workspaceId=${workspace.id}`
       ) {
         return jsonResponse([artifact], 200);
       }
 
-      if (url === "http://localhost:3001/deploys" && init?.method === "POST") {
+      if (
+        url ===
+        `${apiBaseUrl}/coding-workflows?conversationId=${conversation.id}&workspaceId=${workspace.id}`
+      ) {
+        return jsonResponse(null, 200);
+      }
+
+      if (url === `${apiBaseUrl}/deploys` && init?.method === "POST") {
         return jsonResponse(deployResponse, 201);
       }
 
-      if (url === "http://localhost:3001/messages/send") {
+      if (url === `${apiBaseUrl}/messages/send`) {
         throw new Error("Regular message dispatch should not be used for /deploy.");
       }
 
@@ -175,26 +222,31 @@ describe("deploy command", () => {
 
     render(<HomePage />);
 
+    expect(
+      await screen.findByRole("heading", { name: "# Deploy conversation" })
+    ).toBeInTheDocument();
+    const messageInput = await screen.findByLabelText("消息内容");
     await waitFor(() => {
-      expect(screen.getAllByText("Deploy conversation").length).toBeGreaterThan(0);
+      expect(messageInput).toBeEnabled();
     });
 
-    fireEvent.change(screen.getByLabelText("Message"), {
+    fireEvent.change(messageInput, {
       target: {
         value: "/deploy Marketing Preview"
       }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "http://localhost:3001/deploys",
+        `${apiBaseUrl}/deploys`,
         expect.objectContaining({
           body: JSON.stringify({
             conversationId: conversation.id,
             targetName: "Marketing Preview",
             workspaceId: workspace.id
           }),
+          credentials: "include",
           headers: {
             "Content-Type": "application/json"
           },

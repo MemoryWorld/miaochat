@@ -7,6 +7,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   type OnModuleDestroy
 } from "@nestjs/common";
 
@@ -16,6 +17,8 @@ import {
   sanitizeAssistantVisibleStreamEvents,
   type Message,
   type ProviderId,
+  type RuntimeArtifactDraft,
+  type RuntimeArtifactStatus,
   type StreamEvent
 } from "@agenthub/contracts";
 import { mapToPublicError } from "@agenthub/domain";
@@ -33,6 +36,7 @@ import { MetricsRegistry } from "../../observability/metrics-registry.service.js
 import { StructuredLogger } from "../../observability/structured-logger.service.js";
 import { TraceRecorder } from "../../observability/trace-recorder.service.js";
 import { StreamBrokerService } from "../streams/stream-broker.service.js";
+import { ArtifactsService } from "../artifacts/artifacts.service.js";
 import { MessagesService } from "./messages.service.js";
 import { PinMessageService } from "./pin-message.service.js";
 
@@ -68,7 +72,10 @@ export class MessageDispatchService implements OnModuleDestroy {
     @Inject(RateLimitService) private readonly rateLimitService: RateLimitService,
     @Inject(StreamBrokerService) private readonly streamBroker: StreamBrokerService,
     @Inject(StructuredLogger) private readonly logger: StructuredLogger,
-    @Inject(TraceRecorder) private readonly traceRecorder: TraceRecorder
+    @Inject(TraceRecorder) private readonly traceRecorder: TraceRecorder,
+    @Optional()
+    @Inject(ArtifactsService)
+    private readonly artifactsService?: ArtifactsService
   ) {}
 
   async onModuleDestroy(): Promise<void> {
@@ -217,6 +224,7 @@ export class MessageDispatchService implements OnModuleDestroy {
         taskQueue: process.env.WORKER_TASK_QUEUE ?? "agenthub-default",
         workflowId: `single-agent:${input.conversationId}:${randomUUID()}`
       })) as {
+        artifacts?: RuntimeArtifactDraft[];
         finalContent: string;
         streamEvents: StreamEvent[];
       };
@@ -235,6 +243,11 @@ export class MessageDispatchService implements OnModuleDestroy {
         ownerUserId: input.ownerUserId,
         sourceAgentId: input.agentId,
         workspaceId: input.workspaceId
+      });
+      await this.persistRuntimeArtifacts({
+        artifacts: execution.artifacts,
+        message: assistantMessage,
+        ownerUserId: input.ownerUserId
       });
       await this.multiAgentHarnessService.recordDirectExecution({
         assistantMessage,
@@ -371,6 +384,11 @@ export class MessageDispatchService implements OnModuleDestroy {
           sourceAgentId: result.agentId,
           workspaceId: input.workspaceId
         });
+        await this.persistRuntimeArtifacts({
+          artifacts: visibleResult.artifacts,
+          message: assistantMessage,
+          ownerUserId: input.ownerUserId
+        });
         assistantMessages.push({
           message: assistantMessage,
           result: visibleResult
@@ -498,6 +516,145 @@ export class MessageDispatchService implements OnModuleDestroy {
     // The dispatch routine already records metrics and logs failures internally.
     void dispatchPromise.catch(() => {});
   }
+
+  private async persistRuntimeArtifacts(input: {
+    artifacts?: RuntimeArtifactDraft[];
+    message: Message;
+    ownerUserId: string;
+  }): Promise<void> {
+    if (!input.artifacts || input.artifacts.length === 0) {
+      return;
+    }
+
+    for (const artifact of input.artifacts) {
+      if (artifact.type !== "markdown") {
+        continue;
+      }
+
+      if (!this.artifactsService) {
+        this.publishRuntimeArtifactStatus({
+          error: "Artifact service is unavailable.",
+          message: input.message,
+          status: "failed",
+          title: artifact.title,
+          type: artifact.type
+        });
+        continue;
+      }
+
+      this.publishRuntimeArtifactStatus({
+        message: input.message,
+        status: "creating",
+        title: artifact.title,
+        type: artifact.type
+      });
+
+      try {
+        const persistedArtifact = await this.artifactsService.createRuntimeMarkdownArtifact({
+          draft: artifact,
+          messageId: input.message.id,
+          workspaceId: input.message.workspaceId
+        }, input.ownerUserId);
+        this.publishRuntimeArtifactStatus({
+          artifactId: persistedArtifact.id,
+          message: input.message,
+          previewUrl: persistedArtifact.previewUrl ?? undefined,
+          status: "created",
+          title: artifact.title,
+          type: artifact.type
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.logger.warn("messages.runtime_artifact.persist_failed", {
+          artifactType: artifact.type,
+          error: errorMessage,
+          messageId: input.message.id,
+          workspaceId: input.message.workspaceId
+        });
+        this.publishRuntimeArtifactStatus({
+          error: truncateRuntimeArtifactError(errorMessage),
+          message: input.message,
+          status: "failed",
+          title: artifact.title,
+          type: artifact.type
+        });
+      }
+    }
+  }
+
+  private publishRuntimeArtifactStatus(input: {
+    artifactId?: string;
+    error?: string;
+    message: Message;
+    previewUrl?: string;
+    status: RuntimeArtifactStatus["status"];
+    title: string;
+    type: RuntimeArtifactStatus["type"];
+  }): void {
+    const artifactStatus: RuntimeArtifactStatus = {
+      ...(input.artifactId ? { artifactId: input.artifactId } : {}),
+      ...(input.error ? { error: input.error } : {}),
+      messageId: input.message.id,
+      ...(input.previewUrl ? { previewUrl: input.previewUrl } : {}),
+      status: input.status,
+      title: input.title,
+      type: input.type
+    };
+
+    this.streamBroker.publish({
+      conversationId: input.message.conversationId,
+      event: {
+        kind: "conversation.status",
+        payload: {
+          artifactStatus,
+          failures: [],
+          label: runtimeArtifactStatusLabel(input.status),
+          state: runtimeArtifactStatusState(input.status),
+          successfulAgentCount: input.status === "created" ? 1 : 0,
+          summary: runtimeArtifactStatusSummary(artifactStatus),
+          totalAgentCount: 1
+        }
+      },
+      workspaceId: input.message.workspaceId
+    });
+  }
+}
+
+function runtimeArtifactStatusLabel(status: RuntimeArtifactStatus["status"]) {
+  switch (status) {
+    case "created":
+      return "orchestrator.aggregated" as const;
+    case "failed":
+      return "orchestrator.partial_failure" as const;
+    case "creating":
+      return "orchestrator.running" as const;
+  }
+}
+
+function runtimeArtifactStatusState(status: RuntimeArtifactStatus["status"]) {
+  switch (status) {
+    case "created":
+      return "succeeded" as const;
+    case "failed":
+      return "failed" as const;
+    case "creating":
+      return "running" as const;
+  }
+}
+
+function runtimeArtifactStatusSummary(status: RuntimeArtifactStatus): string {
+  switch (status.status) {
+    case "created":
+      return "Markdown 文件已生成：" + status.title;
+    case "failed":
+      return "Markdown 文件生成失败：" + status.title;
+    case "creating":
+      return "正在生成 Markdown 文件：" + status.title;
+  }
+}
+
+function truncateRuntimeArtifactError(error: string): string {
+  return error.length > 500 ? error.slice(0, 497) + "..." : error;
 }
 
 function formatGroupFailureNotice(state: OrchestratorState): string {

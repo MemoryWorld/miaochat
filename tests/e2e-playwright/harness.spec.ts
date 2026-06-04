@@ -10,19 +10,24 @@ function json(body: unknown, status = 200) {
   };
 }
 
+function apiPath(route: { request(): { url(): string } }): string {
+  const url = new URL(route.request().url());
+  return `${url.pathname}${url.search}`;
+}
+
 test("posts a revision and dispatches a follow-up message when the user saves", async ({
   page
 }) => {
-  await page.route("http://localhost:3001/**", async (route) => {
-    const url = route.request().url();
+  await page.route("**/api/**", async (route) => {
+    const url = apiPath(route);
     if (
       url ===
-      "http://localhost:3001/artifacts/art_code/revisions?workspaceId=default-workspace"
+      "/api/artifacts/art_code/revisions?workspaceId=default-workspace"
     ) {
       await route.fulfill(json({ id: "rev_1", revisionIndex: 1 }, 201));
       return;
     }
-    if (url === "http://localhost:3001/messages/send") {
+    if (url === "/api/messages/send") {
       await route.fulfill(json({ id: "msg_1" }, 202));
       return;
     }
@@ -41,9 +46,9 @@ test("loads conversations, pins one, and includes the pinned indicator after ref
 }) => {
   let pinned = false;
 
-  await page.route("http://localhost:3001/**", async (route) => {
-    const url = route.request().url();
-    if (url.startsWith("http://localhost:3001/conversations?workspaceId=default-workspace")) {
+  await page.route("**/api/**", async (route) => {
+    const url = apiPath(route);
+    if (url.startsWith("/api/conversations?workspaceId=default-workspace")) {
       await route.fulfill(
         json([
           {
@@ -64,7 +69,7 @@ test("loads conversations, pins one, and includes the pinned indicator after ref
     }
     if (
       url ===
-      "http://localhost:3001/conversations/conv_1/pin?workspaceId=default-workspace"
+      "/api/conversations/conv_1/pin?workspaceId=default-workspace"
     ) {
       pinned = true;
       await route.fulfill(json({ id: "conv_1", isPinned: true }));
@@ -94,18 +99,18 @@ test("renders per-hunk apply / reject controls and reports the decision", async 
 });
 
 test("registers a heavy agent with bound tools", async ({ page }) => {
-  await page.route("http://localhost:3001/custom-agents", async (route) => {
+  await page.route("**/api/custom-agents", async (route) => {
     await route.fulfill(json({ id: "agent_heavy_1" }, 201));
   });
 
   await page.goto("/e2e/heavy-agent");
-  await page.getByLabel("Heavy agent name").fill("Release Driver");
-  await page.getByLabel("Heavy agent system prompt").fill("Drive the release pipeline.");
-  await page.getByRole("button", { name: "Add tool" }).click();
+  await page.getByLabel("AI 同事名称").fill("Release Driver");
+  await page.getByLabel("职责说明").fill("Drive the release pipeline.");
+  await page.getByRole("button", { name: "添加能力" }).click();
 
   await expect(page.locator('[data-binding-name="github"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Register heavy agent" }).click();
+  await page.getByRole("button", { name: "创建 AI 同事" }).click();
   await expect(page.getByTestId("heavy-agent-created")).toHaveText("agent_heavy_1");
 });
 
@@ -122,7 +127,7 @@ test("renders inline image and file safety states", async ({ page }) => {
 test("supports quote, copy, regenerate, and apply diff", async ({ page }) => {
   await installClipboardMock(page);
   await page.route(
-    "http://localhost:3001/messages/msg_1/regenerate?workspaceId=default-workspace",
+    "**/api/messages/msg_1/regenerate?workspaceId=default-workspace",
     async (route) => {
       await route.fulfill(
         json(
@@ -138,15 +143,15 @@ test("supports quote, copy, regenerate, and apply diff", async ({ page }) => {
   );
 
   await page.goto("/e2e/message-actions");
-  await page.getByRole("button", { name: "Copy" }).click();
-  await page.getByRole("button", { name: "Quote" }).click();
-  await page.getByRole("button", { name: "Apply diff" }).click();
-  await page.getByRole("button", { name: "Regenerate" }).click();
+  await page.getByRole("button", { name: "复制" }).click();
+  await page.getByRole("button", { name: "引用" }).click();
+  await page.getByRole("button", { name: "应用 Diff" }).click();
+  await page.getByRole("button", { name: "重新生成" }).click();
 
   await expect(page.getByTestId("quoted-value")).toHaveText("> Hello world\n\n");
   await expect(page.getByTestId("diff-applied-flag")).toHaveText("yes");
   await expect(page.getByTestId("message-actions-status")).toHaveText(
-    "Regeneration queued."
+    "已加入重新生成队列。"
   );
 });
 
@@ -155,9 +160,9 @@ test("posts user ids to the shares endpoint and reflects the new share entry", a
 }) => {
   let shared = false;
 
-  await page.route("http://localhost:3001/**", async (route) => {
-    const url = route.request().url();
-    if (url === "http://localhost:3001/conversations/conv_1/shares") {
+  await page.route("**/api/**", async (route) => {
+    const url = apiPath(route);
+    if (url === "/api/conversations/conv_1/shares") {
       if (route.request().method() === "POST") {
         shared = true;
         await route.fulfill(
@@ -204,7 +209,7 @@ test("posts user ids to the shares endpoint and reflects the new share entry", a
 
 test("renders the conversation access timeline of share and role events", async ({ page }) => {
   await page.route(
-    "http://localhost:3001/conversations/conv_1/access-review",
+    "**/api/conversations/conv_1/access-review",
     async (route) => {
       await route.fulfill(
         json([
@@ -243,9 +248,9 @@ test("renders the conversation access timeline of share and role events", async 
 test("renders the paginated audit log and loads the next page", async ({ page }) => {
   let secondPage = false;
 
-  await page.route("http://localhost:3001/**", async (route) => {
-    const url = route.request().url();
-    if (url === "http://localhost:3001/workspaces/default-workspace/audit") {
+  await page.route("**/api/**", async (route) => {
+    const url = apiPath(route);
+    if (url === "/api/workspaces/default-workspace/audit") {
       await route.fulfill(
         json({
           events: [
@@ -267,7 +272,7 @@ test("renders the paginated audit log and loads the next page", async ({ page })
       );
       return;
     }
-    if (url === "http://localhost:3001/workspaces/default-workspace/audit?cursor=evt_1") {
+    if (url === "/api/workspaces/default-workspace/audit?cursor=evt_1") {
       secondPage = true;
       await route.fulfill(
         json({
@@ -305,9 +310,9 @@ test("invites a member, surfaces the issued token, and reflects the pending invi
 }) => {
   let invited = false;
 
-  await page.route("http://localhost:3001/**", async (route) => {
-    const url = route.request().url();
-    if (url === "http://localhost:3001/workspaces/default-workspace/members") {
+  await page.route("**/api/**", async (route) => {
+    const url = apiPath(route);
+    if (url === "/api/workspaces/default-workspace/members") {
       await route.fulfill(
         json([
           {
@@ -321,7 +326,7 @@ test("invites a member, surfaces the issued token, and reflects the pending invi
       );
       return;
     }
-    if (url === "http://localhost:3001/workspaces/default-workspace/invitations") {
+    if (url === "/api/workspaces/default-workspace/invitations") {
       if (route.request().method() === "POST") {
         invited = true;
         await route.fulfill(

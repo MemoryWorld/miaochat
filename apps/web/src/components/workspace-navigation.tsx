@@ -115,7 +115,11 @@ export function WorkspaceNavigation() {
   );
 }
 
-function isNavItemActive(item: WorkspaceNavItem, pathname: string): boolean {
+function isNavItemActive(item: WorkspaceNavItem, pathname: string | null): boolean {
+  if (!pathname) {
+    return false;
+  }
+
   if (item.match === "exact") {
     return pathname === item.href;
   }

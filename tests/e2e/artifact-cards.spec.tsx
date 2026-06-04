@@ -2,13 +2,16 @@ import "@testing-library/jest-dom/vitest";
 
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import HomePage from "../../apps/web/src/app/page";
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/"
+}));
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -94,7 +97,7 @@ describe("artifact cards rendering", () => {
       kind: "attachment",
       messageId: assistantMessage.id,
       mimeType: "text/markdown",
-      previewUrl: null,
+      previewUrl: "http://localhost:9000/agenthub-dev/release-checklist.md",
       storageKey: "artifacts/default-workspace/msg_assistant_artifacts/release-checklist.md",
       title: "Release checklist",
       workspaceId: conversation.workspaceId
@@ -114,35 +117,63 @@ describe("artifact cards rendering", () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL): Promise<Response> => {
       const url = typeof input === "string" ? input : input.toString();
 
-      if (url === "http://localhost:3001/workspaces") {
+      if (url === attachmentArtifact.previewUrl) {
+        return new Response("# Release checklist\n\n- Verify artifact preview\n- Dispatch follow-up edit", {
+          headers: { "content-type": "text/markdown" },
+          status: 200
+        });
+      }
+
+      if (url.endsWith("/workspaces")) {
         return new Response(JSON.stringify([]), {
           headers: { "content-type": "application/json" },
           status: 200
         });
       }
 
-      if (url.startsWith("http://localhost:3001/conversations?")) {
+      if (url.includes("/credentials/model-connections?")) {
+        return new Response(JSON.stringify([{ id: "connection_valid", status: "valid" }]), {
+          headers: { "content-type": "application/json" },
+          status: 200
+        });
+      }
+
+      if (url.includes("/custom-agents?")) {
+        return new Response(JSON.stringify([]), {
+          headers: { "content-type": "application/json" },
+          status: 200
+        });
+      }
+
+      if (url.includes("/conversations?")) {
         return new Response(JSON.stringify([conversation]), {
           headers: { "content-type": "application/json" },
           status: 200
         });
       }
 
-      if (url.startsWith("http://localhost:3001/messages?")) {
+      if (url.includes("/messages?")) {
         return new Response(JSON.stringify([userMessage, assistantMessage]), {
           headers: { "content-type": "application/json" },
           status: 200
         });
       }
 
-      if (url.startsWith(`http://localhost:3001/artifacts?messageId=${userMessage.id}`)) {
+      if (url.includes(`/coding-workflows?`)) {
+        return new Response(JSON.stringify(null), {
+          headers: { "content-type": "application/json" },
+          status: 404
+        });
+      }
+
+      if (url.includes(`/artifacts?messageId=${userMessage.id}`)) {
         return new Response(JSON.stringify([]), {
           headers: { "content-type": "application/json" },
           status: 200
         });
       }
 
-      if (url.startsWith(`http://localhost:3001/artifacts?messageId=${assistantMessage.id}`)) {
+      if (url.includes(`/artifacts?messageId=${assistantMessage.id}`)) {
         return new Response(
           JSON.stringify([previewArtifact, attachmentArtifact, diffArtifact]),
           {
@@ -154,6 +185,8 @@ describe("artifact cards rendering", () => {
 
       throw new Error(`Unexpected fetch in artifact-card e2e test: ${url}`);
     });
+
+    const { default: HomePage } = await import("../../apps/web/src/app/page");
 
     render(<HomePage />);
 
@@ -176,9 +209,25 @@ describe("artifact cards rendering", () => {
     );
     expect(attachmentCard).toHaveAttribute("data-artifact-card", "attachment");
     expect(attachmentCard).toHaveTextContent("Release checklist");
-    expect(attachmentCard).toHaveTextContent(
+    expect(attachmentCard).toHaveTextContent("Open Markdown");
+    expect(attachmentCard).not.toHaveTextContent(
       "artifacts/default-workspace/msg_assistant_artifacts/release-checklist.md"
     );
+    expect(screen.getByLabelText("Open Release checklist Markdown in a new tab")).toHaveAttribute(
+      "href",
+      "http://localhost:9000/agenthub-dev/release-checklist.md"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Release checklist artifact workbench" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Dispatch follow-up edit/)).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText("Release checklist artifact workbench")).toHaveAttribute(
+      "data-artifact-workbench"
+    );
+    expect(screen.getByRole("button", { name: "Edit Release checklist through chat" })).toBeInTheDocument();
 
     const diffCard = await screen.findByLabelText("Diff artifact Release diff");
     expect(diffCard).toHaveAttribute("data-artifact-card", "diff");
@@ -190,4 +239,68 @@ describe("artifact cards rendering", () => {
     );
     expect(artifactGroup.children).toHaveLength(3);
   });
+
+
+  it("sandboxes embedded HTML previews", async () => {
+    const { ArtifactCard } = await import("../../apps/web/src/features/artifacts/artifact-card");
+
+    render(
+      <ArtifactCard
+        artifact={{
+          createdAt: new Date(),
+          id: "artifact_html_preview",
+          kind: "preview",
+          messageId: "msg_html_preview",
+          mimeType: "text/html",
+          previewUrl: "https://preview.example.test/report.html",
+          storageKey: "artifacts/default-workspace/msg_html_preview/report.html",
+          title: "Interactive report",
+          workspaceId: "default-workspace"
+        }}
+        conversationId="conv_1"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Interactive report artifact workbench" }));
+
+    const iframe = screen.getByTitle("Interactive report preview");
+    expect(iframe).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts");
+    expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
+  });
+
+  it("caps streamed text previews in the chat timeline", async () => {
+    const longMarkdown = `# Large artifact\n\n${"a".repeat(25000)}`;
+    fetchMock.mockResolvedValueOnce(
+      new Response(longMarkdown, {
+        headers: { "content-type": "text/markdown" },
+        status: 200
+      })
+    );
+
+    const { ArtifactCard } = await import("../../apps/web/src/features/artifacts/artifact-card");
+
+    render(
+      <ArtifactCard
+        artifact={{
+          createdAt: new Date(),
+          id: "artifact_large_markdown",
+          kind: "attachment",
+          messageId: "msg_large_markdown",
+          mimeType: "text/markdown",
+          previewUrl: "https://preview.example.test/large.md",
+          storageKey: "artifacts/default-workspace/msg_large_markdown/large.md",
+          title: "Large markdown",
+          workspaceId: "default-workspace"
+        }}
+        conversationId="conv_1"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Large markdown artifact workbench" }));
+
+    const inlinePreview = await screen.findByText(/preview truncated in the timeline/);
+    expect(inlinePreview).toHaveAttribute("data-artifact-inline-preview");
+    expect(inlinePreview.textContent?.length).toBeLessThan(17000);
+  });
+
 });

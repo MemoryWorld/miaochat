@@ -3,6 +3,7 @@ import type {
   OrchestratorFailure,
   OrchestratorStatusEventPayload,
   ProviderId,
+  RuntimeArtifactDraft,
   StreamEvent
 } from "@agenthub/contracts";
 
@@ -25,6 +26,7 @@ export type OrchestratorTarget = {
 };
 
 export type OrchestratorResult = OrchestratorTarget & {
+  artifacts?: RuntimeArtifactDraft[];
   finalContent: string;
   harnessOutput?: MultiAgentOutputEnvelope;
   roundIndex?: number;

@@ -40,6 +40,7 @@ describe("buildAgentHarnessInstructions", () => {
     expect(instructions).toContain("共享频道历史可作为上下文，但不能自动触发其他 AI 同事发言");
     expect(instructions).toContain("普通文本里的 @某位同事 不会触发交接");
     expect(instructions).toContain("handoff_request");
+    expect(instructions).toContain("artifact.markdown.create");
     expect(instructions).toContain("visibleMessage");
     expect(instructions).toContain("Prompt Manifest");
     expect(instructions).toContain("short_term_memory");

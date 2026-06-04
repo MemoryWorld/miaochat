@@ -4,6 +4,7 @@ import {
   type HarnessPromptManifestSection,
   type HarnessRuntimeContext,
   type HarnessRuntimeMode,
+  runtimeMarkdownArtifactToolName,
   type StatePointer
 } from "@agenthub/contracts";
 
@@ -189,6 +190,9 @@ function formatMultiAgentChannelContract(): string {
     "- 普通文本里的 @某位同事 不会触发交接；需要交接时必须提出 typed intent，而不是只在自然语言中点名。",
     "- 不要假设固定同事名称或固定工作流。频道中的同事名称、职责、触发策略由用户配置决定。",
     "- handoff_request 的 targetRoleKey 应匹配目标 AI 同事的用户配置角色 key / capability tag；不知道时优先使用 targetAgentId。",
+    `- 如果用户需要可下载的 Markdown 产物，可以在 envelope 的 tool_plan intent 中提出低风险工具调用 ${runtimeMarkdownArtifactToolName}。`,
+    '- 该工具唯一允许的 input 形状是 {"title":"标题","fileName":"可选文件名.md","markdown":"Markdown 正文"}；不要提出 docx/pdf/xlsx、shell、repo patch、部署或审批工具。',
+    "- JSON 只属于回复末尾的隐藏 envelope/visibleMessage 契约；用户可见正文必须是自然语言，不要把 JSON、tool_plan、no_action 或 memory_candidate 写进可见 prose。",
     "- 如果需要交接，请在回复末尾附加一个可解析 envelope，形如：",
     "{",
     '  "visibleMessage": "给用户看的简短说明",',

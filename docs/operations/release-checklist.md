@@ -20,6 +20,23 @@ and plan-first coding collaboration.
 - [ ] Human-recorded `3` minute demo video remains outstanding.
 - [ ] Staging and formal load-test evidence remain outstanding.
 
+## Original Competition Requirement Closeout
+
+- [x] Product design document is available under `docs/product/`.
+- [x] Technical documentation is available under `docs/architecture/`,
+      `docs/operations/`, and `docs/agent harnessdesign/`.
+- [x] Runnable demo paths are covered by the local web harness and demo runbooks.
+- [x] AI collaboration records are available under `ai/logs/`, `ai/specs/`,
+      `ai/tasks/`, and `ai/rules/`.
+- [x] Original IM, multi-agent, artifact, deploy, and P2 shell requirements are
+      tracked in `docs/product/original-requirements-coverage.md`.
+- [ ] Human-recorded `3` minute demo video remains the only original competition
+      deliverable outside the code/documentation repository.
+
+The unchecked real-key, staging, and full k6 items below remain release gates.
+They should not be reported as completed until a human operator runs the
+secrets-backed acceptance and records the capacity evidence.
+
 ## Production Target
 
 - Concurrent web clients: `3 000`

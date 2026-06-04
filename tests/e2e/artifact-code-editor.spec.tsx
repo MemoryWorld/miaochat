@@ -59,12 +59,12 @@ describe("artifact code editor", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "http://localhost:3001/artifacts/art_code/revisions?workspaceId=default-workspace",
+      "/api/artifacts/art_code/revisions?workspaceId=default-workspace",
       expect.objectContaining({ method: "POST" })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "http://localhost:3001/messages/send",
+      "/api/messages/send",
       expect.objectContaining({ method: "POST" })
     );
   });

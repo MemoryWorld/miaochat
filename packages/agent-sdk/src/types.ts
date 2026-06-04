@@ -2,6 +2,7 @@ import type {
   HarnessRuntimeContext,
   Message,
   ProviderId,
+  RuntimeArtifactDraft,
   StreamEvent
 } from "@agenthub/contracts";
 
@@ -24,6 +25,7 @@ export type AgentExecutionRequest = {
 };
 
 export type AgentExecutionResult = {
+  artifacts?: RuntimeArtifactDraft[];
   finalContent: string;
   streamEvents: StreamEvent[];
 };

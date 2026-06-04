@@ -3,7 +3,6 @@
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup, render, screen } from "@testing-library/react";
-import type * as NextNavigationModule from "next/navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TeammateDirectoryPage } from "./teammate-directory-page";
@@ -12,7 +11,7 @@ const fetchMock = vi.fn<typeof fetch>();
 const apiBaseUrl = "/api";
 
 vi.mock("next/navigation", async () => {
-  const actual = await vi.importActual<NextNavigationModule>("next/navigation");
+  const actual = await vi.importActual<Record<string, unknown>>("next/navigation");
   return {
     ...actual,
     usePathname: () => "/teammates"

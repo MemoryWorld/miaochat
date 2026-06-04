@@ -47,6 +47,8 @@ describe("ChatMessage", () => {
 
     expect(screen.getByRole("button", { name: "复制" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "回复" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "引用" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新生成" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /👍/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /✅/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /👀/ })).not.toBeInTheDocument();
@@ -116,6 +118,39 @@ describe("ChatMessage", () => {
     expect(container.textContent).not.toContain("acceptanceCriteria");
   });
 
+  it("renders runtime Markdown artifact statuses as plain UI text", () => {
+    const { container } = render(
+      <ChatMessage
+        artifacts={[]}
+        artifactStatuses={[
+          {
+            messageId: "msg_1",
+            status: "creating",
+            title: "实施计划",
+            type: "markdown"
+          },
+          {
+            error: "MinIO write failed.",
+            messageId: "msg_1",
+            status: "failed",
+            title: "失败报告",
+            type: "markdown"
+          }
+        ]}
+        isPinDisabled={false}
+        isPinPending={false}
+        message={makeMessage()}
+        onPin={vi.fn()}
+        onReply={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("正在生成 Markdown 文件：实施计划")).toBeInTheDocument();
+    expect(screen.getByText("Markdown 文件生成失败：失败报告")).toBeInTheDocument();
+    expect(screen.getByText("MinIO write failed.")).toBeInTheDocument();
+    expect(container.textContent).not.toContain("artifactStatus");
+    expect(container.textContent).not.toContain("messageId");
+  });
   it("keeps ordinary JSON examples visible", () => {
     const jsonExample = JSON.stringify({
       fields: ["name", "price"],

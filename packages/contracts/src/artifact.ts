@@ -4,6 +4,9 @@ import { artifactKindSchema } from "./database-enums.js";
 import { workspaceIdSchema } from "./conversation.js";
 import { messageIdSchema } from "./message.js";
 
+export const runtimeMarkdownArtifactMaxMarkdownChars = 64 * 1024;
+export const runtimeMarkdownArtifactToolName = "artifact.markdown.create" as const;
+
 export const artifactSchema = z.object({
   id: z.string().min(1),
   kind: artifactKindSchema,
@@ -53,8 +56,54 @@ export const artifactUploadTargetSchema = z.object({
   workspaceId: workspaceIdSchema
 });
 
+export const artifactMarkdownCreateToolInputSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).optional(),
+  markdown: z.string()
+    .min(1)
+    .max(runtimeMarkdownArtifactMaxMarkdownChars)
+    .refine((value) => value.trim().length > 0, {
+      message: "Markdown content cannot be blank."
+    }),
+  title: z.string().trim().min(1).max(120)
+});
+
+export const runtimeMarkdownArtifactDraftSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).regex(/\.md$/i),
+  markdown: z.string()
+    .min(1)
+    .max(runtimeMarkdownArtifactMaxMarkdownChars)
+    .refine((value) => value.trim().length > 0, {
+      message: "Markdown content cannot be blank."
+    }),
+  mimeType: z.literal("text/markdown").default("text/markdown"),
+  title: z.string().trim().min(1).max(120),
+  type: z.literal("markdown")
+});
+
+export const runtimeArtifactDraftSchema = z.discriminatedUnion("type", [
+  runtimeMarkdownArtifactDraftSchema
+]);
+
+export const runtimeArtifactStatusSchema = z.object({
+  artifactId: z.string().min(1).optional(),
+  error: z.string().trim().min(1).max(500).optional(),
+  messageId: messageIdSchema,
+  previewUrl: z.string().url().optional(),
+  status: z.enum(["creating", "created", "failed"]),
+  title: z.string().trim().min(1).max(120),
+  type: z.literal("markdown")
+});
+
 export type Artifact = z.infer<typeof artifactSchema>;
 export type ArtifactQuery = z.infer<typeof artifactQuerySchema>;
 export type ArtifactUploadTarget = z.infer<typeof artifactUploadTargetSchema>;
+export type ArtifactMarkdownCreateToolInput = z.infer<
+  typeof artifactMarkdownCreateToolInputSchema
+>;
 export type CreateArtifactInput = z.infer<typeof createArtifactInputSchema>;
 export type PrepareArtifactUploadInput = z.infer<typeof prepareArtifactUploadInputSchema>;
+export type RuntimeArtifactDraft = z.infer<typeof runtimeArtifactDraftSchema>;
+export type RuntimeArtifactStatus = z.infer<typeof runtimeArtifactStatusSchema>;
+export type RuntimeMarkdownArtifactDraft = z.infer<
+  typeof runtimeMarkdownArtifactDraftSchema
+>;

@@ -6,6 +6,7 @@ import type {
 import { sanitizeAssistantVisibleContent } from "@agenthub/contracts";
 import { parseMultiAgentOutputEnvelope } from "@agenthub/domain/multi-agent";
 
+import { extractRuntimeArtifactDrafts } from "./artifact-drafts.js";
 import {
   getWorkerLogger,
   getWorkerMetrics,
@@ -85,6 +86,10 @@ export async function dispatchAgentActivity(
     const parsedOutput = parseMultiAgentOutputEnvelope({
       rawText: execution.finalContent
     });
+    const artifacts =
+      parsedOutput.errors.length === 0
+        ? extractRuntimeArtifactDrafts(parsedOutput.envelope)
+        : [];
     const visibleContent =
       parsedOutput.errors.length === 0
         ? sanitizeAssistantVisibleContent(
@@ -103,6 +108,7 @@ export async function dispatchAgentActivity(
     return {
       agentId: input.agentId,
       agentName: input.agentName,
+      ...(artifacts.length > 0 ? { artifacts } : {}),
       finalContent: visibleContent,
       ...(parsedOutput.errors.length === 0
         ? { harnessOutput: parsedOutput.envelope }

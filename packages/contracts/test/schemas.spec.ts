@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   activityRoundSchema,
+  artifactMarkdownCreateToolInputSchema,
   artifactUploadTargetSchema,
   approvalRequestSchema,
   buildCodingKickoffMessage,
@@ -29,6 +30,7 @@ import {
   messageSchema,
   normalizeRecommendedRoleIds,
   prepareArtifactUploadInputSchema,
+  runtimeMarkdownArtifactDraftSchema,
   runtimeBackendCatalog,
   skillBindingSchema,
   streamEventSchema,
@@ -255,6 +257,13 @@ describe("@agenthub/contracts", () => {
             provider: "mock"
           }
         ],
+        artifactStatus: {
+          error: "MinIO write failed.",
+          messageId: "msg_artifact",
+          status: "failed",
+          title: "Release notes",
+          type: "markdown"
+        },
         label: "orchestrator.partial_failure",
         state: "failed",
         successfulAgentCount: 1,
@@ -264,6 +273,7 @@ describe("@agenthub/contracts", () => {
     });
 
     expect(parsed.payload.failures).toHaveLength(1);
+    expect(parsed.payload.artifactStatus?.status).toBe("failed");
     expect(parsed.payload.label).toBe("orchestrator.partial_failure");
   });
 
@@ -309,6 +319,33 @@ describe("@agenthub/contracts", () => {
 
     expect(uploadTarget.uploadMethod).toBe("PUT");
     expect(artifactInput.workspaceId).toBe("workspace_1");
+  });
+
+  it("supports runtime Markdown artifact draft contracts", () => {
+    const toolInput = artifactMarkdownCreateToolInputSchema.parse({
+      fileName: "notes.md",
+      markdown: "# Notes",
+      title: "Notes"
+    });
+    const draft = runtimeMarkdownArtifactDraftSchema.parse({
+      ...toolInput,
+      mimeType: "text/markdown",
+      type: "markdown"
+    });
+
+    expect(draft).toEqual({
+      fileName: "notes.md",
+      markdown: "# Notes",
+      mimeType: "text/markdown",
+      title: "Notes",
+      type: "markdown"
+    });
+    expect(
+      artifactMarkdownCreateToolInputSchema.safeParse({
+        markdown: "   ",
+        title: "Blank"
+      }).success
+    ).toBe(false);
   });
 
   it("supports the Phase D actor, inbox, activity, approval, memory, and skill contracts", () => {

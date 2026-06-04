@@ -6,6 +6,7 @@ import {
   codingWorkflowStateSchema,
   codingWorkflowTaskSchema
 } from "./coding-workflow.js";
+import { runtimeArtifactStatusSchema } from "./artifact.js";
 
 export const orchestratorStatusLabelSchema = z.enum([
   "coding.awaiting_user_confirmation",
@@ -45,6 +46,7 @@ export const orchestratorStatusStateSchema = z.enum([
 export const orchestratorStatusEventPayloadSchema = z.object({
   activeAgentName: z.string().min(1).optional(),
   approvalState: codingWorkflowApprovalStateSchema.optional(),
+  artifactStatus: runtimeArtifactStatusSchema.optional(),
   failures: z.array(orchestratorFailureSchema).default([]),
   label: orchestratorStatusLabelSchema,
   state: orchestratorStatusStateSchema,

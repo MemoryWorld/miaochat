@@ -10,7 +10,6 @@ import {
   within,
   waitFor
 } from "@testing-library/react";
-import type * as NextNavigationModule from "next/navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChannelShell } from "./channel-shell";
@@ -52,7 +51,7 @@ class MockEventSource {
 }
 
 vi.mock("next/navigation", async () => {
-  const actual = await vi.importActual<NextNavigationModule>("next/navigation");
+  const actual = await vi.importActual<Record<string, unknown>>("next/navigation");
   return {
     ...actual,
     usePathname: () => "/channels/conv_phase_d"
@@ -973,7 +972,7 @@ describe("ChannelShell", () => {
 
 function mockFetchByUrl(mapping: Record<string, Response[]>) {
   fetchMock.mockImplementation(async (input, init) => {
-    const url = typeof input === "string" ? input : input.url;
+    const url = toRequestUrl(input);
     const method = typeof init === "object" && init !== null && "method" in init ? init.method : "GET";
 
     if (
@@ -1050,6 +1049,14 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
 
     return queue.shift()!;
   });
+}
+
+function toRequestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  return input instanceof URL ? input.toString() : input.url;
 }
 
 function jsonResponse(status: number, body: unknown): Response {

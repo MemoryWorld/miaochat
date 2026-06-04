@@ -8,7 +8,6 @@ import {
   screen,
   waitFor
 } from "@testing-library/react";
-import type * as NextNavigationModule from "next/navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TeammateActorPage } from "./teammate-actor-page";
@@ -17,7 +16,7 @@ const fetchMock = vi.fn<typeof fetch>();
 const apiBaseUrl = "/api";
 
 vi.mock("next/navigation", async () => {
-  const actual = await vi.importActual<NextNavigationModule>("next/navigation");
+  const actual = await vi.importActual<Record<string, unknown>>("next/navigation");
   return {
     ...actual,
     usePathname: () => "/teammates/tech_lead"
@@ -226,7 +225,7 @@ describe("TeammateActorPage", () => {
 
 function mockFetchByUrl(mapping: Record<string, Response[]>) {
   fetchMock.mockImplementation(async (input) => {
-    const url = typeof input === "string" ? input : input.url;
+    const url = toRequestUrl(input);
     const queue = mapping[url];
 
     if (!queue || queue.length === 0) {
@@ -244,4 +243,12 @@ function jsonResponse(status: number, body: unknown): Response {
     },
     status
   });
+}
+
+function toRequestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  return input instanceof URL ? input.toString() : input.url;
 }

@@ -384,6 +384,378 @@ ${visibleMarkdown}
     );
   });
 
+  it("persists direct runtime Markdown artifacts after creating the assistant message", async () => {
+    const operations: string[] = [];
+    const publishedEvents: unknown[] = [];
+    const executeWorkflow = vi.fn(async () => ({
+      artifacts: [
+        {
+          fileName: "release-notes.md",
+          markdown: "# Release notes",
+          mimeType: "text/markdown",
+          title: "Release notes",
+          type: "markdown"
+        }
+      ],
+      finalContent: "已生成发布说明。",
+      streamEvents: []
+    }));
+    const createdAssistantMessages: Array<{ id: string; workspaceId: string }> = [];
+    const messagesService = {
+      create: vi.fn(async () => ({
+        content: "生成发布说明",
+        conversationId: "conv_direct",
+        id: "msg_user",
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        role: "user"
+      })),
+      createAssistantMessage: vi.fn(async (input: {
+        content: string;
+        conversationId: string;
+        id: string;
+        ownerUserId: string;
+        sourceAgentId: string | null;
+        workspaceId: string;
+      }) => {
+        operations.push(`create:${input.id}`);
+        createdAssistantMessages.push({
+          id: input.id,
+          workspaceId: input.workspaceId
+        });
+        return {
+          ...input,
+          authorUserId: null,
+          createdAt: new Date("2026-06-02T16:52:49.803Z"),
+          isPinned: false,
+          mentionedAgentIds: [],
+          mentionedUserIds: [],
+          role: "assistant" as const,
+          threadParentMessageId: null
+        };
+      }),
+      resolveSendAccess: vi.fn(async () => ({
+        ownerUserId: "user_owner",
+        permission: "comment"
+      }))
+    };
+    const artifactsService = {
+      createRuntimeMarkdownArtifact: vi.fn(async (input: {
+        draft: { title: string };
+        messageId: string;
+        workspaceId: string;
+      }) => {
+        operations.push(`artifact:${input.messageId}`);
+        return {
+          id: "artifact_release_notes",
+          messageId: input.messageId,
+          previewUrl: "http://storage.local/release-notes.md",
+          title: input.draft.title
+        };
+      })
+    };
+    const streamBroker = {
+      publish: vi.fn((input: { event: unknown }) => {
+        publishedEvents.push(input.event);
+      })
+    };
+    const service = new MessageDispatchService(
+      {
+        listConversationAgentsWithProviders: vi.fn(async () => [
+          {
+            agent_id: "agent_writer",
+            agent_name: "Writer",
+            capability_tags: [],
+            mode: "direct",
+            output_style: null,
+            provider: "mock",
+            scope_description: null,
+            system_prompt: null
+          }
+        ])
+      } as never,
+      messagesService as never,
+      { incrementCounter: vi.fn() } as never,
+      { recordDirectExecution: vi.fn(async () => undefined) } as never,
+      { loadConversationContext: vi.fn(async () => undefined) } as never,
+      { consume: vi.fn(async () => ({ allowed: true })) } as never,
+      streamBroker as never,
+      { error: vi.fn(), warn: vi.fn() } as never,
+      {
+        startSpan: vi.fn(() => ({
+          end: vi.fn(),
+          fail: vi.fn()
+        }))
+      } as never,
+      artifactsService as never
+    );
+
+    Object.assign(
+      service as unknown as {
+        getTemporalClient: () => Promise<{
+          workflow: {
+            execute: typeof executeWorkflow;
+          };
+        }>;
+      },
+      {
+        getTemporalClient: async () => ({
+          workflow: {
+            execute: executeWorkflow
+          }
+        })
+      }
+    );
+
+    await service.send(
+      {
+        content: "生成发布说明",
+        conversationId: "conv_direct",
+        role: "user",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const assistantMessage = createdAssistantMessages[0];
+    expect(assistantMessage).toBeDefined();
+    expect(artifactsService.createRuntimeMarkdownArtifact).toHaveBeenCalledWith(
+      {
+        draft: {
+          fileName: "release-notes.md",
+          markdown: "# Release notes",
+          mimeType: "text/markdown",
+          title: "Release notes",
+          type: "markdown"
+        },
+        messageId: assistantMessage?.id,
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    const artifactStatusEvents = publishedEvents.filter(
+      (event): event is {
+        kind: "conversation.status";
+        payload: {
+          artifactStatus: {
+            artifactId?: string;
+            messageId: string;
+            previewUrl?: string;
+            status: string;
+            title: string;
+            type: string;
+          };
+          label: string;
+          state: string;
+        };
+      } =>
+        Boolean(event) &&
+        typeof event === "object" &&
+        "kind" in event &&
+        event.kind === "conversation.status" &&
+        "payload" in event &&
+        Boolean(event.payload) &&
+        typeof event.payload === "object" &&
+        "artifactStatus" in event.payload
+    );
+
+    expect(artifactStatusEvents).toEqual([
+      {
+        kind: "conversation.status",
+        payload: expect.objectContaining({
+          artifactStatus: expect.objectContaining({
+            messageId: assistantMessage?.id,
+            status: "creating",
+            title: "Release notes",
+            type: "markdown"
+          }),
+          label: "orchestrator.running",
+          state: "running"
+        })
+      },
+      {
+        kind: "conversation.status",
+        payload: expect.objectContaining({
+          artifactStatus: expect.objectContaining({
+            artifactId: "artifact_release_notes",
+            messageId: assistantMessage?.id,
+            previewUrl: "http://storage.local/release-notes.md",
+            status: "created",
+            title: "Release notes",
+            type: "markdown"
+          }),
+          label: "orchestrator.aggregated",
+          state: "succeeded"
+        })
+      }
+    ]);
+    expect(operations).toEqual([
+      `create:${assistantMessage?.id}`,
+      `artifact:${assistantMessage?.id}`
+    ]);
+  });
+
+  it("persists group runtime Markdown artifacts on the producing assistant message", async () => {
+    const operations: string[] = [];
+    const executeWorkflow = vi.fn(async () => ({
+      finalContent: "Collaborative reply",
+      state: {
+        failures: [],
+        results: [
+          {
+            agentId: "agent_planner",
+            agentName: "Planner",
+            artifacts: [
+              {
+                fileName: "implementation-plan.md",
+                markdown: "# Plan",
+                mimeType: "text/markdown",
+                title: "Implementation plan",
+                type: "markdown"
+              }
+            ],
+            finalContent: "计划已整理。",
+            provider: "mock"
+          }
+        ]
+      },
+      streamEvents: []
+    }));
+    const createdAssistantMessages: Array<{ id: string; workspaceId: string }> = [];
+    const messagesService = {
+      create: vi.fn(async () => ({
+        content: "请协作推进计划",
+        conversationId: "conv_group",
+        id: "msg_user",
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        role: "user"
+      })),
+      createAssistantMessage: vi.fn(async (input: {
+        content: string;
+        conversationId: string;
+        id: string;
+        ownerUserId: string;
+        sourceAgentId: string | null;
+        workspaceId: string;
+      }) => {
+        operations.push(`create:${input.id}`);
+        createdAssistantMessages.push({
+          id: input.id,
+          workspaceId: input.workspaceId
+        });
+        return {
+          ...input,
+          authorUserId: null,
+          createdAt: new Date("2026-06-02T16:52:49.803Z"),
+          isPinned: false,
+          mentionedAgentIds: [],
+          mentionedUserIds: [],
+          role: "assistant" as const,
+          threadParentMessageId: null
+        };
+      }),
+      resolveSendAccess: vi.fn(async () => ({
+        ownerUserId: "user_owner",
+        permission: "comment"
+      }))
+    };
+    const artifactsService = {
+      createRuntimeMarkdownArtifact: vi.fn(async (input: {
+        draft: { title: string };
+        messageId: string;
+        workspaceId: string;
+      }) => {
+        operations.push(`artifact:${input.messageId}`);
+        return {
+          id: "artifact_implementation_plan",
+          messageId: input.messageId,
+          title: input.draft.title
+        };
+      })
+    };
+    const service = new MessageDispatchService(
+      {
+        listConversationAgentsWithProviders: vi.fn(async () => [
+          {
+            agent_id: "agent_planner",
+            agent_name: "Planner",
+            capability_tags: ["role:planning"],
+            mode: "group",
+            output_style: null,
+            provider: "mock",
+            scope_description: null,
+            system_prompt: null
+          }
+        ])
+      } as never,
+      messagesService as never,
+      { incrementCounter: vi.fn() } as never,
+      { recordGroupExecution: vi.fn(async () => undefined) } as never,
+      { loadConversationContext: vi.fn(async () => undefined) } as never,
+      { consume: vi.fn(async () => ({ allowed: true })) } as never,
+      { publish: vi.fn() } as never,
+      { error: vi.fn(), warn: vi.fn() } as never,
+      {
+        startSpan: vi.fn(() => ({
+          end: vi.fn(),
+          fail: vi.fn()
+        }))
+      } as never,
+      artifactsService as never
+    );
+
+    Object.assign(
+      service as unknown as {
+        getTemporalClient: () => Promise<{
+          workflow: {
+            execute: typeof executeWorkflow;
+          };
+        }>;
+      },
+      {
+        getTemporalClient: async () => ({
+          workflow: {
+            execute: executeWorkflow
+          }
+        })
+      }
+    );
+
+    await service.send(
+      {
+        content: "请协作推进计划",
+        conversationId: "conv_group",
+        role: "user",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const assistantMessage = createdAssistantMessages[0];
+    expect(assistantMessage).toBeDefined();
+    expect(artifactsService.createRuntimeMarkdownArtifact).toHaveBeenCalledWith(
+      {
+        draft: {
+          fileName: "implementation-plan.md",
+          markdown: "# Plan",
+          mimeType: "text/markdown",
+          title: "Implementation plan",
+          type: "markdown"
+        },
+        messageId: assistantMessage?.id,
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    expect(operations).toEqual([
+      `create:${assistantMessage?.id}`,
+      `artifact:${assistantMessage?.id}`
+    ]);
+  });
+
   it("publishes sanitized completed events for each persisted group assistant message", async () => {
     const visiblePlannerReply = "Planner reply ready.";
     const visibleBuilderReply = "Builder reply ready.";

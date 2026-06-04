@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { ChannelMember, ConversationAgentMember } from "@agenthub/contracts";
 
@@ -15,7 +15,9 @@ type ChatSendInput = {
 
 type ChatComposerProps = {
   disabled?: boolean;
+  draftContent?: string | null;
   members?: ChannelMember[];
+  onDraftApplied?: () => void;
   onSend: (input: ChatSendInput) => Promise<boolean | void>;
   onTyping?: () => void;
   participants?: ConversationAgentMember[];
@@ -23,7 +25,9 @@ type ChatComposerProps = {
 
 export function ChatComposer({
   disabled = false,
+  draftContent = null,
   members,
+  onDraftApplied,
   onSend,
   onTyping,
   participants = []
@@ -35,6 +39,16 @@ export function ChatComposer({
   const mentionMembers = members ?? participants.map(mapParticipantToMember);
   const mentionableMembers = mentionMembers.filter(isMentionableMember);
   const showActionSuggestions = content.trimStart().startsWith("/");
+
+  useEffect(() => {
+    if (draftContent === null) {
+      return;
+    }
+
+    setContent(draftContent);
+    setSelectedMemberIds([]);
+    onDraftApplied?.();
+  }, [draftContent, onDraftApplied]);
 
   return (
     <form

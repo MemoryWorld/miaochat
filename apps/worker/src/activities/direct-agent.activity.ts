@@ -1,10 +1,13 @@
 import type { AgentExecutionContext, AgentExecutionResult } from "@agenthub/agent-sdk";
+import { createMessageLifecycleEvents } from "@agenthub/agent-sdk";
 import {
   sanitizeAssistantVisibleContent,
   sanitizeAssistantVisibleStreamEvents,
   type ProviderId
 } from "@agenthub/contracts";
+import { parseMultiAgentOutputEnvelope } from "@agenthub/domain/multi-agent";
 
+import { extractRuntimeArtifactDrafts } from "./artifact-drafts.js";
 import {
   buildAgentHarnessInstructions,
   buildAgentHarnessRuntimeContext,
@@ -66,10 +69,34 @@ export async function executeDirectAgentActivity(
       workspaceId: input.workspaceId
     });
 
+    const parsedOutput = parseMultiAgentOutputEnvelope({
+      rawText: execution.finalContent
+    });
+    const artifacts =
+      parsedOutput.errors.length === 0
+        ? extractRuntimeArtifactDrafts(parsedOutput.envelope)
+        : [];
+    const visibleContent =
+      parsedOutput.errors.length === 0
+        ? sanitizeAssistantVisibleContent(
+            parsedOutput.envelope.visibleMessage.trim() || execution.finalContent
+          )
+        : sanitizeAssistantVisibleContent(execution.finalContent);
+    const hasControlEnvelope =
+      parsedOutput.errors.length === 0 && parsedOutput.envelope.intents.length > 0;
+    const streamEvents =
+      hasControlEnvelope || (parsedOutput.errors.length === 0 && parsedOutput.extractedJson)
+        ? createMessageLifecycleEvents({
+            finalContent: visibleContent,
+            messageId: input.conversationId
+          })
+        : sanitizeAssistantVisibleStreamEvents(execution.streamEvents);
+
     return {
       ...execution,
-      finalContent: sanitizeAssistantVisibleContent(execution.finalContent),
-      streamEvents: sanitizeAssistantVisibleStreamEvents(execution.streamEvents)
+      ...(artifacts.length > 0 ? { artifacts } : {}),
+      finalContent: visibleContent,
+      streamEvents
     };
   } catch (error) {
     throw toTemporalActivityFailure(error);

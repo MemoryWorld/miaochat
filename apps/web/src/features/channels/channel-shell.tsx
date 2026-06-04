@@ -27,6 +27,10 @@ import {
 import { AppShell } from "../../components/app-shell";
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
+import {
+  mergeRuntimeArtifactStatus,
+  type ArtifactStatusesByMessageId
+} from "../chat/artifact-status";
 import { ChatComposer } from "../chat/chat-composer";
 import { ChatThread } from "../chat/chat-thread";
 import { CodingWorkflowPanel } from "../chat/coding-workflow-panel";
@@ -58,6 +62,8 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
   const activeTab = channelTabs.some((tab) => tab.id === initialTab) ? initialTab : "chat";
   const isWorkspaceReady = !isLoading && Boolean(activeWorkspaceId);
   const [artifactsByMessageId, setArtifactsByMessageId] = useState<Record<string, Artifact[]>>({});
+  const [artifactStatusesByMessageId, setArtifactStatusesByMessageId] =
+    useState<ArtifactStatusesByMessageId>({});
   const [busyDecision, setBusyDecision] = useState<CodingWorkflowDecision | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPinningMessageId, setIsPinningMessageId] = useState<string | null>(null);
@@ -243,6 +249,8 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     setChannelSendUnavailableMessage(null);
     setErrorMessage(null);
     setLiveAssistantMessage(null);
+    setArtifactsByMessageId({});
+    setArtifactStatusesByMessageId({});
     setThreadDrawer(null);
   }, [channelId]);
 
@@ -292,6 +300,18 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
             userMessageId: current?.userMessageId
           }));
           void messages.refresh();
+          return;
+        }
+
+        if (event.kind === "conversation.status" && event.payload.artifactStatus) {
+          const { artifactStatus } = event.payload;
+          setArtifactStatusesByMessageId((current) =>
+            mergeRuntimeArtifactStatus(current, artifactStatus)
+          );
+
+          if (artifactStatus.status === "created") {
+            void refreshArtifactsForMessageIds([artifactStatus.messageId]);
+          }
         }
       });
     }
@@ -729,11 +749,15 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
   }
 
   async function refreshArtifactsForMessages(nextMessages: Message[]): Promise<void> {
-    if (!activeWorkspaceId || nextMessages.length === 0) {
+    await refreshArtifactsForMessageIds(nextMessages.map((message) => message.id));
+  }
+
+  async function refreshArtifactsForMessageIds(messageIds: string[]): Promise<void> {
+    if (!activeWorkspaceId || messageIds.length === 0) {
       return;
     }
 
-    const uniqueMessageIds = Array.from(new Set(nextMessages.map((message) => message.id)));
+    const uniqueMessageIds = Array.from(new Set(messageIds));
     const entries = await Promise.all(
       uniqueMessageIds.map(async (messageId) => {
         try {
@@ -761,7 +785,6 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       ...Object.fromEntries(entries)
     }));
   }
-
   function handleTyping(): void {
     void fetch(`${apiBaseUrl}/streams/${channelId}/presence`, {
       body: JSON.stringify({
@@ -1060,6 +1083,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
 
             <ChatThread
               artifactsByMessageId={artifactsByMessageId}
+              artifactStatusesByMessageId={artifactStatusesByMessageId}
               connectionState={stream.connectionState}
               deployments={[]}
               isPinningMessageId={isPinningMessageId}
@@ -1072,6 +1096,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
             {threadDrawer && !isChannelUnavailable ? (
               <ThreadDrawer
                 artifactsByMessageId={artifactsByMessageId}
+                artifactStatusesByMessageId={artifactStatusesByMessageId}
                 channelMembers={visibleChannelMembers}
                 isSending={isSending}
                 onClose={() => setThreadDrawer(null)}
@@ -1144,6 +1169,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
 
 function ThreadDrawer({
   artifactsByMessageId,
+  artifactStatusesByMessageId,
   channelMembers,
   isSending,
   onClose,
@@ -1153,6 +1179,7 @@ function ThreadDrawer({
   thread
 }: {
   artifactsByMessageId: Record<string, Artifact[]>;
+  artifactStatusesByMessageId: ArtifactStatusesByMessageId;
   channelMembers: ChannelMember[];
   isSending: boolean;
   onClose: () => void;
@@ -1199,6 +1226,7 @@ function ThreadDrawer({
         <>
           <ChatThread
             artifactsByMessageId={artifactsByMessageId}
+            artifactStatusesByMessageId={artifactStatusesByMessageId}
             connectionState="idle"
             deployments={[]}
             isPinningMessageId={null}

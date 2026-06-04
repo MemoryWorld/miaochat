@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module.js";
+import { ArtifactsModule } from "../artifacts/artifacts.module.js";
 import { ChannelsModule } from "../channels/channels.module.js";
 import { ConversationsModule } from "../conversations/conversations.module.js";
 import { DatabaseModule } from "../database/database.module.js";
@@ -17,6 +18,7 @@ import { PinMessageService } from "./pin-message.service.js";
 @Module({
   controllers: [MessagesController],
   imports: [
+    ArtifactsModule,
     AuthModule,
     ChannelsModule,
     ConversationsModule,

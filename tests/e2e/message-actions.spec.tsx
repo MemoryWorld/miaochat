@@ -59,27 +59,27 @@ describe("message actions", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
     await waitFor(() =>
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("Hello world")
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Quote" }));
+    fireEvent.click(screen.getByRole("button", { name: "引用" }));
     expect(onQuote).toHaveBeenCalledWith("> Hello world\n\n");
 
-    fireEvent.click(screen.getByRole("button", { name: "Apply diff" }));
+    fireEvent.click(screen.getByRole("button", { name: "应用 Diff" }));
     expect(onApplyDiff).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
     await waitFor(() => {
       expect(screen.getByTestId("message-actions-status")).toHaveTextContent(
-        "Regeneration queued."
+        "已加入重新生成队列。"
       );
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/messages/msg_1/regenerate?workspaceId=default-workspace",
-      expect.objectContaining({ method: "POST" })
+      "/api/messages/msg_1/regenerate?workspaceId=default-workspace",
+      expect.objectContaining({ credentials: "include", method: "POST" })
     );
   });
 });

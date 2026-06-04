@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Buffer } from "node:buffer";
 
 import { Injectable } from "@nestjs/common";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
@@ -8,8 +9,15 @@ import {
   artifactUploadTargetSchema,
   prepareArtifactUploadInputSchema,
   type ArtifactUploadTarget,
-  type PrepareArtifactUploadInput
+  type PrepareArtifactUploadInput,
+  type RuntimeMarkdownArtifactDraft
 } from "@agenthub/contracts";
+
+type RuntimeArtifactWriteResult = {
+  artifactId: string;
+  previewUrl: string;
+  storageKey: string;
+};
 
 @Injectable()
 export class StorageService {
@@ -65,6 +73,41 @@ export class StorageService {
       uploadUrl,
       workspaceId: parsed.workspaceId ?? "default-workspace"
     });
+  }
+
+  async writeRuntimeMarkdownArtifact(input: {
+    draft: RuntimeMarkdownArtifactDraft;
+    messageId: string;
+    workspaceId: string;
+  }): Promise<RuntimeArtifactWriteResult> {
+    const artifactId = randomUUID();
+    const storageKey = buildStorageKey({
+      artifactId,
+      fileName: input.draft.fileName,
+      messageId: input.messageId,
+      workspaceId: input.workspaceId
+    });
+    const command = new PutObjectCommand({
+      Body: Buffer.from(input.draft.markdown, "utf8"),
+      Bucket: this.bucket,
+      ContentType: input.draft.mimeType,
+      Key: storageKey,
+      Metadata: {
+        artifactId,
+        artifactKind: "attachment",
+        messageId: input.messageId,
+        runtimeArtifactType: input.draft.type,
+        workspaceId: input.workspaceId
+      }
+    });
+
+    await this.s3.send(command);
+
+    return {
+      artifactId,
+      previewUrl: buildObjectUrl(this.endpoint, this.bucket, storageKey),
+      storageKey
+    };
   }
 }
 

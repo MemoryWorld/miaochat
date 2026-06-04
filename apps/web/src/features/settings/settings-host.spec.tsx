@@ -9,7 +9,6 @@ import {
   screen,
   waitFor
 } from "@testing-library/react";
-import type * as NextNavigationModule from "next/navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsHost } from "./settings-host";
@@ -18,7 +17,7 @@ const fetchMock = vi.fn<typeof fetch>();
 const apiBaseUrl = "/api";
 
 vi.mock("next/navigation", async () => {
-  const actual = await vi.importActual<NextNavigationModule>("next/navigation");
+  const actual = await vi.importActual<Record<string, unknown>>("next/navigation");
   return {
     ...actual,
     usePathname: () => "/settings"
@@ -228,7 +227,7 @@ describe("SettingsHost", () => {
 
 function mockFetchByUrl(mapping: Record<string, Response[]>) {
   fetchMock.mockImplementation(async (input) => {
-    const url = typeof input === "string" ? input : input.url;
+    const url = toRequestUrl(input);
     const queue = mapping[url];
 
     if (!queue || queue.length === 0) {
@@ -249,8 +248,13 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 function countFetches(url: string): number {
-  return fetchMock.mock.calls.filter(([input]) => {
-    const inputUrl = typeof input === "string" ? input : input.url;
-    return inputUrl === url;
-  }).length;
+  return fetchMock.mock.calls.filter(([input]) => toRequestUrl(input) === url).length;
+}
+
+function toRequestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  return input instanceof URL ? input.toString() : input.url;
 }

@@ -29,6 +29,10 @@ import {
   WorkModeLauncher,
   type CodingWorkflowDraft
 } from "../workmodes/work-mode-launcher";
+import {
+  mergeRuntimeArtifactStatus,
+  type ArtifactStatusesByMessageId
+} from "./artifact-status";
 import { ChatComposer } from "./chat-composer";
 import { CodingWorkflowPanel } from "./coding-workflow-panel";
 import { parseDeployCommand } from "./deploy-command";
@@ -72,11 +76,14 @@ export function ChatExperience() {
   const [artifactsByMessageId, setArtifactsByMessageId] = useState<
     Record<string, Artifact[]>
   >({});
+  const [artifactStatusesByMessageId, setArtifactStatusesByMessageId] =
+    useState<ArtifactStatusesByMessageId>({});
   const [codingWorkflow, setCodingWorkflow] = useState<CodingWorkflowDetail | null>(null);
   const [isDecisioningWorkflow, setIsDecisioningWorkflow] =
     useState<CodingWorkflowDecision | null>(null);
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [composerDraft, setComposerDraft] = useState<string | null>(null);
   const postSendRefreshTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const processedStreamEventCountRef = useRef(0);
   const isWorkspaceReady = !isLoadingWorkspaces && Boolean(workspaceId);
@@ -101,8 +108,10 @@ export function ChatExperience() {
     setDeletingConversationId(null);
     setMessages([]);
     setArtifactsByMessageId({});
+    setArtifactStatusesByMessageId({});
     setLiveAssistantMessage(null);
     setDeployments([]);
+    setComposerDraft(null);
     setCustomAgents([]);
     setCodingWorkflow(null);
     setHasLoadedCustomAgents(false);
@@ -117,6 +126,7 @@ export function ChatExperience() {
     if (!isWorkspaceReady || !selectedConversationId) {
       setMessages([]);
       setArtifactsByMessageId({});
+      setArtifactStatusesByMessageId({});
       setCodingWorkflow(null);
       setLiveAssistantMessage(null);
       setDeployments([]);
@@ -127,6 +137,7 @@ export function ChatExperience() {
 
     clearPostSendRefreshTimers();
     processedStreamEventCountRef.current = 0;
+    setArtifactStatusesByMessageId({});
     setDeployments([]);
     void loadMessages(selectedConversationId);
     void loadCodingWorkflow(selectedConversationId);
@@ -183,22 +194,32 @@ export function ChatExperience() {
           return;
         }
 
-        if (
-          event.kind === "conversation.status" &&
-          event.payload.workflowId
-        ) {
-          setCodingWorkflow((current) => {
-            if (!current || current.id !== event.payload.workflowId) {
-              return current;
-            }
+        if (event.kind === "conversation.status") {
+          if (event.payload.artifactStatus) {
+            const { artifactStatus } = event.payload;
+            setArtifactStatusesByMessageId((current) =>
+              mergeRuntimeArtifactStatus(current, artifactStatus)
+            );
 
-            return {
-              ...current,
-              approvalState: event.payload.approvalState ?? current.approvalState,
-              state: event.payload.workflowState ?? current.state,
-              taskSnapshot: event.payload.taskSnapshot ?? current.taskSnapshot
-            };
-          });
+            if (artifactStatus.status === "created") {
+              void loadArtifactsForMessage(artifactStatus.messageId);
+            }
+          }
+
+          if (event.payload.workflowId) {
+            setCodingWorkflow((current) => {
+              if (!current || current.id !== event.payload.workflowId) {
+                return current;
+              }
+
+              return {
+                ...current,
+                approvalState: event.payload.approvalState ?? current.approvalState,
+                state: event.payload.workflowState ?? current.state,
+                taskSnapshot: event.payload.taskSnapshot ?? current.taskSnapshot
+              };
+            });
+          }
         }
       });
     }
@@ -535,6 +556,7 @@ export function ChatExperience() {
 
         if (isDeletingSelectedConversation) {
           setArtifactsByMessageId({});
+          setArtifactStatusesByMessageId({});
           setCodingWorkflow(null);
           setDeployments([]);
           setLiveAssistantMessage(null);
@@ -765,6 +787,14 @@ export function ChatExperience() {
     );
   }
 
+  function handleQuoteMessage(quoted: string): void {
+    setComposerDraft(quoted);
+  }
+
+  function handleApplyDiffMessage(): void {
+    setErrorMessage("已定位到 Diff 变更，请在产物卡片中展开并确认应用。");
+  }
+
   async function handlePinMessage(messageId: string): Promise<void> {
     if (!selectedConversationId) {
       return;
@@ -839,6 +869,7 @@ export function ChatExperience() {
       setDeletingConversationId(null);
       setHasLoadedCustomAgents(false);
       setDeployments([]);
+      setComposerDraft(null);
       setErrorMessage(null);
       setIsDecisioningWorkflow(null);
       setLiveAssistantMessage(null);
@@ -1071,16 +1102,21 @@ export function ChatExperience() {
         ) : null}
         <ChatThread
           artifactsByMessageId={artifactsByMessageId}
+          artifactStatusesByMessageId={artifactStatusesByMessageId}
           connectionState={stream.connectionState}
           deployments={deployments}
           isPinningMessageId={isPinningMessageId}
           liveAssistantMessage={liveAssistantMessage}
           messages={messages}
+          onApplyDiffMessage={handleApplyDiffMessage}
           onPinMessage={handlePinMessage}
+          onQuoteMessage={handleQuoteMessage}
           resolveAuthorLabel={resolveMessageAuthorLabel}
         />
         <ChatComposer
           disabled={!selectedConversationId || isSending}
+          draftContent={composerDraft}
+          onDraftApplied={() => setComposerDraft(null)}
           onSend={handleSend}
           participants={selectedConversation?.participants ?? []}
         />

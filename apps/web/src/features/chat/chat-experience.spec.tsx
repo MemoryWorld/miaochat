@@ -10,7 +10,6 @@ import {
   waitFor,
   within
 } from "@testing-library/react";
-import type * as NextNavigationModule from "next/navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatExperience } from "./chat-experience";
@@ -19,7 +18,7 @@ const fetchMock = vi.fn<typeof fetch>();
 const apiBaseUrl = "/api";
 
 vi.mock("next/navigation", async () => {
-  const actual = await vi.importActual<NextNavigationModule>("next/navigation");
+  const actual = await vi.importActual<Record<string, unknown>>("next/navigation");
   return {
     ...actual,
     usePathname: () => "/channels/overview"
@@ -37,6 +36,7 @@ class MockEventSource {
 
 describe("ChatExperience", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("EventSource", MockEventSource);
   });
@@ -262,10 +262,17 @@ describe("ChatExperience", () => {
 
     render(<ChatExperience />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "新建协作" }));
     await waitFor(() => {
-      expect(screen.getByLabelText("AI 同事")).toHaveValue(teammate.id);
+      expect(
+        fetchMock.mock.calls.some(
+          ([url]) => url === `${apiBaseUrl}/custom-agents?workspaceId=default-workspace`
+        )
+      ).toBe(true);
     });
+    fireEvent.click(await screen.findByRole("button", { name: "新建协作" }));
+    expect(
+      await screen.findByLabelText("AI 同事", { selector: "select" }, { timeout: 3_000 })
+    ).toHaveValue(teammate.id);
     const createChannelButton = await screen.findByRole("button", { name: "创建频道" });
     await waitFor(() => {
       expect(createChannelButton).toBeEnabled();
@@ -501,9 +508,13 @@ describe("ChatExperience", () => {
 
     render(<ChatExperience />);
 
-    fireEvent.click(screen.getByRole("button", { name: "删除代码评审" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除代码评审" }));
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    fireEvent.click(await screen.findByRole("button", { name: "启动编码工作流" }));
+    const launchCodingButton = await screen.findByRole("button", { name: "启动编码工作流" });
+    await waitFor(() => {
+      expect(launchCodingButton).toBeEnabled();
+    });
+    fireEvent.click(launchCodingButton);
     fireEvent.change(screen.getByLabelText("本次目标"), {
       target: {
         value: "修复落地页演示"

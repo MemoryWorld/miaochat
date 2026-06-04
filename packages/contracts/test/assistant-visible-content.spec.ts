@@ -64,6 +64,78 @@ describe("assistant visible content sanitization", () => {
     expect(cleaned).toBe("我会先给出方案，再让实现同事继续。");
   });
 
+  it("uses envelope visibleMessage when the response proposes artifact tools or memory updates", () => {
+    const cleaned = sanitizeAssistantVisibleContent(JSON.stringify({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:release-notes",
+              input: {
+                fileName: "release-notes.md",
+                markdown: "# Release notes",
+                title: "Release notes"
+              },
+              inputSchemaVersion: "1",
+              toolName: "artifact.markdown.create"
+            }
+          ],
+          expectedSideEffects: ["Create a downloadable Markdown artifact."],
+          riskLevel: "low",
+          summary: "Create the Markdown artifact requested by the user.",
+          type: "tool_plan"
+        },
+        {
+          memoryType: "private",
+          summary: "Remember the user's preferred artifact format.",
+          type: "memory_candidate"
+        },
+        {
+          reason: "No handoff is needed.",
+          type: "no_action"
+        }
+      ],
+      visibleMessage: "我整理好了发布说明，并附上可下载的 Markdown。"
+    }));
+
+    expect(cleaned).toBe("我整理好了发布说明，并附上可下载的 Markdown。");
+    expect(cleaned).not.toContain("tool_plan");
+    expect(cleaned).not.toContain("artifact.markdown.create");
+    expect(cleaned).not.toContain("memory_candidate");
+    expect(cleaned).not.toContain("no_action");
+  });
+
+  it("removes appended artifact tool-plan envelopes while keeping visible prose", () => {
+    const cleaned = sanitizeAssistantVisibleContent([
+      "已完成发布说明。",
+      JSON.stringify({
+        intents: [
+          {
+            calls: [
+              {
+                idempotencyKey: "artifact:release-notes",
+                input: {
+                  markdown: "# Release notes",
+                  title: "Release notes"
+                },
+                inputSchemaVersion: "1",
+                toolName: "artifact.markdown.create"
+              }
+            ],
+            riskLevel: "low",
+            summary: "Create a Markdown artifact.",
+            type: "tool_plan"
+          }
+        ],
+        visibleMessage: ""
+      })
+    ].join("\n"));
+
+    expect(cleaned).toBe("已完成发布说明。");
+    expect(cleaned).not.toContain("artifact.markdown.create");
+    expect(cleaned).not.toContain("tool_plan");
+  });
+
   it("falls back to a natural visible message when only control JSON remains", () => {
     const cleaned = sanitizeAssistantVisibleContent(JSON.stringify({
       acceptanceCriteria: ["完成测试"],

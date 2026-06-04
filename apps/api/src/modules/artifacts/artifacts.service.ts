@@ -8,12 +8,16 @@ import {
 } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DatabaseError } from "pg";
+import { z } from "zod";
 
 import {
   artifactQuerySchema,
   artifactSchema,
   createArtifactInputSchema,
+  messageIdSchema,
   prepareArtifactUploadInputSchema,
+  runtimeMarkdownArtifactDraftSchema,
+  workspaceIdSchema,
   type Artifact,
   type ArtifactUploadTarget
 } from "@agenthub/contracts";
@@ -37,6 +41,12 @@ type ArtifactRow = {
   title: string;
   workspace_id: string;
 };
+
+const createRuntimeMarkdownArtifactInputSchema = z.object({
+  draft: runtimeMarkdownArtifactDraftSchema,
+  messageId: messageIdSchema,
+  workspaceId: workspaceIdSchema.optional()
+});
 
 @Injectable()
 export class ArtifactsService {
@@ -160,6 +170,38 @@ export class ArtifactsService {
       ...parsed,
       workspaceId
     });
+  }
+
+  async createRuntimeMarkdownArtifact(
+    input: unknown,
+    actorUserId: string
+  ): Promise<Artifact> {
+    const parsed = createRuntimeMarkdownArtifactInputSchema.parse(input);
+    const workspaceId = parsed.workspaceId ?? "default-workspace";
+
+    await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "send",
+      workspaceId
+    });
+
+    const upload = await this.storageService.writeRuntimeMarkdownArtifact({
+      draft: parsed.draft,
+      messageId: parsed.messageId,
+      workspaceId
+    });
+
+    return this.create({
+      id: upload.artifactId,
+      kind: "attachment",
+      messageId: parsed.messageId,
+      mimeType: parsed.draft.mimeType,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      title: parsed.draft.title,
+      workspaceId
+    }, actorUserId);
   }
 
   private async assertMessageAccess(input: {
