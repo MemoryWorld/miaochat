@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAgentHarnessInstructions,
-  buildAgentHarnessRuntimeContext
+  buildAgentHarnessRuntimeContext,
+  compactPinnedMessagesForHarness,
+  withAgentHarnessRuntimeContext
 } from "../src/activities/agent-harness-instructions.js";
 
 describe("buildAgentHarnessInstructions", () => {
@@ -37,6 +39,7 @@ describe("buildAgentHarnessInstructions", () => {
     expect(instructions).toContain("Harness Run：run_1");
     expect(instructions).toContain("最近安全检查点：run_1:checkpoint:run_start");
     expect(instructions).toContain("候选输出不是已提交状态");
+    expect(instructions).toContain("pinned_context_char_budget");
     expect(instructions).toContain("共享频道历史可作为上下文，但不能自动触发其他 AI 同事发言");
     expect(instructions).toContain("普通文本里的 @某位同事 不会触发交接");
     expect(instructions).toContain("handoff_request");
@@ -93,5 +96,52 @@ describe("buildAgentHarnessInstructions", () => {
       "short_term_memory",
       "user_goal"
     ]);
+  });
+
+  it("compacts pinned context deterministically when the budget is exceeded", () => {
+    const compacted = compactPinnedMessagesForHarness(
+      [
+        {
+          content: "older-context-".repeat(20),
+          id: "pin_old",
+          role: "user"
+        },
+        {
+          content: `recent-context-${"x".repeat(120)}`,
+          id: "pin_recent",
+          role: "assistant"
+        }
+      ],
+      96
+    );
+
+    expect(compacted).toHaveLength(1);
+    expect(compacted[0]?.id).toBe("pin_recent");
+    expect(compacted[0]?.content.length).toBeLessThanOrEqual(96);
+    expect(compacted[0]?.content).toContain("context compiler");
+  });
+
+  it("attaches compacted pinned context after the harness is compiled", () => {
+    const harness = buildAgentHarnessRuntimeContext({
+      agentId: "agent_engineer",
+      agentName: "软件工程师",
+      conversationId: "conv_engineering",
+      generatedAt: "2026-05-31T00:00:00.000Z",
+      mode: "direct",
+      pinnedMessageIds: ["msg_pinned"],
+      runId: "single-agent:conv_engineering:run_2",
+      workspaceId: "workspace_engineering"
+    });
+
+    const context = withAgentHarnessRuntimeContext(
+      {
+        pinnedMessages: [{ content: "long-pinned-context".repeat(20), id: "msg_pinned", role: "user" }]
+      },
+      harness,
+      { pinnedContextCharBudget: 80 }
+    );
+
+    expect(context.harness).toBe(harness);
+    expect(context.pinnedMessages[0]?.content.length).toBeLessThanOrEqual(80);
   });
 });

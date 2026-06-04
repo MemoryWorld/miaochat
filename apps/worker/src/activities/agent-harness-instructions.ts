@@ -1,4 +1,4 @@
-import type { AgentExecutionContext } from "@agenthub/agent-sdk";
+import type { AgentExecutionContext, AgentPinnedMessage } from "@agenthub/agent-sdk";
 import {
   harnessRuntimeContextSchema,
   type HarnessPromptManifestSection,
@@ -7,6 +7,8 @@ import {
   runtimeMarkdownArtifactToolName,
   type StatePointer
 } from "@agenthub/contracts";
+
+const defaultPinnedContextCharBudget = 24_000;
 
 export type AgentHarnessInstructionInput = {
   agentName: string;
@@ -174,13 +176,78 @@ export function buildAgentHarnessRuntimeContext(
 
 export function withAgentHarnessRuntimeContext(
   context: AgentExecutionContext | undefined,
-  harness: HarnessRuntimeContext
+  harness: HarnessRuntimeContext,
+  options: { pinnedContextCharBudget?: number } = {}
 ): AgentExecutionContext {
+  const pinnedMessages = compactPinnedMessagesForHarness(
+    context?.pinnedMessages ?? [],
+    options.pinnedContextCharBudget ?? resolvePinnedContextCharBudget()
+  );
+
   return {
-    pinnedMessages: context?.pinnedMessages ?? [],
     ...context,
+    pinnedMessages,
     harness
   };
+}
+
+export function compactPinnedMessagesForHarness(
+  pinnedMessages: AgentPinnedMessage[],
+  maxChars: number
+): AgentPinnedMessage[] {
+  if (maxChars <= 0) {
+    return [];
+  }
+
+  const totalChars = pinnedMessages.reduce(
+    (total, message) => total + message.content.length,
+    0
+  );
+
+  if (totalChars <= maxChars) {
+    return pinnedMessages;
+  }
+
+  const compacted: AgentPinnedMessage[] = [];
+  let remainingChars = maxChars;
+
+  for (const message of [...pinnedMessages].reverse()) {
+    if (remainingChars <= 0) {
+      break;
+    }
+
+    if (message.content.length <= remainingChars) {
+      compacted.push(message);
+      remainingChars -= message.content.length;
+      continue;
+    }
+
+    const marker = `[MiaoChat context compiler: earlier pinned content omitted; kept tail of ${message.id}.]`;
+    const tailBudget = Math.max(0, remainingChars - marker.length - 1);
+    const tail = tailBudget > 0 ? message.content.slice(-tailBudget) : "";
+    const content = tail ? `${marker}\n${tail}` : marker.slice(0, remainingChars);
+
+    compacted.push({
+      ...message,
+      content
+    });
+    remainingChars = 0;
+  }
+
+  return compacted.reverse();
+}
+
+function resolvePinnedContextCharBudget(): number {
+  const parsed = Number.parseInt(
+    process.env.MIAOCHAT_AGENT_PINNED_CONTEXT_CHAR_BUDGET ?? "",
+    10
+  );
+
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  return defaultPinnedContextCharBudget;
 }
 
 function formatMultiAgentChannelContract(): string {
@@ -288,6 +355,8 @@ function formatHarnessRuntimeSection(harness: HarnessRuntimeContext): string {
     "- 高风险外部写入必须等待 validation、approval、receipt 和 commit，不能用自然语言绕过。",
     "- 未验证假设必须标为假设，不得写入长期记忆；需要保留时只能提出 memory proposal。",
     "- 失败时回到最近安全检查点重新规划，并说明需要验证的状态差异。",
+    "上下文预算：",
+    `- pinned_context_char_budget=${resolvePinnedContextCharBudget()} chars；超预算时优先保留最近置顶内容并显式标记 compact。`,
     "Prompt Manifest：",
     manifestSections
   ].join("\n");
