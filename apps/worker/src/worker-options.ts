@@ -25,6 +25,10 @@ const awaitableActivities = {
     const { deployContainerActivity } = await import("./activities/index.js");
     return deployContainerActivity(input as never);
   },
+  deploySourceArchiveActivity: async (input: unknown) => {
+    const { deploySourceArchiveActivity } = await import("./activities/index.js");
+    return deploySourceArchiveActivity(input as never);
+  },
   deployStaticSiteActivity: async (input: unknown) => {
     const { deployStaticSiteActivity } = await import("./activities/index.js");
     return deployStaticSiteActivity(input as never);

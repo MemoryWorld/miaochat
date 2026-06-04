@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   deployContainerActivityMock,
+  deploySourceArchiveActivityMock,
   deployStaticSiteActivityMock,
   finalizeDeployActivityMock,
   prepareDeployActivityMock,
   proxyActivitiesMock
 } = vi.hoisted(() => ({
   deployContainerActivityMock: vi.fn(),
+  deploySourceArchiveActivityMock: vi.fn(),
   deployStaticSiteActivityMock: vi.fn(),
   finalizeDeployActivityMock: vi.fn(),
   prepareDeployActivityMock: vi.fn(),
@@ -21,6 +23,7 @@ vi.mock("@temporalio/workflow", () => ({
 describe("deployArtifactWorkflow", () => {
   beforeEach(() => {
     deployContainerActivityMock.mockReset();
+    deploySourceArchiveActivityMock.mockReset();
     deployStaticSiteActivityMock.mockReset();
     finalizeDeployActivityMock.mockReset();
     prepareDeployActivityMock.mockReset();
@@ -77,6 +80,9 @@ describe("deployArtifactWorkflow", () => {
       })
       .mockReturnValueOnce({
         deployContainerActivity: deployContainerActivityMock
+      })
+      .mockReturnValueOnce({
+        deploySourceArchiveActivity: deploySourceArchiveActivityMock
       });
 
     const { deployArtifactWorkflow } = await import(
@@ -97,6 +103,7 @@ describe("deployArtifactWorkflow", () => {
       })
     );
     expect(deployContainerActivityMock).not.toHaveBeenCalled();
+    expect(deploySourceArchiveActivityMock).not.toHaveBeenCalled();
     expect(finalizeDeployActivityMock).toHaveBeenCalledWith(
       expect.objectContaining({
         deploymentId: "deployment_static_1",
@@ -170,6 +177,9 @@ describe("deployArtifactWorkflow", () => {
       })
       .mockReturnValueOnce({
         deployContainerActivity: deployContainerActivityMock
+      })
+      .mockReturnValueOnce({
+        deploySourceArchiveActivity: deploySourceArchiveActivityMock
       });
 
     const { deployArtifactWorkflow } = await import(
@@ -189,6 +199,7 @@ describe("deployArtifactWorkflow", () => {
       })
     );
     expect(deployStaticSiteActivityMock).not.toHaveBeenCalled();
+    expect(deploySourceArchiveActivityMock).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       id: "deployment_container_1",
       resultMessage: "Container image pushed.",
@@ -196,4 +207,88 @@ describe("deployArtifactWorkflow", () => {
       targetKind: "container"
     });
   });
+
+  it("routes source-archive deploys to the source archive activity", async () => {
+    prepareDeployActivityMock.mockResolvedValue({
+      artifactId: "artifact_source_1",
+      artifactStorageKey: "artifacts/workspace_deploy/source.zip",
+      artifactTitle: "Source Bundle",
+      config: {},
+      credentialSource: "platform_managed",
+      deployTargetId: "target_source_1",
+      deploymentId: "deployment_source_1",
+      hasSecret: false,
+      targetKind: "source-archive",
+      targetName: "Source Download",
+      workspaceId: "workspace_deploy_1"
+    });
+    deploySourceArchiveActivityMock.mockResolvedValue({
+      previewUrl:
+        "http://localhost:9000/agenthub-dev/artifacts/workspace_deploy/source.zip",
+      resultMessage: "Source archive download prepared for Source Bundle."
+    });
+    finalizeDeployActivityMock.mockImplementation(async (input) => ({
+      artifactId: "artifact_source_1",
+      completedAt: new Date("2026-05-22T09:00:03.000Z"),
+      createdAt: new Date("2026-05-22T09:00:00.000Z"),
+      deployTargetId: "target_source_1",
+      errorMessage: null,
+      id: input.deploymentId,
+      ownerUserId: "user_source_1",
+      previewUrl: input.previewUrl,
+      progressEvents: input.progressEvents,
+      resultMessage: input.resultMessage,
+      startedAt: new Date("2026-05-22T09:00:00.000Z"),
+      status: input.status,
+      targetKind: "source-archive",
+      updatedAt: new Date("2026-05-22T09:00:03.000Z"),
+      workspaceId: "workspace_deploy_1"
+    }));
+
+    proxyActivitiesMock
+      .mockReturnValueOnce({
+        prepareDeployActivity: prepareDeployActivityMock
+      })
+      .mockReturnValueOnce({
+        finalizeDeployActivity: finalizeDeployActivityMock
+      })
+      .mockReturnValueOnce({
+        deployStaticSiteActivity: deployStaticSiteActivityMock
+      })
+      .mockReturnValueOnce({
+        deployContainerActivity: deployContainerActivityMock
+      })
+      .mockReturnValueOnce({
+        deploySourceArchiveActivity: deploySourceArchiveActivityMock
+      });
+
+    const { deployArtifactWorkflow } = await import(
+      "../src/workflows/deploy-artifact.workflow.js"
+    );
+    const result = await deployArtifactWorkflow({
+      artifactId: "artifact_source_1",
+      deployTargetId: "target_source_1",
+      ownerUserId: "user_source_1",
+      workspaceId: "workspace_deploy_1"
+    });
+
+    expect(deploySourceArchiveActivityMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artifactStorageKey: "artifacts/workspace_deploy/source.zip",
+        deploymentId: "deployment_source_1",
+        targetKind: "source-archive"
+      })
+    );
+    expect(deployContainerActivityMock).not.toHaveBeenCalled();
+    expect(deployStaticSiteActivityMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      id: "deployment_source_1",
+      previewUrl:
+        "http://localhost:9000/agenthub-dev/artifacts/workspace_deploy/source.zip",
+      resultMessage: "Source archive download prepared for Source Bundle.",
+      status: "succeeded",
+      targetKind: "source-archive"
+    });
+  });
+
 });

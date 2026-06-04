@@ -13,6 +13,9 @@ import type {
   deployContainerActivity as deployContainerActivityFn
 } from "../activities/deploy-container.activity.js";
 import type {
+  deploySourceArchiveActivity as deploySourceArchiveActivityFn
+} from "../activities/deploy-source-archive.activity.js";
+import type {
   deployStaticSiteActivity as deployStaticSiteActivityFn
 } from "../activities/deploy-static-site.activity.js";
 import type { PreparedDeployRecord } from "../activities/deploy-types.js";
@@ -37,6 +40,12 @@ const { deployStaticSiteActivity } = proxyActivities<{
 
 const { deployContainerActivity } = proxyActivities<{
   deployContainerActivity: typeof deployContainerActivityFn;
+}>({
+  startToCloseTimeout: "1 minute"
+});
+
+const { deploySourceArchiveActivity } = proxyActivities<{
+  deploySourceArchiveActivity: typeof deploySourceArchiveActivityFn;
 }>({
   startToCloseTimeout: "1 minute"
 });
@@ -127,10 +136,7 @@ async function runDeploy(
     case "container":
       return deployContainerActivity(prepared);
     case "source-archive":
-      return {
-        previewUrl: null,
-        resultMessage: `Source archive prepared from ${prepared.artifactStorageKey ?? prepared.artifactTitle}.`
-      };
+      return deploySourceArchiveActivity(prepared);
   }
 }
 
