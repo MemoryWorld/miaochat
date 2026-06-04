@@ -97,6 +97,39 @@ describe("agent run sandbox", () => {
     expect(sandbox.cwd).toBe(cwd);
     await sandbox.cleanup();
   });
+
+  it("fails closed when OS sandbox isolation is required but unavailable", async () => {
+    const cwd = await createGitRepo();
+
+    await expect(
+      createAgentRunSandbox({
+        commandAvailable: async () => false,
+        cwd,
+        osIsolationMode: "required",
+        provider: "codex"
+      })
+    ).rejects.toMatchObject({ code: "os_sandbox_unavailable" });
+  });
+
+  it("records fallback metadata when OS sandbox isolation is preferred but unavailable", async () => {
+    const cwd = await createGitRepo();
+    const sandbox = await createAgentRunSandbox({
+      commandAvailable: async () => false,
+      cwd,
+      osIsolationMode: "preferred",
+      provider: "codex"
+    });
+
+    try {
+      expect(sandbox.metadata.osIsolation).toEqual({
+        mode: "preferred",
+        runtime: null,
+        status: "unavailable_allowed"
+      });
+    } finally {
+      await sandbox.cleanup();
+    }
+  });
 });
 
 async function createGitRepo(): Promise<string> {

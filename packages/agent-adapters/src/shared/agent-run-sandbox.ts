@@ -19,8 +19,28 @@ const copyExcludes = new Set([
 
 export type AgentRunSandboxStrategy = "direct" | "filesystem_copy" | "git_worktree";
 
+export type AgentRunContainerRuntime = "docker" | "podman";
+
+export type AgentRunOsIsolationMode = "off" | "preferred" | "required";
+
+export type AgentRunOsIsolationStatus =
+  | "available"
+  | "not_required"
+  | "unavailable_allowed";
+
+export type AgentRunOsIsolationMetadata = {
+  mode: AgentRunOsIsolationMode;
+  runtime: AgentRunContainerRuntime | null;
+  status: AgentRunOsIsolationStatus;
+};
+
+export type CommandAvailabilityCheck = (
+  command: AgentRunContainerRuntime
+) => Promise<boolean>;
+
 export type AgentRunSandboxMetadata = {
   createdAt: string;
+  osIsolation: AgentRunOsIsolationMetadata;
   originalCwd: string;
   provider: string;
   strategy: AgentRunSandboxStrategy;
@@ -36,8 +56,11 @@ export type AgentRunSandbox = {
 };
 
 export type CreateAgentRunSandboxInput = {
+  commandAvailable?: CommandAvailabilityCheck;
+  containerRuntime?: AgentRunContainerRuntime;
   cwd: string;
   enabled?: boolean;
+  osIsolationMode?: AgentRunOsIsolationMode;
   provider: string;
 };
 
@@ -45,9 +68,18 @@ export async function createAgentRunSandbox(
   input: CreateAgentRunSandboxInput
 ): Promise<AgentRunSandbox> {
   const originalCwd = resolve(input.cwd);
+  const osIsolation = await resolveAgentRunOsIsolation({
+    commandAvailable: input.commandAvailable ?? commandAvailable,
+    mode:
+      input.osIsolationMode ??
+      parseOsIsolationMode(process.env.MIAOCHAT_AGENT_OS_SANDBOX),
+    runtime:
+      input.containerRuntime ??
+      parseContainerRuntime(process.env.MIAOCHAT_AGENT_CONTAINER_RUNTIME)
+  });
 
   if (!isAgentRunSandboxEnabled(input.enabled)) {
-    return createDirectSandbox(input.provider, originalCwd);
+    return createDirectSandbox(input.provider, originalCwd, osIsolation);
   }
 
   const tempRoot = await mkdtemp(join(tmpdir(), tempSandboxPrefix));
@@ -55,6 +87,7 @@ export async function createAgentRunSandbox(
   try {
     return await createGitWorktreeSandbox({
       originalCwd,
+      osIsolation,
       provider: input.provider,
       tempRoot
     });
@@ -62,6 +95,7 @@ export async function createAgentRunSandbox(
     try {
       return await createFilesystemCopySandbox({
         originalCwd,
+        osIsolation,
         provider: input.provider,
         tempRoot
       });
@@ -87,8 +121,13 @@ export function isAgentRunSandboxEnabled(enabled: boolean | undefined): boolean 
   );
 }
 
-function createDirectSandbox(provider: string, originalCwd: string): AgentRunSandbox {
+function createDirectSandbox(
+  provider: string,
+  originalCwd: string,
+  osIsolation: AgentRunOsIsolationMetadata
+): AgentRunSandbox {
   const metadata = createMetadata({
+    osIsolation,
     originalCwd,
     provider,
     strategy: "direct",
@@ -105,6 +144,7 @@ function createDirectSandbox(provider: string, originalCwd: string): AgentRunSan
 }
 
 async function createGitWorktreeSandbox(input: {
+  osIsolation: AgentRunOsIsolationMetadata;
   originalCwd: string;
   provider: string;
   tempRoot: string;
@@ -118,6 +158,7 @@ async function createGitWorktreeSandbox(input: {
 
   const workingCwd = relativeCwd ? join(workspaceRoot, relativeCwd) : workspaceRoot;
   const metadata = createMetadata({
+    osIsolation: input.osIsolation,
     originalCwd: input.originalCwd,
     provider: input.provider,
     strategy: "git_worktree",
@@ -140,6 +181,7 @@ async function createGitWorktreeSandbox(input: {
 }
 
 async function createFilesystemCopySandbox(input: {
+  osIsolation: AgentRunOsIsolationMetadata;
   originalCwd: string;
   provider: string;
   tempRoot: string;
@@ -158,6 +200,7 @@ async function createFilesystemCopySandbox(input: {
   await git(workspaceRoot, ["commit", "--allow-empty", "-m", "sandbox baseline"]);
 
   const metadata = createMetadata({
+    osIsolation: input.osIsolation,
     originalCwd: input.originalCwd,
     provider: input.provider,
     strategy: "filesystem_copy",
@@ -203,6 +246,86 @@ function safeRelative(root: string, child: string): string {
   }
 
   return relativePath;
+}
+
+async function resolveAgentRunOsIsolation(input: {
+  commandAvailable: CommandAvailabilityCheck;
+  mode: AgentRunOsIsolationMode;
+  runtime: AgentRunContainerRuntime | null;
+}): Promise<AgentRunOsIsolationMetadata> {
+  if (input.mode === "off") {
+    return {
+      mode: "off",
+      runtime: null,
+      status: "not_required"
+    };
+  }
+
+  const runtimeCandidates: AgentRunContainerRuntime[] = input.runtime
+    ? [input.runtime]
+    : ["docker", "podman"];
+
+  for (const runtime of runtimeCandidates) {
+    if (await input.commandAvailable(runtime)) {
+      return {
+        mode: input.mode,
+        runtime,
+        status: "available"
+      };
+    }
+  }
+
+  if (input.mode === "required") {
+    throw new AgentAdapterError(
+      "Agent OS sandbox isolation is required, but Docker or Podman is not available.",
+      { code: "os_sandbox_unavailable" }
+    );
+  }
+
+  return {
+    mode: "preferred",
+    runtime: null,
+    status: "unavailable_allowed"
+  };
+}
+
+async function commandAvailable(command: AgentRunContainerRuntime): Promise<boolean> {
+  try {
+    await execFileAsync(command, ["--version"], {
+      maxBuffer: 1024 * 1024
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseOsIsolationMode(
+  value: string | undefined
+): AgentRunOsIsolationMode {
+  if (/^(required|require)$/i.test(value ?? "")) {
+    return "required";
+  }
+
+  if (/^(1|true|yes|on|preferred|prefer)$/i.test(value ?? "")) {
+    return "preferred";
+  }
+
+  return "off";
+}
+
+function parseContainerRuntime(
+  value: string | undefined
+): AgentRunContainerRuntime | null {
+  if (/^docker$/i.test(value ?? "")) {
+    return "docker";
+  }
+
+  if (/^podman$/i.test(value ?? "")) {
+    return "podman";
+  }
+
+  return null;
 }
 
 async function safeRemoveTempRoot(tempRoot: string): Promise<void> {
