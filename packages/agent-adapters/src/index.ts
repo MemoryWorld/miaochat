@@ -21,6 +21,7 @@ export * from "./mock/direct-adapter.js";
 export * from "./mock/group-adapter.js";
 export * from "./openclaw/openclaw-adapter.js";
 export * from "./openclaw/openclaw-types.js";
+export * from "./shared/agent-run-sandbox.js";
 export * from "./shared/streaming-client.js";
 export * from "./shared/workspace-diff.js";
 

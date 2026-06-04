@@ -8,6 +8,7 @@ import { AgentAdapterError } from "@agenthub/agent-sdk";
 import type { StreamEvent } from "@agenthub/contracts";
 
 import type { StreamingClientOptions } from "../shared/streaming-client.js";
+import { createAgentRunSandbox } from "../shared/agent-run-sandbox.js";
 import { captureWorkspaceDiff } from "../shared/workspace-diff.js";
 import type {
   ClaudeAgentQuery,
@@ -24,6 +25,7 @@ export type ClaudeCodeAdapterOptions = StreamingClientOptions & {
   pathToClaudeCodeExecutable?: string;
   permissionMode?: ClaudeCodePermissionMode;
   queryImpl?: ClaudeAgentQuery;
+  workspaceSandboxEnabled?: boolean;
 };
 
 const defaultAllowedTools = ["Read", "Edit", "Glob", "Grep"];
@@ -40,6 +42,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   private readonly pathToClaudeCodeExecutable?: string;
   private readonly permissionMode: ClaudeCodePermissionMode;
   private readonly queryImpl?: ClaudeAgentQuery;
+  private readonly workspaceSandboxEnabled?: boolean;
 
   constructor(options: ClaudeCodeAdapterOptions) {
     this.allowedTools = options.allowedTools ?? defaultAllowedTools;
@@ -52,6 +55,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       options.pathToClaudeCodeExecutable ?? process.env.CLAUDE_CODE_EXECUTABLE;
     this.permissionMode = options.permissionMode ?? "acceptEdits";
     this.queryImpl = options.queryImpl;
+    this.workspaceSandboxEnabled = options.workspaceSandboxEnabled;
   }
 
   async execute(request: AgentExecutionRequest): Promise<AgentExecutionResult> {
@@ -72,72 +76,82 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       credentialId: request.credentialId,
       workspaceId: request.workspaceId
     });
-    const query = this.queryImpl ?? (await loadClaudeAgentQuery());
-    const messageId = `${request.conversationId}:claude-code`;
-    const streamEvents: StreamEvent[] = [
-      {
-        kind: "conversation.message.started",
-        payload: { messageId }
-      }
-    ];
-    const deltas: string[] = [];
-    let resultText: string | null = null;
+    const workspaceSandbox = await createAgentRunSandbox({
+      cwd: this.cwd,
+      enabled: this.workspaceSandboxEnabled,
+      provider: this.provider
+    });
 
     try {
-      for await (const message of query({
-        options: pruneUndefined({
-          allowedTools: this.allowedTools,
-          cwd: this.cwd,
-          env: {
-            ...process.env,
-            ...this.env,
-            ANTHROPIC_API_KEY: credential.secret,
-            CLAUDE_AGENT_SDK_CLIENT_APP: "miaochat"
-          },
-          maxTurns: this.maxTurns,
-          model: this.model,
-          pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
-          permissionMode: this.permissionMode,
-          systemPrompt: request.instructions
-        }),
-        prompt: buildClaudePrompt(request.message, request.context?.pinnedMessages)
-      })) {
-        const assistantText = extractAssistantText(message);
-        for (const delta of assistantText) {
-          deltas.push(delta);
-          streamEvents.push({
-            kind: "conversation.message.delta",
-            payload: { delta, messageId }
-          });
+      const query = this.queryImpl ?? (await loadClaudeAgentQuery());
+      const messageId = `${request.conversationId}:claude-code`;
+      const streamEvents: StreamEvent[] = [
+        {
+          kind: "conversation.message.started",
+          payload: { messageId }
         }
+      ];
+      const deltas: string[] = [];
+      let resultText: string | null = null;
 
-        const extractedResult = extractResultText(message);
-        if (extractedResult) {
-          resultText = extractedResult;
+      try {
+        for await (const message of query({
+          options: pruneUndefined({
+            allowedTools: this.allowedTools,
+            cwd: workspaceSandbox.cwd,
+            env: {
+              ...process.env,
+              ...this.env,
+              ANTHROPIC_API_KEY: credential.secret,
+              CLAUDE_AGENT_SDK_CLIENT_APP: "miaochat"
+            },
+            maxTurns: this.maxTurns,
+            model: this.model,
+            pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
+            permissionMode: this.permissionMode,
+            systemPrompt: request.instructions
+          }),
+          prompt: buildClaudePrompt(request.message, request.context?.pinnedMessages)
+        })) {
+          const assistantText = extractAssistantText(message);
+          for (const delta of assistantText) {
+            deltas.push(delta);
+            streamEvents.push({
+              kind: "conversation.message.delta",
+              payload: { delta, messageId }
+            });
+          }
+
+          const extractedResult = extractResultText(message);
+          if (extractedResult) {
+            resultText = extractedResult;
+          }
         }
+      } catch (error) {
+        throw normalizeClaudeSdkError(error);
       }
-    } catch (error) {
-      throw normalizeClaudeSdkError(error);
+
+      const finalContent = resultText?.trim() || deltas.join("").trim();
+
+      streamEvents.push({
+        kind: "conversation.message.completed",
+        payload: { finalContent, messageId }
+      });
+
+      const diffArtifact = await captureWorkspaceDiff({
+        cwd: workspaceSandbox.diffCwd,
+        fileName: "claude-code-runtime.diff",
+        title: "Claude Code 代码 Diff"
+      });
+
+      return {
+        ...(diffArtifact ? { artifacts: [diffArtifact] } : {}),
+        finalContent,
+        streamEvents
+      };
+    } finally {
+      await workspaceSandbox.cleanup();
     }
-
-    const finalContent = resultText?.trim() || deltas.join("").trim();
-
-    streamEvents.push({
-      kind: "conversation.message.completed",
-      payload: { finalContent, messageId }
-    });
-
-    const diffArtifact = await captureWorkspaceDiff({
-      cwd: this.cwd,
-      fileName: "claude-code-runtime.diff",
-      title: "Claude Code 代码 Diff"
-    });
-
-    return {
-      ...(diffArtifact ? { artifacts: [diffArtifact] } : {}),
-      finalContent,
-      streamEvents
-    };
   }
 }
 

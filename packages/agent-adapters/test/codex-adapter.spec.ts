@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import { CodexAdapter } from "../src/codex/codex-adapter.js";
 import type {
@@ -8,12 +14,21 @@ import type {
   CodexThreadOptions
 } from "../src/codex/codex-types.js";
 
+const execFileAsync = promisify(execFile);
+const tempDirectories: string[] = [];
+
 const credentialResolver = async () => ({
   providerAccountId: "acct_codex",
   secret: "sk-codex-test-123"
 });
 
 describe("CodexAdapter", () => {
+  afterEach(async () => {
+    for (const directory of tempDirectories.splice(0)) {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("runs Codex through the official SDK and normalizes streamed agent messages", async () => {
     const calls: Array<{
       input: string;
@@ -60,7 +75,8 @@ describe("CodexAdapter", () => {
       env: { CODEX_HOME: "/tmp/miaochat-codex-home" },
       model: "gpt-5.3-codex",
       networkAccessEnabled: false,
-      sandbox: "workspace-write"
+      sandbox: "workspace-write",
+      workspaceSandboxEnabled: false
     });
     const result = await adapter.execute({
       agentId: "agent_codex",
@@ -101,6 +117,70 @@ describe("CodexAdapter", () => {
     expect(calls[0]?.input).toContain("Build the slice");
   });
 
+  it("runs Codex inside a temporary workspace sandbox and returns its diff artifact", async () => {
+    const cwd = await createGitRepo();
+    const calls: Array<{ threadOptions?: CodexThreadOptions }> = [];
+    const clientFactory: CodexClientFactory = () => ({
+      startThread: (threadOptions) => ({
+        runStreamed: async () => {
+          calls.push({ threadOptions });
+          const workingDirectory = threadOptions?.workingDirectory;
+
+          if (!workingDirectory) {
+            throw new Error("missing workingDirectory");
+          }
+
+          await writeFile(
+            join(workingDirectory, "app.ts"),
+            "export const value = sandboxed;\n",
+            "utf8"
+          );
+
+          return {
+            events: streamCodexEvents([
+              {
+                item: {
+                  id: "item_sandbox",
+                  text: "Sandboxed change ready",
+                  type: "agent_message"
+                },
+                type: "item.completed"
+              }
+            ])
+          };
+        }
+      })
+    });
+    const adapter = new CodexAdapter({
+      clientFactory,
+      credentialResolver,
+      cwd
+    });
+
+    const result = await adapter.execute({
+      agentId: "agent_codex",
+      conversationId: "conv_codex_sandbox",
+      credentialId: "cred_codex",
+      message: "Edit app.ts",
+      provider: "codex",
+      workspaceId: "workspace_codex"
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.threadOptions?.workingDirectory).not.toBe(cwd);
+    await expect(readFile(join(cwd, "app.ts"), "utf8")).resolves.toBe(
+      "export const value = source;\n"
+    );
+    expect(result.finalContent).toBe("Sandboxed change ready");
+    expect(result.artifacts?.[0]).toEqual(
+      expect.objectContaining({
+        fileName: "codex-runtime.diff",
+        type: "diff"
+      })
+    );
+    expect(result.artifacts?.[0]?.patch).toContain("+export const value = sandboxed;");
+  });
+
   it("rejects requests without a BYOK credentialId", async () => {
     const adapter = new CodexAdapter({
       clientFactory: () => ({
@@ -108,7 +188,8 @@ describe("CodexAdapter", () => {
           runStreamed: async () => ({ events: streamCodexEvents([]) })
         })
       }),
-      credentialResolver
+      credentialResolver,
+      workspaceSandboxEnabled: false
     });
 
     await expect(
@@ -131,7 +212,8 @@ describe("CodexAdapter", () => {
           }
         })
       }),
-      credentialResolver
+      credentialResolver,
+      workspaceSandboxEnabled: false
     });
 
     await expect(
@@ -160,7 +242,8 @@ describe("CodexAdapter", () => {
           })
         })
       }),
-      credentialResolver
+      credentialResolver,
+      workspaceSandboxEnabled: false
     });
 
     await expect(
@@ -182,4 +265,21 @@ async function* streamCodexEvents(
   for (const event of events) {
     yield event;
   }
+}
+
+async function createGitRepo(): Promise<string> {
+  const cwd = await mkdtemp(join(tmpdir(), "miaochat-codex-adapter-"));
+  tempDirectories.push(cwd);
+
+  await git(cwd, "init");
+  await git(cwd, "config", "user.email", "miaochat@example.com");
+  await git(cwd, "config", "user.name", "Miaochat Test");
+  await writeFile(join(cwd, "app.ts"), "export const value = source;\n", "utf8");
+  await git(cwd, "add", "app.ts");
+  await git(cwd, "commit", "-m", "initial");
+  return cwd;
+}
+
+async function git(cwd: string, ...args: string[]): Promise<void> {
+  await execFileAsync("git", args, { cwd });
 }

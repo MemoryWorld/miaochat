@@ -8,6 +8,7 @@ import { AgentAdapterError } from "@agenthub/agent-sdk";
 import type { StreamEvent } from "@agenthub/contracts";
 
 import type { StreamingClientOptions } from "../shared/streaming-client.js";
+import { createAgentRunSandbox } from "../shared/agent-run-sandbox.js";
 import { captureWorkspaceDiff } from "../shared/workspace-diff.js";
 import type {
   CodexApprovalPolicy,
@@ -48,6 +49,7 @@ export type CodexAdapterOptions = StreamingClientOptions & {
   networkAccessEnabled?: boolean;
   sandbox?: CodexSandboxMode;
   skipGitRepoCheck?: boolean;
+  workspaceSandboxEnabled?: boolean;
 };
 
 export class CodexAdapter implements AgentAdapter {
@@ -65,6 +67,7 @@ export class CodexAdapter implements AgentAdapter {
   private readonly networkAccessEnabled: boolean;
   private readonly sandbox: CodexSandboxMode;
   private readonly skipGitRepoCheck?: boolean;
+  private readonly workspaceSandboxEnabled?: boolean;
 
   constructor(options: CodexAdapterOptions) {
     this.approvalPolicy = options.approvalPolicy ?? "never";
@@ -84,6 +87,7 @@ export class CodexAdapter implements AgentAdapter {
       options.networkAccessEnabled ?? parseOptionalBoolean(process.env.CODEX_NETWORK_ACCESS_ENABLED) ?? false;
     this.sandbox = options.sandbox ?? "workspace-write";
     this.skipGitRepoCheck = options.skipGitRepoCheck;
+    this.workspaceSandboxEnabled = options.workspaceSandboxEnabled;
   }
 
   async execute(request: AgentExecutionRequest): Promise<AgentExecutionResult> {
@@ -104,49 +108,59 @@ export class CodexAdapter implements AgentAdapter {
       credentialId: request.credentialId,
       workspaceId: request.workspaceId
     });
-    let execution: AgentExecutionResult;
-
-    try {
-      const clientFactory = this.clientFactory ?? (await loadCodexClientFactory());
-      const client = clientFactory(
-        pruneUndefined({
-          apiKey: credential.secret,
-          baseUrl: this.baseUrl,
-          codexPathOverride: this.codexPathOverride,
-          config: this.config,
-          env: buildCodexEnv(this.env)
-        })
-      );
-      const thread = client.startThread(
-        pruneUndefined({
-          approvalPolicy: this.approvalPolicy,
-          model: this.model,
-          networkAccessEnabled: this.networkAccessEnabled,
-          sandboxMode: this.sandbox,
-          skipGitRepoCheck: this.skipGitRepoCheck,
-          workingDirectory: this.cwd
-        })
-      );
-
-      execution = await runCodexSdkThread({
-        conversationId: request.conversationId,
-        prompt: buildCodexPrompt(request),
-        thread
-      });
-    } catch (error) {
-      throw normalizeCodexSdkError(error);
-    }
-
-    const diffArtifact = await captureWorkspaceDiff({
+    const workspaceSandbox = await createAgentRunSandbox({
       cwd: this.cwd,
-      fileName: "codex-runtime.diff",
-      title: "Codex 代码 Diff"
+      enabled: this.workspaceSandboxEnabled,
+      provider: this.provider
     });
 
-    return {
-      ...execution,
-      ...(diffArtifact ? { artifacts: [diffArtifact] } : {})
-    };
+    try {
+      let execution: AgentExecutionResult;
+
+      try {
+        const clientFactory = this.clientFactory ?? (await loadCodexClientFactory());
+        const client = clientFactory(
+          pruneUndefined({
+            apiKey: credential.secret,
+            baseUrl: this.baseUrl,
+            codexPathOverride: this.codexPathOverride,
+            config: this.config,
+            env: buildCodexEnv(this.env)
+          })
+        );
+        const thread = client.startThread(
+          pruneUndefined({
+            approvalPolicy: this.approvalPolicy,
+            model: this.model,
+            networkAccessEnabled: this.networkAccessEnabled,
+            sandboxMode: this.sandbox,
+            skipGitRepoCheck: this.skipGitRepoCheck,
+            workingDirectory: workspaceSandbox.cwd
+          })
+        );
+
+        execution = await runCodexSdkThread({
+          conversationId: request.conversationId,
+          prompt: buildCodexPrompt(request),
+          thread
+        });
+      } catch (error) {
+        throw normalizeCodexSdkError(error);
+      }
+
+      const diffArtifact = await captureWorkspaceDiff({
+        cwd: workspaceSandbox.diffCwd,
+        fileName: "codex-runtime.diff",
+        title: "Codex 代码 Diff"
+      });
+
+      return {
+        ...execution,
+        ...(diffArtifact ? { artifacts: [diffArtifact] } : {})
+      };
+    } finally {
+      await workspaceSandbox.cleanup();
+    }
   }
 }
 

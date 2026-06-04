@@ -32,7 +32,8 @@ describe("ClaudeCodeAdapter", () => {
       credentialResolver,
       cwd: "/tmp/miaochat-claude",
       model: "claude-sonnet-test",
-      queryImpl
+      queryImpl,
+      workspaceSandboxEnabled: false
     });
     const result = await adapter.execute({
       agentId: "agent_claude_code",
@@ -79,7 +80,8 @@ describe("ClaudeCodeAdapter", () => {
       credentialResolver,
       queryImpl: async function* () {
         yield { type: "result", result: "unused" };
-      }
+      },
+      workspaceSandboxEnabled: false
     });
 
     await expect(
@@ -99,7 +101,8 @@ describe("ClaudeCodeAdapter", () => {
       queryImpl: async function* () {
         yield { result: "unused", type: "result" };
         throw new Error("temporary upstream timeout");
-      }
+      },
+      workspaceSandboxEnabled: false
     });
 
     await expect(
