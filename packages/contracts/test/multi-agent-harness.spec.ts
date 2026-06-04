@@ -5,6 +5,7 @@ import {
   multiAgentChannelEventSchema,
   multiAgentHandoffSchema,
   multiAgentParticipantSchema,
+  multiAgentRunLedgerSchema,
   multiAgentTriggerPolicySchema
 } from "../src/multi-agent-harness.js";
 
@@ -105,6 +106,31 @@ describe("multi-agent channel harness contracts", () => {
 
     expect(handoff.payload.acceptanceCriteria).toHaveLength(2);
     expect(handoff.targetRoleKey).toBeNull();
+  });
+
+  it("serializes agent run ledger checkpoints", () => {
+    const run = multiAgentRunLedgerSchema.parse({
+      agentId: "agent_engineer",
+      artifactCount: 1,
+      channelId: "conv_1",
+      checkpoint: "context_prepared",
+      contextSnapshotId: null,
+      createdAt: now,
+      id: "agent-run:turn_1",
+      metadata: { checkpointSource: "message_dispatch" },
+      producedEventIds: [],
+      provider: "codex",
+      status: "running",
+      turnId: "turn_1",
+      updatedAt: now,
+      workspaceId: "workspace_1"
+    });
+
+    expect(run).toMatchObject({
+      checkpoint: "context_prepared",
+      metadata: { checkpointSource: "message_dispatch" },
+      status: "running"
+    });
   });
 
   it("describes agent output envelopes with typed intents", () => {

@@ -3,8 +3,11 @@ import { Client } from "pg";
 import request from "supertest";
 
 import { createApp } from "../src/main.js";
+import { loadLocalEnvFiles } from "../../../db/env.js";
 
 export const contractPassword = "S3curePass!123";
+
+loadLocalEnvFiles();
 
 export type ContractSession = {
   cookie: string;

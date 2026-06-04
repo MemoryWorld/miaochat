@@ -61,6 +61,22 @@ export class MultiAgentHarnessController {
     });
   }
 
+  @Get(":channelId/agent-runs")
+  async listAgentRuns(
+    @Param("channelId") channelId: string,
+    @Query("workspaceId") workspaceId: string | undefined,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+
+    return this.harnessService.listAgentRuns({
+      actorUserId: user.id,
+      channelId,
+      workspaceId: parsedWorkspaceId
+    });
+  }
+
   @Get(":channelId/handoffs")
   async listHandoffs(
     @Param("channelId") channelId: string,

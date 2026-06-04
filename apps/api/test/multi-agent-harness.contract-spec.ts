@@ -110,6 +110,26 @@ describe("multi-agent harness api contract", () => {
         type: "user_message"
       })
     ]);
+
+    await seedAgentRunLedger(client, conversationId);
+
+    const agentRunsResponse = await apiRequest(app)
+      .get(`/channels/${conversationId}/agent-runs`)
+      .query({ workspaceId })
+      .set("Cookie", owner.cookie);
+
+    expect(agentRunsResponse.status).toBe(200);
+    expect(agentRunsResponse.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          agentId: agentIds.engineer,
+          checkpoint: "context_prepared",
+          metadata: { checkpointSource: "contract-test" },
+          status: "running",
+          turnId: "turn:contract:engineer"
+        })
+      ])
+    );
   });
 });
 
@@ -117,6 +137,47 @@ async function clearFixtures(client: Client): Promise<void> {
   await client.query("DELETE FROM conversations WHERE workspace_id = $1", [workspaceId]);
   await client.query("DELETE FROM custom_agents WHERE workspace_id = $1", [workspaceId]);
   await client.query(`DELETE FROM users WHERE email LIKE '${emailPrefix}-%@example.com'`);
+}
+
+async function seedAgentRunLedger(
+  client: Client,
+  conversationId: string
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO agent_run_ledger (
+        id,
+        workspace_id,
+        channel_id,
+        agent_id,
+        provider,
+        turn_id,
+        status,
+        checkpoint,
+        context_snapshot_id,
+        produced_event_ids,
+        artifact_count,
+        metadata
+      )
+      VALUES (
+        'agent-run:contract:engineer',
+        $1,
+        $2,
+        $3,
+        'mock',
+        'turn:contract:engineer',
+        'running',
+        'context_prepared',
+        null,
+        '[]'::jsonb,
+        0,
+        '{"checkpointSource":"contract-test"}'::jsonb
+      )
+      ON CONFLICT (id) DO UPDATE
+        SET updated_at = now()
+    `,
+    [workspaceId, conversationId, agentIds.engineer]
+  );
 }
 
 async function seedAgents(client: Client, ownerUserId: string): Promise<void> {

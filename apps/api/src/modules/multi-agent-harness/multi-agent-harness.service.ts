@@ -9,6 +9,7 @@ import type {
   MultiAgentHandoff,
   MultiAgentOutputIntent,
   MultiAgentParticipant,
+  MultiAgentRunLedger,
   MultiAgentTurn,
   ProviderId
 } from "@agenthub/contracts";
@@ -17,6 +18,7 @@ import {
   multiAgentContextSnapshotSchema,
   multiAgentHandoffSchema,
   multiAgentParticipantSchema,
+  multiAgentRunLedgerSchema,
   multiAgentTurnSchema
 } from "@agenthub/contracts";
 import {
@@ -33,6 +35,7 @@ import {
   type MultiAgentChannelEventRow,
   type MultiAgentContextSnapshotRow,
   type MultiAgentHandoffRow,
+  type AgentRunLedgerRow,
   type MultiAgentParticipantRow,
   type MultiAgentTurnRow
 } from "./multi-agent-harness.repository.js";
@@ -480,6 +483,21 @@ export class MultiAgentHarnessService {
     return rows.map(mapTurnRow);
   }
 
+  async listAgentRuns(input: {
+    actorUserId: string;
+    channelId: string;
+    workspaceId: string;
+  }): Promise<MultiAgentRunLedger[]> {
+    const access = await this.channelMembersService.assertCanRead(input);
+    const rows = await this.repository.listAgentRunLedger({
+      channelId: input.channelId,
+      ownerUserId: access.ownerUserId,
+      workspaceId: input.workspaceId
+    });
+
+    return rows.map(mapAgentRunLedgerRow);
+  }
+
   async listHandoffs(input: {
     actorUserId: string;
     channelId: string;
@@ -830,6 +848,25 @@ function mapTurnRow(row: MultiAgentTurnRow): MultiAgentTurn {
     startedAt: row.started_at ? toIsoString(row.started_at) : null,
     status: row.status,
     triggeringEventId: row.triggering_event_id,
+    workspaceId: row.workspace_id
+  });
+}
+
+function mapAgentRunLedgerRow(row: AgentRunLedgerRow): MultiAgentRunLedger {
+  return multiAgentRunLedgerSchema.parse({
+    agentId: row.agent_id,
+    artifactCount: row.artifact_count,
+    channelId: row.channel_id,
+    checkpoint: row.checkpoint,
+    contextSnapshotId: row.context_snapshot_id,
+    createdAt: toIsoString(row.created_at),
+    id: row.id,
+    metadata: row.metadata ?? {},
+    producedEventIds: row.produced_event_ids ?? [],
+    provider: row.provider,
+    status: row.status,
+    turnId: row.turn_id,
+    updatedAt: toIsoString(row.updated_at),
     workspaceId: row.workspace_id
   });
 }

@@ -738,6 +738,40 @@ export class MultiAgentHarnessRepository {
     return result.rows;
   }
 
+  async listAgentRunLedger(input: {
+    channelId: string;
+    ownerUserId: string;
+    workspaceId: string;
+  }): Promise<AgentRunLedgerRow[]> {
+    const result = await this.database.execute<AgentRunLedgerRow>(sql`
+      SELECT
+        agent_run_ledger.agent_id,
+        agent_run_ledger.artifact_count,
+        agent_run_ledger.channel_id,
+        agent_run_ledger.checkpoint,
+        agent_run_ledger.context_snapshot_id,
+        agent_run_ledger.created_at,
+        agent_run_ledger.id,
+        agent_run_ledger.metadata,
+        agent_run_ledger.produced_event_ids,
+        agent_run_ledger.provider,
+        agent_run_ledger.status,
+        agent_run_ledger.turn_id,
+        agent_run_ledger.updated_at,
+        agent_run_ledger.workspace_id
+      FROM agent_run_ledger
+      INNER JOIN conversations
+        ON conversations.id = agent_run_ledger.channel_id
+        AND conversations.workspace_id = agent_run_ledger.workspace_id
+      WHERE agent_run_ledger.channel_id = ${input.channelId}
+        AND agent_run_ledger.workspace_id = ${input.workspaceId}
+        AND conversations.owner_user_id = ${input.ownerUserId}
+      ORDER BY agent_run_ledger.updated_at DESC, agent_run_ledger.id ASC
+    `);
+
+    return result.rows;
+  }
+
   async listTurns(input: {
     channelId: string;
     ownerUserId: string;

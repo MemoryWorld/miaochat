@@ -230,6 +230,36 @@ export const multiAgentTurnSchema = multiAgentTurnCandidateSchema.extend({
   status: multiAgentTurnStatusSchema.default("queued")
 });
 
+export const multiAgentRunStatusSchema = z.enum([
+  "created",
+  "planning",
+  "awaiting_approval",
+  "running",
+  "verifying",
+  "patch_ready",
+  "applied",
+  "completed",
+  "failed",
+  "cancelled"
+]);
+
+export const multiAgentRunLedgerSchema = z.object({
+  agentId: z.string().min(1),
+  artifactCount: z.number().int().nonnegative().default(0),
+  channelId: z.string().min(1),
+  checkpoint: z.string().min(1),
+  contextSnapshotId: z.string().min(1).nullable().default(null),
+  createdAt: z.string().datetime(),
+  id: z.string().min(1),
+  metadata: z.record(z.unknown()).default({}),
+  producedEventIds: z.array(z.string().min(1)).default([]),
+  provider: z.string().min(1),
+  status: multiAgentRunStatusSchema,
+  turnId: z.string().min(1),
+  updatedAt: z.string().datetime(),
+  workspaceId: workspaceIdSchema
+});
+
 export const multiAgentCausalChainSchema = z.object({
   agentToAgentTurnCount: z.number().int().nonnegative().default(0),
   channelId: z.string().min(1),
@@ -502,6 +532,8 @@ export type MultiAgentProceduralMemoryStep = z.infer<
   typeof multiAgentProceduralMemoryStepSchema
 >;
 export type MultiAgentResolvedMention = z.infer<typeof multiAgentResolvedMentionSchema>;
+export type MultiAgentRunLedger = z.infer<typeof multiAgentRunLedgerSchema>;
+export type MultiAgentRunStatus = z.infer<typeof multiAgentRunStatusSchema>;
 export type MultiAgentToolPlan = z.infer<typeof multiAgentToolPlanSchema>;
 export type MultiAgentTrajectoryMetrics = z.infer<typeof multiAgentTrajectoryMetricsSchema>;
 export type MultiAgentTriggerPolicy = z.infer<typeof multiAgentTriggerPolicySchema>;
