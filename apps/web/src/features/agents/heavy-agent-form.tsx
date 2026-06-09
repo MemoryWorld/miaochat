@@ -2,11 +2,24 @@
 
 import { useState } from "react";
 
+import type { CreateCustomAgentInput } from "@agenthub/contracts";
+
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
 import { ToolBindingPicker, type ToolBindingDraft } from "./tool-binding-picker";
 
 const availableTools = ["github", "shell", "browser", "filesystem"] as const;
+const runtimeProviders: Array<{
+  label: string;
+  value: Extract<
+    CreateCustomAgentInput["provider"],
+    "claude-code" | "codex" | "opencode"
+  >;
+}> = [
+  { label: "国产模型 / OpenCode", value: "opencode" },
+  { label: "Codex", value: "codex" },
+  { label: "Claude Code", value: "claude-code" }
+];
 
 type HeavyAgentFormProps = {
   onCreated?: (agentId: string) => void;
@@ -15,6 +28,9 @@ type HeavyAgentFormProps = {
 
 export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) {
   const [name, setName] = useState("");
+  const [provider, setProvider] = useState<(typeof runtimeProviders)[number]["value"]>(
+    "opencode"
+  );
   const [systemPrompt, setSystemPrompt] = useState("");
   const [bindings, setBindings] = useState<ToolBindingDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +48,7 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
         body: JSON.stringify({
           capabilityTags: [],
           name: name.trim(),
-          provider: "deepseek",
+          provider,
           systemPrompt: systemPrompt.trim(),
           toolBindings: bindings,
           workspaceId
@@ -75,6 +91,22 @@ export function HeavyAgentForm({ onCreated, workspaceId }: HeavyAgentFormProps) 
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
+      </label>
+      <label>
+        运行 Provider
+        <select
+          aria-label="运行 Provider"
+          value={provider}
+          onChange={(event) =>
+            setProvider(event.target.value as (typeof runtimeProviders)[number]["value"])
+          }
+        >
+          {runtimeProviders.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </label>
       <label>
         职责说明

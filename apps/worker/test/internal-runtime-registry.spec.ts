@@ -7,8 +7,8 @@ import {
 } from "../src/activities/internal-runtime-registry.js";
 
 describe("internal runtime registry", () => {
-  it("maps the preferred built-in backend to the DeepSeek model connection path", () => {
-    expect(resolveRuntimeBackendProvider("enhanced-hermes")).toBe("deepseek");
+  it("maps the preferred built-in backend to the OpenCode model connection path", () => {
+    expect(resolveRuntimeBackendProvider("enhanced-hermes")).toBe("opencode");
     expect(isBuiltInPreferredRuntime("enhanced-hermes")).toBe(true);
     expect(isCompatibilityRuntime("enhanced-hermes")).toBe(false);
   });

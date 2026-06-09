@@ -8,25 +8,59 @@ import { readApiErrorMessage } from "../../lib/api-errors";
 export type SurfaceDataState<T> = {
   data: T;
   error: string | null;
+  hasLoaded: boolean;
+  hasSuccessfulLoad: boolean;
   isLoading: boolean;
   refresh: () => Promise<void>;
 };
 
-export function useSurfaceData<T>(url: string | null, fallback: T): SurfaceDataState<T> {
+export type SurfaceDataOptions = {
+  preserveDataOnError?: boolean;
+  preserveDataWhenDisabled?: boolean;
+  resetKey?: number | string | null;
+};
+
+export function useSurfaceData<T>(
+  url: string | null,
+  fallback: T,
+  options: SurfaceDataOptions = {}
+): SurfaceDataState<T> {
   const fallbackRef = useRef(fallback);
+  const hasSuccessfulLoadRef = useRef(false);
+  const lastNonNullUrlRef = useRef<string | null>(url);
+  const resetKeyRef = useRef<number | string | null>(options.resetKey ?? null);
+  const urlRef = useRef(url);
   const [data, setData] = useState<T>(() => fallback);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [hasSuccessfulLoad, setHasSuccessfulLoad] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(url));
+  const preserveDataOnError = options.preserveDataOnError === true;
+  const preserveDataWhenDisabled = options.preserveDataWhenDisabled === true;
+  const resetKey = options.resetKey ?? null;
 
   useEffect(() => {
     fallbackRef.current = fallback;
   }, [fallback]);
 
+  const resetToFallback = useCallback((nextUrl: string | null) => {
+    hasSuccessfulLoadRef.current = false;
+    setData(fallbackRef.current);
+    setError(null);
+    setHasLoaded(false);
+    setHasSuccessfulLoad(false);
+    setIsLoading(Boolean(nextUrl));
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!url) {
-      setData(fallbackRef.current);
-      setError(null);
-      setIsLoading(false);
+      if (preserveDataWhenDisabled && hasSuccessfulLoadRef.current) {
+        setError(null);
+        setIsLoading(false);
+        return;
+      }
+
+      resetToFallback(null);
       return;
     }
 
@@ -40,27 +74,72 @@ export function useSurfaceData<T>(url: string | null, fallback: T): SurfaceDataS
 
       if (!response.ok) {
         setError(readErrorMessage(payload, "请求失败。"));
-        setData(fallbackRef.current);
+        if (!preserveDataOnError || !hasSuccessfulLoadRef.current) {
+          setData(fallbackRef.current);
+          setHasSuccessfulLoad(false);
+          hasSuccessfulLoadRef.current = false;
+        }
+        setHasLoaded(true);
         return;
       }
 
       setData((payload as T) ?? fallbackRef.current);
       setError(null);
+      setHasLoaded(true);
+      setHasSuccessfulLoad(true);
+      hasSuccessfulLoadRef.current = true;
     } catch {
       setError("请求失败。");
-      setData(fallbackRef.current);
+      if (!preserveDataOnError || !hasSuccessfulLoadRef.current) {
+        setData(fallbackRef.current);
+        setHasSuccessfulLoad(false);
+        hasSuccessfulLoadRef.current = false;
+      }
+      setHasLoaded(true);
     } finally {
       setIsLoading(false);
     }
-  }, [url]);
+  }, [preserveDataOnError, preserveDataWhenDisabled, resetToFallback, url]);
 
   useEffect(() => {
+    const resetKeyChanged = resetKeyRef.current !== resetKey;
+    const previousUrl = urlRef.current;
+    const urlChanged = previousUrl !== url;
+
+    if (resetKeyChanged) {
+      resetKeyRef.current = resetKey;
+      urlRef.current = url;
+      lastNonNullUrlRef.current = url;
+      resetToFallback(url);
+      return;
+    }
+
     if (!url) {
-      setData(fallbackRef.current);
-      setError(null);
+      urlRef.current = null;
+      if (preserveDataWhenDisabled && hasSuccessfulLoadRef.current) {
+        setError(null);
+        setIsLoading(false);
+        return;
+      }
+
+      resetToFallback(null);
+      return;
+    }
+
+    if (urlChanged) {
+      const lastNonNullUrl = lastNonNullUrlRef.current;
+
+      urlRef.current = url;
+      lastNonNullUrlRef.current = url;
+
+      if (!preserveDataWhenDisabled || lastNonNullUrl !== url) {
+        resetToFallback(url);
+        return;
+      }
+
       setIsLoading(false);
     }
-  }, [url]);
+  }, [preserveDataWhenDisabled, resetKey, resetToFallback, url]);
 
   useEffect(() => {
     if (!url) {
@@ -73,6 +152,8 @@ export function useSurfaceData<T>(url: string | null, fallback: T): SurfaceDataS
   return {
     data,
     error,
+    hasLoaded,
+    hasSuccessfulLoad,
     isLoading,
     refresh
   };

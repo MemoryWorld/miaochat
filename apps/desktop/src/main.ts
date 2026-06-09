@@ -46,7 +46,7 @@ export function createDesktopApplication(
     runtime: "electron",
     window: {
       entryUrl: options.webAppUrl ?? process.env.DESKTOP_WEB_URL ?? "http://localhost:3000",
-      preloadModule: options.preloadModule ?? "dist/preload.js",
+      preloadModule: options.preloadModule ?? "dist/preload.cjs",
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

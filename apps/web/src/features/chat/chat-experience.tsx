@@ -2,22 +2,29 @@
 
 import { startTransition, useEffect, useRef, useState } from "react";
 
+import { useRouter } from "next/navigation";
+
 import {
   type CodingWorkflowDecision,
   type CodingWorkflowDetail,
+  type CodingWorkflowLaunchResponse,
   deployCommandResultSchema,
   type Artifact,
   type Conversation,
   type CustomAgent,
   type DeployCommandResult,
   type Message,
-  type ModelConnection
+  type ModelConnection,
+  type OrchestratorStatusEventPayload,
+  type VisualWorkflow
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
 import { Badge } from "../../components/ui/badge";
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
+import { ArtifactCard } from "../artifacts/artifact-card";
+import { buildArtifactContentUrl } from "../artifacts/artifact-links";
 import { digestSha256 } from "../artifacts/digest";
 import {
   isBuiltInCodingTeammate
@@ -30,6 +37,7 @@ import {
   WorkModeLauncher,
   type CodingWorkflowDraft
 } from "../workmodes/work-mode-launcher";
+import { VisualWorkflowPanel } from "../workflows/visual-workflow-panel";
 import {
   mergeRuntimeArtifactStatus,
   type ArtifactStatusesByMessageId
@@ -47,11 +55,26 @@ import { useConversationStream } from "./use-conversation-stream";
 
 const timelineTabs = ["聊天", "文件", "置顶"] as const;
 const postSendRefreshDelaysMs = [1_200, 4_000, 8_000, 15_000, 30_000, 65_000, 90_000] as const;
+const realtimeStreamConnectingMessage = "正在连接实时流，稍后即可发送。";
+
+type TimelineTab = (typeof timelineTabs)[number];
+type TimelineFileEntry = {
+  artifact: Artifact;
+  message: Message;
+};
+
+type MessageDispatchResponse = Message & {
+  launchedCodingWorkflow?: CodingWorkflowLaunchResponse;
+  launchedWorkflow?: VisualWorkflow;
+};
 
 export function ChatExperience() {
+  const router = useRouter();
   const {
     activeWorkspaceId: workspaceId,
+    error: workspaceError,
     isLoading: isLoadingWorkspaces,
+    requiresLogin,
     refresh: refreshWorkspaces,
     selectWorkspace,
     workspaces
@@ -67,11 +90,14 @@ export function ChatExperience() {
   const [hasLoadedCustomAgents, setHasLoadedCustomAgents] = useState(false);
   const [isLaunchingCodingWorkflow, setIsLaunchingCodingWorkflow] = useState(false);
   const [isLoadingCustomAgents, setIsLoadingCustomAgents] = useState(false);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [isPinningMessageId, setIsPinningMessageId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [liveAssistantMessage, setLiveAssistantMessage] =
     useState<LiveAssistantMessage | null>(null);
+  const [liveOrchestratorStatus, setLiveOrchestratorStatus] =
+    useState<OrchestratorStatusEventPayload | null>(null);
   const [deployments, setDeployments] = useState<DeployCommandResult[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [artifactsByMessageId, setArtifactsByMessageId] = useState<
@@ -80,19 +106,25 @@ export function ChatExperience() {
   const [artifactStatusesByMessageId, setArtifactStatusesByMessageId] =
     useState<ArtifactStatusesByMessageId>({});
   const [codingWorkflow, setCodingWorkflow] = useState<CodingWorkflowDetail | null>(null);
+  const [visualWorkflows, setVisualWorkflows] = useState<VisualWorkflow[]>([]);
+  const [executingVisualWorkflowId, setExecutingVisualWorkflowId] = useState<string | null>(null);
   const [isDecisioningWorkflow, setIsDecisioningWorkflow] =
     useState<CodingWorkflowDecision | null>(null);
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [activeTimelineTab, setActiveTimelineTab] = useState<TimelineTab>("聊天");
   const [composerDraft, setComposerDraft] = useState<string | null>(null);
   const postSendRefreshTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const processedStreamEventCountRef = useRef(0);
-  const isWorkspaceReady = !isLoadingWorkspaces && Boolean(workspaceId);
+  const isWorkspaceReady = !isLoadingWorkspaces && Boolean(workspaceId) && !requiresLogin;
 
   const stream = useConversationStream({
     conversationId: selectedConversationId,
     workspaceId
   });
+  const isComposerWaitingForStream = Boolean(
+    selectedConversationId && stream.connectionState === "connecting"
+  );
 
   useEffect(() => {
     if (!isWorkspaceReady) {
@@ -104,6 +136,17 @@ export function ChatExperience() {
   }, [isWorkspaceReady, workspaceId]);
 
   useEffect(() => {
+    if (!workspaceId || !selectedConversationId) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      buildLastConversationStorageKey(workspaceId),
+      selectedConversationId
+    );
+  }, [selectedConversationId, workspaceId]);
+
+  useEffect(() => {
     setSelectedConversationId(null);
     setConfirmingDeleteConversationId(null);
     setDeletingConversationId(null);
@@ -113,10 +156,14 @@ export function ChatExperience() {
     setLiveAssistantMessage(null);
     setDeployments([]);
     setComposerDraft(null);
+    setActiveTimelineTab("聊天");
     setCustomAgents([]);
     setCodingWorkflow(null);
+    setVisualWorkflows([]);
+    setExecutingVisualWorkflowId(null);
     setHasLoadedCustomAgents(false);
     setIsDecisioningWorkflow(null);
+    setIsLoadingConversations(false);
     setIsLoadingWorkflow(false);
     setModelConnections([]);
     clearPostSendRefreshTimers();
@@ -124,15 +171,23 @@ export function ChatExperience() {
   }, [workspaceId]);
 
   useEffect(() => {
-    if (!isWorkspaceReady || !selectedConversationId) {
+    setActiveTimelineTab("聊天");
+
+    if (!selectedConversationId) {
       setMessages([]);
       setArtifactsByMessageId({});
       setArtifactStatusesByMessageId({});
       setCodingWorkflow(null);
+      setVisualWorkflows([]);
+      setExecutingVisualWorkflowId(null);
       setLiveAssistantMessage(null);
       setDeployments([]);
       clearPostSendRefreshTimers();
       processedStreamEventCountRef.current = 0;
+      return;
+    }
+
+    if (!isWorkspaceReady) {
       return;
     }
 
@@ -142,6 +197,7 @@ export function ChatExperience() {
     setDeployments([]);
     void loadMessages(selectedConversationId);
     void loadCodingWorkflow(selectedConversationId);
+    void loadVisualWorkflows(selectedConversationId);
   }, [isWorkspaceReady, selectedConversationId]);
 
   useEffect(() => () => clearPostSendRefreshTimers(), []);
@@ -167,9 +223,11 @@ export function ChatExperience() {
     for (const event of nextEvents) {
       startTransition(() => {
         if (event.kind === "conversation.message.started") {
+          setLiveOrchestratorStatus(null);
           setLiveAssistantMessage({
             content: "",
-            id: event.payload.messageId
+            id: event.payload.messageId,
+            isComplete: false
           });
           return;
         }
@@ -180,22 +238,29 @@ export function ChatExperience() {
               current?.id === event.payload.messageId
                 ? `${current.content}${event.payload.delta}`
                 : event.payload.delta,
-            id: event.payload.messageId
+            id: event.payload.messageId,
+            isComplete: false
           }));
           return;
         }
 
         if (event.kind === "conversation.message.completed") {
-          clearPostSendRefreshTimers();
+          setLiveOrchestratorStatus(null);
           setLiveAssistantMessage({
             content: event.payload.finalContent,
-            id: event.payload.messageId
+            id: event.payload.messageId,
+            isComplete: true
           });
           void loadMessages(selectedConversationId);
+          schedulePostSendRefresh(selectedConversationId);
           return;
         }
 
         if (event.kind === "conversation.status") {
+          setLiveOrchestratorStatus(
+            event.payload.state === "running" ? event.payload : null
+          );
+
           if (event.payload.artifactStatus) {
             const { artifactStatus } = event.payload;
             setArtifactStatusesByMessageId((current) =>
@@ -205,6 +270,8 @@ export function ChatExperience() {
             if (artifactStatus.status === "created") {
               void loadArtifactsForMessage(artifactStatus.messageId);
             }
+          } else {
+            schedulePostSendRefresh(selectedConversationId);
           }
 
           if (event.payload.workflowId) {
@@ -235,6 +302,14 @@ export function ChatExperience() {
   );
   const selectedConversation =
     conversationList.find((conversation) => conversation.id === selectedConversationId) ?? null;
+  const timelineFileEntries = messages.flatMap((message) =>
+    (artifactsByMessageId[message.id] ?? []).map((artifact) => ({
+      artifact,
+      message
+    }))
+  );
+  const pinnedTimelineMessages = messages.filter((message) => message.isPinned);
+
   useEffect(() => {
     if (
       !hasReadyModelConnection ||
@@ -255,6 +330,8 @@ export function ChatExperience() {
   ]);
 
   async function loadConversations(): Promise<void> {
+    setIsLoadingConversations(true);
+
     try {
       const response = await fetch(`${apiBaseUrl}/conversations?workspaceId=${workspaceId}`, {
         credentials: "include"
@@ -263,8 +340,6 @@ export function ChatExperience() {
 
       if (!response.ok) {
         startTransition(() => {
-          setConversations([]);
-          setSelectedConversationId(null);
           setErrorMessage(readErrorMessage(payload, "无法加载会话。"));
         });
         return;
@@ -275,18 +350,25 @@ export function ChatExperience() {
       startTransition(() => {
         setErrorMessage(null);
         setConversations(nextConversations);
-        setSelectedConversationId((current) =>
-          current && nextConversations.some((conversation) => conversation.id === current)
-            ? current
-            : nextConversations[0]?.id ?? null
-        );
+        setSelectedConversationId((current) => {
+          if (current && nextConversations.some((conversation) => conversation.id === current)) {
+            return current;
+          }
+
+          const restoredConversationId = resolveStoredConversationId(
+            workspaceId,
+            nextConversations
+          );
+
+          return restoredConversationId ?? nextConversations[0]?.id ?? null;
+        });
       });
     } catch {
       startTransition(() => {
-        setConversations([]);
-        setSelectedConversationId(null);
         setErrorMessage("无法加载会话。");
       });
+    } finally {
+      setIsLoadingConversations(false);
     }
   }
 
@@ -314,6 +396,9 @@ export function ChatExperience() {
         setMessages((current) => mergeMessages(current, nextMessages, conversationId));
         setLiveAssistantMessage((current) =>
           shouldClearLiveAssistantMessage(current, nextMessages) ? null : current
+        );
+        setLiveOrchestratorStatus((current) =>
+          current && shouldClearLiveStatus(nextMessages) ? null : current
         );
       });
 
@@ -357,6 +442,30 @@ export function ChatExperience() {
       });
     } finally {
       setIsLoadingWorkflow(false);
+    }
+  }
+
+  async function loadVisualWorkflows(conversationId: string): Promise<void> {
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/visual-workflows?channelId=${conversationId}&workspaceId=${workspaceId}`,
+        {
+          credentials: "include"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        return;
+      }
+
+      startTransition(() => {
+        setVisualWorkflows((current) =>
+          mergeVisualWorkflows(asArray<VisualWorkflow>(payload), current)
+        );
+      });
+    } catch {
+      // Keep the chat usable when workflow status is temporarily unavailable.
     }
   }
 
@@ -559,8 +668,11 @@ export function ChatExperience() {
           setArtifactsByMessageId({});
           setArtifactStatusesByMessageId({});
           setCodingWorkflow(null);
+          setVisualWorkflows([]);
+          setExecutingVisualWorkflowId(null);
           setDeployments([]);
           setLiveAssistantMessage(null);
+          setLiveOrchestratorStatus(null);
           clearPostSendRefreshTimers();
           processedStreamEventCountRef.current = 0;
         }
@@ -579,7 +691,7 @@ export function ChatExperience() {
     conversationId: string;
     mentionedAgentIds: string[];
     mentionedUserIds?: string[];
-  }): Promise<Message> {
+  }): Promise<MessageDispatchResponse> {
     const response = await fetch(`${apiBaseUrl}/messages/send`, {
       body: JSON.stringify({
         content: input.content,
@@ -601,7 +713,24 @@ export function ChatExperience() {
       throw new Error(readErrorMessage(payload, "发送消息失败。"));
     }
 
-    return payload as Message;
+    return payload as MessageDispatchResponse;
+  }
+
+  function applyCodingWorkflowLaunch(created: CodingWorkflowLaunchResponse): void {
+    setCodingWorkflow(created.workflow);
+    setConversations((current) => [
+      created.conversation,
+      ...current.filter((conversation) => conversation.id !== created.conversation.id)
+    ]);
+    setSelectedConversationId(created.conversation.id);
+    setMessages([]);
+    setArtifactsByMessageId({});
+    setArtifactStatusesByMessageId({});
+    setDeployments([]);
+    setLiveAssistantMessage(null);
+    setLiveOrchestratorStatus(null);
+    setActiveTimelineTab("聊天");
+    processedStreamEventCountRef.current = 0;
   }
 
   async function handleLaunchCodingWorkflow(draft: CodingWorkflowDraft): Promise<void> {
@@ -637,9 +766,7 @@ export function ChatExperience() {
       };
 
       startTransition(() => {
-        setCodingWorkflow(created.workflow);
-        setConversations((current) => [created.conversation, ...current]);
-        setSelectedConversationId(created.conversation.id);
+        applyCodingWorkflowLaunch(created);
       });
     } catch (error) {
       setErrorMessage(
@@ -687,12 +814,124 @@ export function ChatExperience() {
         setCodingWorkflow(payload as CodingWorkflowDetail);
       });
       await loadMessages(codingWorkflow.conversationId);
+      schedulePostSendRefresh(codingWorkflow.conversationId);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "更新工作流决策失败。"
       );
     } finally {
       setIsDecisioningWorkflow(null);
+    }
+  }
+
+  async function handleExecuteVisualWorkflow(targetWorkflow: VisualWorkflow): Promise<void> {
+    if (!workspaceId) {
+      setErrorMessage("请先选择工作区后再执行 workflow。");
+      return;
+    }
+
+    setErrorMessage(null);
+    setExecutingVisualWorkflowId(targetWorkflow.id);
+    setVisualWorkflows((current) =>
+      mergeVisualWorkflows([
+        {
+          ...targetWorkflow,
+          status: "running"
+        }
+      ], current)
+    );
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/visual-workflows/${encodeURIComponent(targetWorkflow.id)}/runs`,
+        {
+          body: JSON.stringify({
+            inputValues: {},
+            workspaceId
+          }),
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "执行 workflow 失败。"));
+      }
+
+      const executedWorkflow = payload as VisualWorkflow;
+      startTransition(() => {
+        setVisualWorkflows((current) =>
+          mergeVisualWorkflows([executedWorkflow], current)
+        );
+      });
+      await Promise.all([
+        loadVisualWorkflows(targetWorkflow.conversationId),
+        loadArtifactsForMessage(targetWorkflow.sourceMessageId),
+        loadMessages(targetWorkflow.conversationId)
+      ]);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "执行 workflow 失败。");
+    } finally {
+      setExecutingVisualWorkflowId(null);
+    }
+  }
+
+  async function handleRegenerateVisualWorkflow(targetWorkflow: VisualWorkflow): Promise<void> {
+    await mutateVisualWorkflow(targetWorkflow, "regenerate", "重新生成 workflow 失败。");
+  }
+
+  async function handleCancelVisualWorkflow(targetWorkflow: VisualWorkflow): Promise<void> {
+    await mutateVisualWorkflow(targetWorkflow, "cancel", "取消 workflow 失败。");
+  }
+
+  async function mutateVisualWorkflow(
+    targetWorkflow: VisualWorkflow,
+    action: "cancel" | "regenerate",
+    fallbackError: string
+  ): Promise<void> {
+    if (!workspaceId) {
+      setErrorMessage("请先选择工作区后再继续操作。");
+      return;
+    }
+
+    setErrorMessage(null);
+    setExecutingVisualWorkflowId(targetWorkflow.id);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/visual-workflows/${encodeURIComponent(targetWorkflow.id)}/${action}`,
+        {
+          body: JSON.stringify({
+            workspaceId
+          }),
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, fallbackError));
+      }
+
+      const nextWorkflow = payload as VisualWorkflow;
+      startTransition(() => {
+        setVisualWorkflows((current) =>
+          mergeVisualWorkflows([nextWorkflow], current)
+        );
+      });
+      await loadVisualWorkflows(targetWorkflow.conversationId);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : fallbackError);
+    } finally {
+      setExecutingVisualWorkflowId(null);
     }
   }
 
@@ -752,6 +991,36 @@ export function ChatExperience() {
         mentionedUserIds: input.mentionedUserIds
       });
 
+      const launchedWorkflow = message.launchedWorkflow;
+
+      if (launchedWorkflow) {
+        startTransition(() => {
+          setMessages((current) => [...current, message]);
+          setVisualWorkflows((current) =>
+            mergeVisualWorkflows([launchedWorkflow], current)
+          );
+          setConversations((current) =>
+            promoteConversationByActivity(current, conversationId, message.createdAt)
+          );
+          setLiveAssistantMessage(null);
+          setLiveOrchestratorStatus(null);
+        });
+        void loadVisualWorkflows(conversationId);
+        router.push(
+          `/workflows/${launchedWorkflow.id}?workspaceId=${encodeURIComponent(workspaceId)}`
+        );
+        return;
+      }
+
+      const launchedCodingWorkflow = message.launchedCodingWorkflow;
+
+      if (launchedCodingWorkflow) {
+        startTransition(() => {
+          applyCodingWorkflowLaunch(launchedCodingWorkflow);
+        });
+        return;
+      }
+
       startTransition(() => {
         setMessages((current) => [...current, message]);
         setConversations((current) =>
@@ -783,6 +1052,8 @@ export function ChatExperience() {
     postSendRefreshTimersRef.current = postSendRefreshDelaysMs.map((delay) =>
       setTimeout(() => {
         void loadMessages(conversationId);
+        void loadCodingWorkflow(conversationId);
+        void loadVisualWorkflows(conversationId);
         void loadConversations();
       }, delay)
     );
@@ -803,19 +1074,13 @@ export function ChatExperience() {
       return status;
     }
 
-    if (!diffArtifact.previewUrl) {
-      const status = "该 Diff 产物没有可读取的预览 URL，暂时无法应用。";
+    if (!diffArtifact.previewUrl && !diffArtifact.storageKey) {
+      const status = "该 Diff 产物没有可读取的内容，暂时无法应用。";
       setErrorMessage(status);
       return status;
     }
 
-    const diffResponse = await fetch(diffArtifact.previewUrl);
-
-    if (!diffResponse.ok) {
-      throw new Error(`读取 Diff 内容失败（${diffResponse.status}）。`);
-    }
-
-    const patch = await diffResponse.text();
+    const patch = await readDiffArtifactContent(diffArtifact);
     const contentDigest = await digestSha256(patch);
     const revisionResponse = await fetch(
       `${apiBaseUrl}/artifacts/${encodeURIComponent(diffArtifact.id)}/revisions?workspaceId=${encodeURIComponent(diffArtifact.workspaceId)}`,
@@ -843,6 +1108,34 @@ export function ChatExperience() {
     return typeof revision?.revisionIndex === "number"
       ? `Diff 已应用并记录为版本 #${revision.revisionIndex}。`
       : "Diff 已应用并记录为产物版本。";
+  }
+
+  async function readDiffArtifactContent(diffArtifact: Artifact): Promise<string> {
+    if (diffArtifact.storageKey) {
+      const diffResponse = await fetch(
+        buildArtifactContentUrl(diffArtifact.id, diffArtifact.workspaceId),
+        { credentials: "include" }
+      );
+
+      if (!diffResponse.ok) {
+        throw new Error(`读取 Diff 内容失败（${diffResponse.status}）。`);
+      }
+
+      const payload = await readJson(diffResponse) as { content?: unknown };
+      return typeof payload?.content === "string" ? payload.content : "";
+    }
+
+    if (!diffArtifact.previewUrl) {
+      return "";
+    }
+
+    const diffResponse = await fetch(diffArtifact.previewUrl);
+
+    if (!diffResponse.ok) {
+      throw new Error(`读取 Diff 内容失败（${diffResponse.status}）。`);
+    }
+
+    return diffResponse.text();
   }
 
   async function handlePinMessage(messageId: string): Promise<void> {
@@ -922,12 +1215,14 @@ export function ChatExperience() {
       setComposerDraft(null);
       setErrorMessage(null);
       setIsDecisioningWorkflow(null);
+      setIsLoadingConversations(false);
       setLiveAssistantMessage(null);
+      setLiveOrchestratorStatus(null);
       setMessages([]);
       setModelConnections([]);
       setSelectedConversationId(null);
     });
-    void refreshWorkspaces();
+    void refreshWorkspaces({ clearOnAuthFailure: true });
   }
 
   function resolveMessageAuthorLabel(message: Message): string | undefined {
@@ -955,6 +1250,11 @@ export function ChatExperience() {
 
     return "name" in teammate ? teammate.name : teammate.agentName;
   }
+
+  const conversationCountLabel =
+    isLoadingConversations && conversationList.length === 0
+      ? "同步中"
+      : `${conversationList.length} 条`;
 
   return (
     <AppShell
@@ -1001,45 +1301,54 @@ export function ChatExperience() {
             onAuthenticated={handleAuthenticated}
             onLoggedOut={handleLoggedOut}
           />
-          <WorkModeLauncher
-            canStartCoding={hasReadyModelConnection}
-            customAgents={codingEligibleCustomAgents}
-            isLaunching={isLaunchingCodingWorkflow}
-            isLoadingCustomAgents={isLoadingCustomAgents}
-            onLaunchCoding={handleLaunchCodingWorkflow}
-          />
-          <div className="grid gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="m-0 text-lg font-semibold text-slate-950">频道列表</h3>
-                <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-                  选择一个已有频道，或新建一条协作继续推进任务、文件和审批。
-                </p>
-              </div>
-              <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
-                {conversationList.length} 条
-              </span>
-            </div>
-            {hasReadyModelConnection ? (
-              <NewConversationDialog
-                agents={customAgents}
-                busy={isCreating}
-                isLoading={isLoadingCustomAgents}
-                isOpen={isNewConversationOpen}
-                onCreate={handleCreateCustomConversation}
-                onOpen={handleCreateConversation}
-                onToggleOpen={setIsNewConversationOpen}
+          {requiresLogin ? (
+            <article
+              className="rounded-[8px] border border-amber-200 bg-amber-50 p-4 text-sm leading-7 text-amber-900"
+              role="alert"
+            >
+              {workspaceError ?? "请先登录后再继续操作。"}
+            </article>
+          ) : (
+            <>
+              <WorkModeLauncher
+                canStartCoding={hasReadyModelConnection}
+                customAgents={codingEligibleCustomAgents}
+                isLaunching={isLaunchingCodingWorkflow}
+                isLoadingCustomAgents={isLoadingCustomAgents}
+                onLaunchCoding={handleLaunchCodingWorkflow}
               />
-            ) : (
-              <a
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-900 no-underline transition hover:bg-white"
-                href="/settings?section=model-connections"
-              >
-                添加模型连接
-              </a>
-            )}
-            <div className="grid gap-2.5">
-              {conversationList.map((conversation) => (
+              <div className="grid gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="m-0 text-lg font-semibold text-slate-950">频道列表</h3>
+                    <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
+                      选择一个已有频道，或新建一条协作继续推进任务、文件和审批。
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {conversationCountLabel}
+                  </span>
+                </div>
+                {hasReadyModelConnection ? (
+                  <NewConversationDialog
+                    agents={customAgents}
+                    busy={isCreating}
+                    isLoading={isLoadingCustomAgents}
+                    isOpen={isNewConversationOpen}
+                    onCreate={handleCreateCustomConversation}
+                    onOpen={handleCreateConversation}
+                    onToggleOpen={setIsNewConversationOpen}
+                  />
+                ) : (
+                  <a
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-900 no-underline transition hover:bg-white"
+                    href="/settings?section=model-connections"
+                  >
+                    添加模型连接
+                  </a>
+                )}
+                <div className="grid gap-2.5">
+                  {conversationList.map((conversation) => (
                 <article
                   key={conversation.id}
                   className={`grid gap-3 rounded-3xl border bg-white/90 px-4 py-3 transition hover:bg-white ${
@@ -1111,7 +1420,7 @@ export function ChatExperience() {
                   ) : null}
                 </article>
               ))}
-              {conversationList.length === 0 ? (
+              {conversationList.length === 0 && !isLoadingConversations && !errorMessage ? (
                 <p className="mb-0 text-sm leading-7 text-slate-600">
                   {hasReadyModelConnection
                     ? "当前还没有频道。先新建一条与 AI 同事的协作，再把任务、文件和置顶内容逐步沉淀进来。"
@@ -1120,58 +1429,165 @@ export function ChatExperience() {
               ) : null}
             </div>
           </div>
+            </>
+          )}
         </section>
         <div className="mb-5 flex flex-wrap gap-2">
-          {timelineTabs.map((tab, index) => (
-            <button
-              key={tab}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                index === 0
-                  ? "bg-slate-950 text-white"
-                  : "border border-slate-200 bg-white/80 text-slate-600"
-              }`}
-              type="button"
-            >
-              {tab}
-            </button>
-          ))}
+          {timelineTabs.map((tab) => {
+            const isActive = activeTimelineTab === tab;
+
+            return (
+              <button
+                key={tab}
+                aria-pressed={isActive}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  isActive
+                    ? "bg-slate-950 text-white"
+                    : "border border-slate-200 bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900"
+                }`}
+                onClick={() => setActiveTimelineTab(tab)}
+                type="button"
+              >
+                {tab}
+              </button>
+            );
+          })}
         </div>
         {errorMessage ? (
           <p className="mt-0 text-sm font-medium text-red-700">{errorMessage}</p>
         ) : null}
-        {selectedConversationId && isLoadingWorkflow ? (
-          <p className="mt-0 text-sm text-slate-500">正在加载当前频道的工作流状态...</p>
-        ) : null}
-        {codingWorkflow ? (
-          <CodingWorkflowPanel
-            busyDecision={isDecisioningWorkflow}
-            messages={messages}
-            onDecision={handleWorkflowDecision}
-            workflow={codingWorkflow}
+        {activeTimelineTab === "聊天" ? (
+          <>
+            {selectedConversationId && isLoadingWorkflow ? (
+              <p className="mt-0 text-sm text-slate-500">正在加载当前频道的工作流状态...</p>
+            ) : null}
+            {codingWorkflow ? (
+              <CodingWorkflowPanel
+                busyDecision={isDecisioningWorkflow}
+                messages={messages}
+                onDecision={handleWorkflowDecision}
+                workflow={codingWorkflow}
+              />
+            ) : null}
+            {visualWorkflows.length > 0 ? (
+              <VisualWorkflowPanel
+                busyWorkflowId={executingVisualWorkflowId}
+                onCancel={handleCancelVisualWorkflow}
+                onExecute={handleExecuteVisualWorkflow}
+                onRegenerate={handleRegenerateVisualWorkflow}
+                workflows={visualWorkflows}
+              />
+            ) : null}
+            <ChatThread
+              artifactsByMessageId={artifactsByMessageId}
+              artifactStatusesByMessageId={artifactStatusesByMessageId}
+              connectionState={stream.connectionState}
+              deployments={deployments}
+              isLoading={isLoadingWorkspaces || isLoadingWorkflow}
+              isPinningMessageId={isPinningMessageId}
+              liveAssistantMessage={liveAssistantMessage}
+              liveStatus={liveOrchestratorStatus}
+              messages={messages}
+              onApplyDiffMessage={handleApplyDiffMessage}
+              onPinMessage={handlePinMessage}
+              onQuoteMessage={handleQuoteMessage}
+              resolveAuthorLabel={resolveMessageAuthorLabel}
+              suppressEmptyState={requiresLogin || !selectedConversationId}
+            />
+            <ChatComposer
+              disabled={!selectedConversationId || isSending}
+              disabledReason={
+                isComposerWaitingForStream ? realtimeStreamConnectingMessage : null
+              }
+              draftContent={composerDraft}
+              onDraftApplied={() => setComposerDraft(null)}
+              onSend={handleSend}
+              participants={selectedConversation?.participants ?? []}
+              submitDisabled={isComposerWaitingForStream}
+            />
+          </>
+        ) : activeTimelineTab === "文件" ? (
+          <TimelineFiles entries={timelineFileEntries} />
+        ) : (
+          <PinnedTimeline
+            messages={pinnedTimelineMessages}
+            resolveAuthorLabel={resolveMessageAuthorLabel}
           />
-        ) : null}
-        <ChatThread
-          artifactsByMessageId={artifactsByMessageId}
-          artifactStatusesByMessageId={artifactStatusesByMessageId}
-          connectionState={stream.connectionState}
-          deployments={deployments}
-          isPinningMessageId={isPinningMessageId}
-          liveAssistantMessage={liveAssistantMessage}
-          messages={messages}
-          onApplyDiffMessage={handleApplyDiffMessage}
-          onPinMessage={handlePinMessage}
-          onQuoteMessage={handleQuoteMessage}
-          resolveAuthorLabel={resolveMessageAuthorLabel}
-        />
-        <ChatComposer
-          disabled={!selectedConversationId || isSending}
-          draftContent={composerDraft}
-          onDraftApplied={() => setComposerDraft(null)}
-          onSend={handleSend}
-          participants={selectedConversation?.participants ?? []}
-        />
+        )}
       </section>
     </AppShell>
+  );
+}
+
+function TimelineFiles({ entries }: { entries: TimelineFileEntry[] }) {
+  return (
+    <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-white/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="m-0 text-lg font-semibold text-slate-950">频道文件</h2>
+          <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
+            {entries.length > 0
+              ? `当前频道已有 ${entries.length} 个文件产物。`
+              : "当前频道还没有文件产物。"}
+          </p>
+        </div>
+      </div>
+      {entries.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {entries.map(({ artifact, message }) => (
+            <ArtifactCard
+              artifact={artifact}
+              conversationId={message.conversationId}
+              key={artifact.id}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PinnedTimeline({
+  messages,
+  resolveAuthorLabel
+}: {
+  messages: Message[];
+  resolveAuthorLabel: (message: Message) => string | undefined;
+}) {
+  return (
+    <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-white/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="m-0 text-lg font-semibold text-slate-950">置顶消息</h2>
+          <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
+            {messages.length > 0
+              ? `当前频道已有 ${messages.length} 条置顶消息。`
+              : "当前频道还没有置顶消息。"}
+          </p>
+        </div>
+      </div>
+      {messages.length > 0 ? (
+        <div className="grid gap-3">
+          {messages.map((message) => (
+            <article
+              key={message.id}
+              className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
+            >
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
+                <span>{resolveAuthorLabel(message) ?? "AI 同事"}</span>
+                <span aria-hidden="true">/</span>
+                <time dateTime={toIsoDateTime(message.createdAt)}>
+                  {formatTimelineDate(message.createdAt)}
+                </time>
+              </div>
+              <p className="m-0 whitespace-pre-wrap text-sm leading-7 text-slate-800">
+                {message.content}
+              </p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1192,6 +1608,27 @@ function formatStreamState(
 
 function asArray<T>(payload: unknown): T[] {
   return Array.isArray(payload) ? (payload as T[]) : [];
+}
+
+function buildLastConversationStorageKey(workspaceId: string): string {
+  return `miaochat:last-conversation:${workspaceId}`;
+}
+
+function resolveStoredConversationId(
+  workspaceId: string | null,
+  conversations: Conversation[]
+): string | null {
+  if (!workspaceId) {
+    return null;
+  }
+
+  const stored = window.localStorage.getItem(buildLastConversationStorageKey(workspaceId));
+
+  if (!stored) {
+    return null;
+  }
+
+  return conversations.some((conversation) => conversation.id === stored) ? stored : null;
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -1248,4 +1685,42 @@ function mergeMessages(
     (left, right) =>
       new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
   );
+}
+
+function mergeVisualWorkflows(
+  base: VisualWorkflow[],
+  overlays: VisualWorkflow[]
+): VisualWorkflow[] {
+  const merged = new Map<string, VisualWorkflow>();
+
+  for (const workflow of [...base, ...overlays]) {
+    const current = merged.get(workflow.id);
+    if (!current || new Date(workflow.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+      merged.set(workflow.id, workflow);
+    }
+  }
+
+  return [...merged.values()].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  );
+}
+
+function shouldClearLiveStatus(messages: Message[]): boolean {
+  const latestMessage = messages.at(-1);
+
+  return Boolean(latestMessage && latestMessage.role !== "user");
+}
+
+function formatTimelineDate(value: Date | string): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  }).format(new Date(value));
+}
+
+function toIsoDateTime(value: Date | string): string {
+  return new Date(value).toISOString();
 }

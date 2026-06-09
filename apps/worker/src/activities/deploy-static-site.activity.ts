@@ -1,10 +1,18 @@
 import {
+  parseDeployTargetProviderConfig,
+  type VercelStaticSiteDeployConfig
+} from "@agenthub/contracts";
+
+import {
   getWorkerLogger,
   getWorkerMetrics,
   getWorkerTracer
 } from "../observability/observability.js";
 
 import type { PreparedDeployRecord } from "./deploy-types.js";
+import { loadDeployArtifactBundle } from "./deploy-artifact-bundle.js";
+import { createVercelStaticDeployment } from "./deploy-provider-adapters.js";
+import { resolveDeployTargetSecret } from "./deploy-secrets.js";
 
 export type DeployExecutionResult = {
   previewUrl: string | null;
@@ -28,8 +36,36 @@ export async function deployStaticSiteActivity(
   });
 
   try {
-    if (input.credentialSource === "user_provided" && !input.hasSecret) {
-      throw new Error(`Deploy target ${input.targetName} is missing a stored secret.`);
+    const vercelConfig = parseOptionalVercelConfig(input.config);
+    if (vercelConfig) {
+      const [bundle, token] = await Promise.all([
+        loadDeployArtifactBundle(input),
+        resolveDeployTargetSecret({
+          envFallbackName: "VERCEL_TOKEN",
+          prepared: input
+        })
+      ]);
+      const deployment = await createVercelStaticDeployment({
+        config: {
+          ...vercelConfig,
+          teamId: vercelConfig.teamId ?? process.env.VERCEL_TEAM_ID
+        },
+        files: bundle.files,
+        token
+      });
+
+      metrics.incrementCounter("worker_deploy_success_total", {
+        targetKind: "static-site"
+      });
+      span.end({
+        provider: "vercel",
+        providerDeploymentId: deployment.providerDeploymentId
+      });
+
+      return {
+        previewUrl: deployment.previewUrl,
+        resultMessage: `Static site deployed to Vercel preview for ${input.artifactTitle}.`
+      };
     }
 
     const provider = String(input.config.provider ?? "static-site");
@@ -57,4 +93,14 @@ export async function deployStaticSiteActivity(
     span.fail(error);
     throw error;
   }
+}
+
+function parseOptionalVercelConfig(
+  config: Record<string, unknown>
+): VercelStaticSiteDeployConfig | null {
+  if (config.provider !== "vercel") {
+    return null;
+  }
+
+  return parseDeployTargetProviderConfig("static-site", config) as VercelStaticSiteDeployConfig;
 }

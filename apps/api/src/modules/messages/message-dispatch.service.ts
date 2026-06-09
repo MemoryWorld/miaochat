@@ -13,16 +13,20 @@ import {
 
 import {
   createMessageInputSchema,
+  runtimeMarkdownArtifactMaxMarkdownChars,
   sanitizeAssistantVisibleContent,
   sanitizeAssistantVisibleStreamEvents,
   type Message,
+  type OrchestratorStatusEventPayload,
   type ProviderId,
   type RuntimeArtifactDraft,
   type RuntimeArtifactStatus,
-  type StreamEvent
+  type StreamEvent,
+  type VisualWorkflow
 } from "@agenthub/contracts";
 import { mapToPublicError } from "@agenthub/domain";
 import {
+  buildCollaborationPlan,
   selectInitialOrchestratorTargets,
   type OrchestratorState
 } from "@agenthub/domain/orchestration";
@@ -37,6 +41,9 @@ import { StructuredLogger } from "../../observability/structured-logger.service.
 import { TraceRecorder } from "../../observability/trace-recorder.service.js";
 import { StreamBrokerService } from "../streams/stream-broker.service.js";
 import { ArtifactsService } from "../artifacts/artifacts.service.js";
+import { CodingWorkflowsService } from "../coding-workflows/coding-workflows.service.js";
+import { WorkspacePermissionGuard } from "../workspaces/permission.guard.js";
+import { VisualWorkflowsService } from "../visual-workflows/visual-workflows.service.js";
 import { MessagesService } from "./messages.service.js";
 import { PinMessageService } from "./pin-message.service.js";
 
@@ -44,6 +51,7 @@ const resolvedConversationAgentSchema = z.object({
   agentId: z.string().min(1),
   agentName: z.string().min(1),
   capabilityTags: z.array(z.string().min(1)).default([]),
+  modelProfileId: z.string().min(1).nullable().optional(),
   outputStyle: z.string().min(1).nullable().optional(),
   participantId: z.string().min(1).optional(),
   provider: z.custom<ProviderId>((value) => typeof value === "string" && value.length > 0),
@@ -55,6 +63,10 @@ const resolvedConversationSchema = z.object({
   agents: z.array(resolvedConversationAgentSchema),
   mode: z.enum(["direct", "group"])
 });
+
+type MessageDispatchResponse = Message & {
+  launchedWorkflow?: VisualWorkflow;
+};
 
 @Injectable()
 export class MessageDispatchService implements OnModuleDestroy {
@@ -75,14 +87,23 @@ export class MessageDispatchService implements OnModuleDestroy {
     @Inject(TraceRecorder) private readonly traceRecorder: TraceRecorder,
     @Optional()
     @Inject(ArtifactsService)
-    private readonly artifactsService?: ArtifactsService
+    private readonly artifactsService?: ArtifactsService,
+    @Optional()
+    @Inject(CodingWorkflowsService)
+    private readonly codingWorkflowsService?: CodingWorkflowsService,
+    @Optional()
+    @Inject(WorkspacePermissionGuard)
+    private readonly workspacePermissionGuard?: WorkspacePermissionGuard,
+    @Optional()
+    @Inject(VisualWorkflowsService)
+    private readonly visualWorkflowsService?: VisualWorkflowsService
   ) {}
 
   async onModuleDestroy(): Promise<void> {
     await this.connection?.close();
   }
 
-  async send(input: unknown, ownerUserId: string) {
+  async send(input: unknown, ownerUserId: string): Promise<MessageDispatchResponse> {
     const parsed = createMessageInputSchema.parse(input);
 
     if (parsed.role !== "user") {
@@ -121,13 +142,37 @@ export class MessageDispatchService implements OnModuleDestroy {
       conversationId: parsed.conversationId,
       workspaceId: parsed.workspaceId
     });
+    const workflowCreationIntent =
+      parsed.mentionedAgentIds.length === 0
+        ? parseVisualWorkflowCreationIntent(parsed.content)
+        : null;
+
+    const userMessage = await this.messagesService.create(parsed, ownerUserId, sendAccess);
+
+    if (workflowCreationIntent) {
+      if (!this.visualWorkflowsService) {
+        throw new BadRequestException("Workflow 服务暂时不可用。");
+      }
+
+      const launchedWorkflow = await this.visualWorkflowsService.createFromMessage({
+        content: parsed.content,
+        conversationId: parsed.conversationId,
+        ownerUserId: sendAccess.ownerUserId,
+        sourceMessageId: userMessage.id,
+        workspaceId: parsed.workspaceId
+      });
+
+      return {
+        ...userMessage,
+        launchedWorkflow
+      };
+    }
+
     const resolvedConversation = await this.resolveConversation(
       parsed.conversationId,
       parsed.workspaceId,
       sendAccess.ownerUserId
     );
-
-    const userMessage = await this.messagesService.create(parsed, ownerUserId, sendAccess);
 
     if (resolvedConversation.agents.length === 0) {
       return userMessage;
@@ -149,6 +194,7 @@ export class MessageDispatchService implements OnModuleDestroy {
           conversationId: parsed.conversationId,
           message: parsed.content,
           mentionedAgentIds: userMessage.mentionedAgentIds,
+          modelProfileId: directAgent.modelProfileId,
           ownerUserId: sendAccess.ownerUserId,
           outputStyle: directAgent.outputStyle,
           provider: directAgent.provider,
@@ -188,6 +234,7 @@ export class MessageDispatchService implements OnModuleDestroy {
     conversationId: string;
     message: string;
     mentionedAgentIds: string[];
+    modelProfileId?: string | null;
     ownerUserId: string;
     outputStyle?: string | null;
     provider: ProviderId;
@@ -216,7 +263,8 @@ export class MessageDispatchService implements OnModuleDestroy {
       const context = await this.pinMessageService.loadConversationContext(
         input.conversationId,
         input.workspaceId,
-        input.ownerUserId
+        input.ownerUserId,
+        { excludeMessageId: input.userMessageId }
       );
       const client = await this.getTemporalClient();
       await this.multiAgentHarnessService.recordAgentRunsStarted?.({
@@ -305,6 +353,13 @@ export class MessageDispatchService implements OnModuleDestroy {
         userMessageId: input.userMessageId,
         workspaceId: input.workspaceId
       });
+      await this.createVisibleDispatchFailureMessage({
+        agentId: input.agentId,
+        content: formatDirectDispatchFailureNotice(error),
+        conversationId: input.conversationId,
+        ownerUserId: input.ownerUserId,
+        workspaceId: input.workspaceId
+      });
       this.metrics.incrementCounter("provider_dispatch_error_total", {
         mode: "direct",
         provider: input.provider
@@ -343,22 +398,39 @@ export class MessageDispatchService implements OnModuleDestroy {
       mode: "group",
       provider: providerLabel
     });
-    const initialGroupRuns = buildInitialGroupRunDescriptors(input);
+    const plannedGroupRuns = buildPlannedGroupRunDescriptors(input);
+    const groupDispatchStartedAt = Date.now();
+    let groupProgressHeartbeat: ReturnType<typeof setInterval> | null = null;
 
     try {
       const context = await this.pinMessageService.loadConversationContext(
         input.conversationId,
         input.workspaceId,
-        input.ownerUserId
+        input.ownerUserId,
+        { excludeMessageId: input.userMessageId }
       );
       const client = await this.getTemporalClient();
       await this.multiAgentHarnessService.recordAgentRunsStarted?.({
         channelId: input.conversationId,
         ownerUserId: input.ownerUserId,
-        runs: initialGroupRuns,
+        runs: plannedGroupRuns,
         userMessageId: input.userMessageId,
         workspaceId: input.workspaceId
       });
+      this.publishGroupProgressStatus({
+        input,
+        label: "orchestrator.dispatched",
+        plannedGroupRuns,
+        startedAt: groupDispatchStartedAt
+      });
+      groupProgressHeartbeat = setInterval(() => {
+        this.publishGroupProgressStatus({
+          input,
+          label: "orchestrator.running",
+          plannedGroupRuns,
+          startedAt: groupDispatchStartedAt
+        });
+      }, 15_000);
       const execution = (await client.workflow.execute("groupOrchestratorWorkflow", {
         args: [
           {
@@ -379,6 +451,10 @@ export class MessageDispatchService implements OnModuleDestroy {
         state: OrchestratorState;
         streamEvents: StreamEvent[];
       };
+      if (groupProgressHeartbeat) {
+        clearInterval(groupProgressHeartbeat);
+        groupProgressHeartbeat = null;
+      }
       const streamEvents = sanitizeAssistantVisibleStreamEvents(execution.streamEvents);
 
       for (const event of streamEvents) {
@@ -402,15 +478,41 @@ export class MessageDispatchService implements OnModuleDestroy {
         message: Message;
         result: OrchestratorState["results"][number];
       }> = [];
-      for (const result of execution.state.results) {
+      const markdownFallback = buildGroupMarkdownFallback({
+        finalContent: execution.finalContent,
+        message: input.message,
+        results: execution.state.results
+      });
+      const markdownFallbackResultIndex =
+        markdownFallback && execution.state.results.length > 0
+          ? execution.state.results.length - 1
+          : -1;
+
+      for (let index = 0; index < execution.state.results.length; index += 1) {
+        const result = execution.state.results[index];
+
+        if (!result) {
+          continue;
+        }
+
         const visibleResult = {
           ...result,
           finalContent: sanitizeAssistantVisibleContent(result.finalContent, {
             stripCollaborationPlaceholders: true
           })
         };
+        const resultArtifacts = [
+          ...(visibleResult.artifacts ?? []),
+          ...(index === markdownFallbackResultIndex && markdownFallback
+            ? [markdownFallback]
+            : [])
+        ];
+        const visibleResultWithArtifacts = {
+          ...visibleResult,
+          ...(resultArtifacts.length > 0 ? { artifacts: resultArtifacts } : {})
+        };
         const assistantMessage = await this.messagesService.createAssistantMessage({
-          content: visibleResult.finalContent,
+          content: visibleResultWithArtifacts.finalContent,
           conversationId: input.conversationId,
           id: randomUUID(),
           ownerUserId: input.ownerUserId,
@@ -418,13 +520,13 @@ export class MessageDispatchService implements OnModuleDestroy {
           workspaceId: input.workspaceId
         });
         await this.persistRuntimeArtifacts({
-          artifacts: visibleResult.artifacts,
+          artifacts: visibleResultWithArtifacts.artifacts,
           message: assistantMessage,
           ownerUserId: input.ownerUserId
         });
         assistantMessages.push({
           message: assistantMessage,
-          result: visibleResult
+          result: visibleResultWithArtifacts
         });
       }
 
@@ -482,14 +584,24 @@ export class MessageDispatchService implements OnModuleDestroy {
         assistantMessageIds: completionMessages.map((message) => message.id)
       });
     } catch (error) {
+      if (groupProgressHeartbeat) {
+        clearInterval(groupProgressHeartbeat);
+      }
       await this.recordAgentRunFailureCheckpoint({
         channelId: input.conversationId,
         error,
         mode: "group",
         ownerUserId: input.ownerUserId,
         provider: providerLabel,
-        runs: initialGroupRuns,
+        runs: plannedGroupRuns,
         userMessageId: input.userMessageId,
+        workspaceId: input.workspaceId
+      });
+      await this.createVisibleDispatchFailureMessage({
+        agentId: null,
+        content: formatGroupDispatchFailureNotice(error),
+        conversationId: input.conversationId,
+        ownerUserId: input.ownerUserId,
         workspaceId: input.workspaceId
       });
       this.metrics.incrementCounter("provider_dispatch_error_total", {
@@ -537,6 +649,62 @@ export class MessageDispatchService implements OnModuleDestroy {
         error: ledgerError instanceof Error ? ledgerError.message : String(ledgerError),
         mode: input.mode,
         provider: input.provider,
+        workspaceId: input.workspaceId
+      });
+    }
+  }
+
+  private publishGroupProgressStatus(input: {
+    input: {
+      conversationId: string;
+      targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
+      workspaceId: string;
+    };
+    label: "orchestrator.dispatched" | "orchestrator.running";
+    plannedGroupRuns: Array<{
+      agentId: string;
+      provider: ProviderId;
+      reason: "human_mention" | "scheduled_followup";
+      turnKey: string;
+    }>;
+    startedAt: number;
+  }): void {
+    this.streamBroker.publish({
+      conversationId: input.input.conversationId,
+      event: {
+        kind: "conversation.status",
+        payload: buildGroupProgressStatusPayload(input)
+      },
+      workspaceId: input.input.workspaceId
+    });
+  }
+
+  private async createVisibleDispatchFailureMessage(input: {
+    agentId: string | null;
+    content: string;
+    conversationId: string;
+    ownerUserId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    try {
+      const failureMessage = await this.messagesService.createAssistantMessage({
+        content: input.content,
+        conversationId: input.conversationId,
+        id: randomUUID(),
+        ownerUserId: input.ownerUserId,
+        sourceAgentId: input.agentId,
+        workspaceId: input.workspaceId
+      });
+
+      this.streamBroker.publish({
+        conversationId: input.conversationId,
+        event: createAssistantCompletedEvent(failureMessage),
+        workspaceId: input.workspaceId
+      });
+    } catch (error) {
+      this.logger.warn("provider.dispatch.failure_message_failed", {
+        conversationId: input.conversationId,
+        error: error instanceof Error ? error.message : String(error),
         workspaceId: input.workspaceId
       });
     }
@@ -592,6 +760,7 @@ export class MessageDispatchService implements OnModuleDestroy {
         agentId: row.agent_id,
         agentName: row.agent_name,
         capabilityTags: row.capability_tags ?? [],
+        modelProfileId: row.model_profile_id,
         outputStyle: row.output_style,
         participantId: row.agent_id,
         provider: row.provider,
@@ -636,18 +805,12 @@ export class MessageDispatchService implements OnModuleDestroy {
       });
 
       try {
-        const persistedArtifact =
-          artifact.type === "markdown"
-            ? await this.artifactsService.createRuntimeMarkdownArtifact({
-                draft: artifact,
-                messageId: input.message.id,
-                workspaceId: input.message.workspaceId
-              }, input.ownerUserId)
-            : await this.artifactsService.createRuntimeDiffArtifact({
-                draft: artifact,
-                messageId: input.message.id,
-                workspaceId: input.message.workspaceId
-              }, input.ownerUserId);
+        const persistedArtifact = await this.createRuntimeArtifact({
+          artifact,
+          messageId: input.message.id,
+          ownerUserId: input.ownerUserId,
+          workspaceId: input.message.workspaceId
+        });
         this.publishRuntimeArtifactStatus({
           artifactId: persistedArtifact.id,
           message: input.message,
@@ -673,6 +836,39 @@ export class MessageDispatchService implements OnModuleDestroy {
         });
       }
     }
+  }
+
+  private async createRuntimeArtifact(input: {
+    artifact: RuntimeArtifactDraft;
+    messageId: string;
+    ownerUserId: string;
+    workspaceId: string;
+  }) {
+    if (!this.artifactsService) {
+      throw new Error("Artifact service is unavailable.");
+    }
+
+    if (input.artifact.type === "markdown") {
+      return this.artifactsService.createRuntimeMarkdownArtifact({
+        draft: input.artifact,
+        messageId: input.messageId,
+        workspaceId: input.workspaceId
+      }, input.ownerUserId);
+    }
+
+    if (input.artifact.type === "webpage") {
+      return this.artifactsService.createRuntimeWebpageArtifact({
+        draft: input.artifact,
+        messageId: input.messageId,
+        workspaceId: input.workspaceId
+      }, input.ownerUserId);
+    }
+
+    return this.artifactsService.createRuntimeDiffArtifact({
+      draft: input.artifact,
+      messageId: input.messageId,
+      workspaceId: input.workspaceId
+    }, input.ownerUserId);
   }
 
   private publishRuntimeArtifactStatus(input: {
@@ -752,8 +948,10 @@ function truncateRuntimeArtifactError(error: string): string {
   return error.length > 500 ? error.slice(0, 497) + "..." : error;
 }
 
-function buildInitialGroupRunDescriptors(input: {
+function buildPlannedGroupRunDescriptors(input: {
   initialTargetAgentIds: string[];
+  lockInitialTargets: boolean;
+  message: string;
   mentionedAgentIds: string[];
   targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
   userMessageId: string;
@@ -763,8 +961,28 @@ function buildInitialGroupRunDescriptors(input: {
   reason: "human_mention" | "scheduled_followup";
   turnKey: string;
 }> {
-  return input.initialTargetAgentIds.flatMap((agentId, turnIndex) => {
-    const target = input.targets.find((candidate) => candidate.agentId === agentId);
+  const initialTargets = resolveInitialGroupTargets(input);
+
+  if (initialTargets.length === 0) {
+    return [];
+  }
+
+  const collaborationPlan = input.lockInitialTargets
+    ? {
+        maxRounds: 1,
+        order: initialTargets,
+        totalSteps: initialTargets.length
+      }
+    : buildCollaborationPlan({
+        message: input.message,
+        targets: initialTargets
+      });
+  const totalSteps =
+    collaborationPlan.totalSteps ??
+    collaborationPlan.maxRounds * collaborationPlan.order.length;
+
+  return Array.from({ length: totalSteps }).flatMap((_, turnIndex) => {
+    const target = collaborationPlan.order[turnIndex % collaborationPlan.order.length];
 
     if (!target) {
       return [];
@@ -772,13 +990,74 @@ function buildInitialGroupRunDescriptors(input: {
 
     return [
       {
-        agentId,
+        agentId: target.agentId,
         provider: target.provider,
-        reason: resolveHumanTriggeredRunReason(input.mentionedAgentIds, agentId),
-        turnKey: groupTurnKeyForTurnIndex(input.userMessageId, turnIndex, agentId)
+        reason: resolveHumanTriggeredRunReason(input.mentionedAgentIds, target.agentId),
+        turnKey: groupTurnKeyForTurnIndex(input.userMessageId, turnIndex, target.agentId)
       }
     ];
   });
+}
+
+function buildGroupProgressStatusPayload(input: {
+  input: {
+    targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
+  };
+  label: "orchestrator.dispatched" | "orchestrator.running";
+  plannedGroupRuns: Array<{
+    agentId: string;
+  }>;
+  startedAt: number;
+}): OrchestratorStatusEventPayload {
+  const targetNameById = new Map(
+    input.input.targets.map((target) => [target.agentId, target.agentName])
+  );
+  const plannedNames = input.plannedGroupRuns.map(
+    (run) => targetNameById.get(run.agentId) ?? "AI 同事"
+  );
+  const activeAgentName = plannedNames[0] ?? "AI 同事";
+  const totalAgentCount = Math.max(input.plannedGroupRuns.length, input.input.targets.length, 1);
+  const queueSummary = plannedNames.slice(0, 6).join(" → ");
+  const elapsedSeconds = Math.max(
+    0,
+    Math.round((Date.now() - input.startedAt) / 1_000)
+  );
+  const summary =
+    input.label === "orchestrator.dispatched"
+      ? `已安排 ${totalAgentCount} 个协作步骤：${queueSummary || activeAgentName}。完成后会自动写回聊天和文件。`
+      : `${activeAgentName}等 AI 同事仍在处理，已等待 ${elapsedSeconds} 秒。完成后会自动写回聊天和文件。`;
+
+  return {
+    activeAgentName,
+    failures: [],
+    label: input.label,
+    state: "running",
+    successfulAgentCount: 0,
+    summary,
+    totalAgentCount
+  };
+}
+
+function resolveInitialGroupTargets(input: {
+  initialTargetAgentIds: string[];
+  targets: Array<z.infer<typeof resolvedConversationAgentSchema>>;
+}): Array<z.infer<typeof resolvedConversationAgentSchema>> {
+  const targetById = new Map(input.targets.map((target) => [target.agentId, target]));
+  const seen = new Set<string>();
+  const resolvedTargets: Array<z.infer<typeof resolvedConversationAgentSchema>> = [];
+
+  for (const agentId of input.initialTargetAgentIds) {
+    const target = targetById.get(agentId);
+
+    if (!target || seen.has(target.agentId)) {
+      continue;
+    }
+
+    seen.add(target.agentId);
+    resolvedTargets.push(target);
+  }
+
+  return resolvedTargets;
 }
 
 function buildFailedGroupRunDescriptors(
@@ -856,6 +1135,113 @@ function formatGroupFailureNotice(state: OrchestratorState): string {
   ].join("\n");
 }
 
+function buildGroupMarkdownFallback(input: {
+  finalContent: string;
+  message: string;
+  results: OrchestratorState["results"];
+}): RuntimeArtifactDraft | null {
+  if (!shouldCreateMarkdownFallback(input) || hasMarkdownArtifact(input.results)) {
+    return null;
+  }
+
+  const markdown = truncateMarkdown(
+    sanitizeAssistantVisibleContent(resolveFallbackMarkdownContent(input), {
+      stripCollaborationPlaceholders: true
+    })
+  );
+
+  if (markdown.trim().length === 0) {
+    return null;
+  }
+
+  return {
+    fileName: "collaboration-deliverable.md",
+    markdown,
+    mimeType: "text/markdown",
+    title: "协作交付物",
+    type: "markdown"
+  };
+}
+
+function shouldCreateMarkdownFallback(input: {
+  finalContent: string;
+  message: string;
+  results: OrchestratorState["results"];
+}): boolean {
+  if (mentionsMarkdownDeliverable(input.message)) {
+    return true;
+  }
+
+  const claimedOutput = [
+    input.finalContent,
+    ...input.results.map((result) => result.finalContent)
+  ].join("\n\n");
+
+  return claimsMarkdownDeliverable(claimedOutput);
+}
+
+function mentionsMarkdownDeliverable(text: string): boolean {
+  const normalized = text.toLowerCase();
+  const mentionsMarkdown =
+    normalized.includes("markdown") || /(^|[^\p{L}\p{N}])md($|[^\p{L}\p{N}])/iu.test(text);
+  const asksForDeliverable =
+    /可下载|下载|交付物|文件|文档|附件|产物/u.test(text);
+
+  return mentionsMarkdown && asksForDeliverable;
+}
+
+function claimsMarkdownDeliverable(text: string): boolean {
+  if (!mentionsMarkdownDeliverable(text)) {
+    return false;
+  }
+
+  return /已(?:经)?(?:生成|创建|产出|整理|附上)|生成了|创建了|可(?:直接)?下载/u.test(text);
+}
+
+function hasMarkdownArtifact(results: OrchestratorState["results"]): boolean {
+  return results.some((result) =>
+    (result.artifacts ?? []).some((artifact) => artifact.type === "markdown")
+  );
+}
+
+function resolveFallbackMarkdownContent(input: {
+  finalContent: string;
+  results: OrchestratorState["results"];
+}): string {
+  if (input.finalContent.trim().length > 0) {
+    return input.finalContent;
+  }
+
+  return input.results
+    .map((result) => `## ${result.agentName}\n\n${result.finalContent}`)
+    .join("\n\n");
+}
+
+function truncateMarkdown(markdown: string): string {
+  if (markdown.length <= runtimeMarkdownArtifactMaxMarkdownChars) {
+    return markdown;
+  }
+
+  return markdown.slice(0, runtimeMarkdownArtifactMaxMarkdownChars - 40).trimEnd() +
+    "\n\n（内容过长，已截断。）";
+}
+
+function formatDirectDispatchFailureNotice(error: unknown): string {
+  return [
+    "这次 AI 同事执行没有完成。",
+    `原因：${errorMessageForCheckpoint(error)}`,
+    "请检查模型连接或稍后重试。"
+  ].join("\n");
+}
+
+function formatGroupDispatchFailureNotice(error: unknown): string {
+  return [
+    "这次多同事协作没有完成。",
+    `原因：${errorMessageForCheckpoint(error)}`,
+    "请检查模型连接后重试，或减少参与同事数量再发送。"
+  ].join("\n");
+}
+
 function remapStreamEventMessageIds(
   events: StreamEvent[],
   messageId: string,
@@ -900,6 +1286,48 @@ function createAssistantCompletedEvent(message: Message): StreamEvent {
       messageId: message.id
     }
   };
+}
+
+function parseVisualWorkflowCreationIntent(content: string): { goal: string } | null {
+  const normalized = content.toLowerCase();
+  const mentionsWorkflow = /workflow|工作流/iu.test(content) || /workflow/iu.test(normalized);
+  const asksToCreate =
+    /创建|新建|设计|生成|建立|搭建|帮我创建|create|build|generate|new/iu.test(
+      content
+    );
+
+  if (!mentionsWorkflow || !asksToCreate) {
+    return null;
+  }
+
+  const goal = extractVisualWorkflowGoal(content);
+
+  return goal ? { goal } : null;
+}
+
+function extractVisualWorkflowGoal(content: string): string | null {
+  const explicitGoal = /目标\s*[：:]\s*([\s\S]+?)(?=(?:请先|先由|不要直接|不要|等待我|$))/iu.exec(
+    content
+  )?.[1];
+
+  if (explicitGoal !== undefined) {
+    const normalized = explicitGoal.trim().replace(/^[：:，,。；;\s]+/u, "");
+
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  const candidate = content
+    .replace(/^.*?(?:创建|新建|设计|生成|建立|搭建|create|build|generate|new).*?(?:workflow|工作流)[。；;，,\s]*/iu, "")
+    .replace(/请先[\s\S]*$/u, "")
+    .replace(/先由[\s\S]*$/u, "")
+    .replace(/不要直接[\s\S]*$/u, "")
+    .replace(/等待我[\s\S]*$/u, "");
+  const normalized = candidate
+    .trim()
+    .replace(/^[：:，,。；;\s]+/u, "")
+    .replace(/[。；;，,\s]+$/u, "");
+
+  return normalized.length > 0 ? normalized : null;
 }
 
 function summarizeProviders(

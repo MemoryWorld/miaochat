@@ -219,12 +219,14 @@ describe("workspace shell API", () => {
     expect(channelFiles).toEqual([
       expect.objectContaining({
         messageId: created.workflow.planMessageId,
+        storageKey: null,
         title: "计划附件"
       })
     ]);
     expect(actorFiles).toEqual([
       expect.objectContaining({
         messageId: created.workflow.planMessageId,
+        storageKey: null,
         title: "计划附件"
       })
     ]);
@@ -241,13 +243,27 @@ describe("workspace shell API", () => {
         })
       ])
     );
-    expect(workflowTasks).toHaveLength(4);
-    expect(techLeadTasks).toEqual([
-      expect.objectContaining({
-        teammateId: "tech_lead",
-        title: "技术负责人提交计划"
-      })
-    ]);
+    expect(workflowTasks).toHaveLength(created.workflow.taskSnapshot.length);
+    expect(workflowTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          teammateId: "tech_lead",
+          title: "技术负责人汇总完成度"
+        })
+      ])
+    );
+    expect(techLeadTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          teammateId: "tech_lead",
+          title: "技术负责人提交计划"
+        }),
+        expect.objectContaining({
+          teammateId: "tech_lead",
+          title: "技术负责人汇总完成度"
+        })
+      ])
+    );
     expect(calendar).toEqual([
       expect.objectContaining({
         channelId: created.conversation.id,

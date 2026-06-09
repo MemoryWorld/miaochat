@@ -328,7 +328,7 @@ describe("conversations and messages api", () => {
     expect(addResponse.statusCode).toBe(201);
     expect(addResponse.json()).toMatchObject({
       agent: {
-        provider: "deepseek",
+        provider: "opencode",
         workspaceId
       },
       conversation: {
@@ -415,7 +415,7 @@ describe("conversations and messages api", () => {
     expect(addResponse.json()).toMatchObject({
       agent: {
         name: "Conversation Hermes1",
-        provider: "deepseek",
+        provider: "opencode",
         workspaceId
       },
       conversation: {

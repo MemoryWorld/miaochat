@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { ArtifactsModule } from "../artifacts/artifacts.module.js";
 import { AuthModule } from "../auth/auth.module.js";
 import { ConversationsModule } from "../conversations/conversations.module.js";
 import { CustomAgentsModule } from "../custom-agents/custom-agents.module.js";
@@ -14,12 +15,14 @@ import { CodingWorkflowsService } from "./coding-workflows.service.js";
   controllers: [CodingWorkflowsController],
   imports: [
     AuthModule,
+    ArtifactsModule,
     ConversationsModule,
     CustomAgentsModule,
     DatabaseModule,
     StreamsModule,
     WorkspacesModule
   ],
+  exports: [CodingWorkflowsService],
   providers: [CodingWorkflowDispatchService, CodingWorkflowsService]
 })
 export class CodingWorkflowsModule {}

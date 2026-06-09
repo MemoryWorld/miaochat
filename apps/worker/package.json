@@ -17,10 +17,15 @@
     "@agenthub/domain": "workspace:*",
     "@agenthub/observability-errors": "workspace:*",
     "@agenthub/observability-otel": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1051.0",
     "@opentelemetry/sdk-trace-base": "^1.30.1",
     "@temporalio/client": "^1.11.7",
     "@temporalio/worker": "^1.11.7",
     "@temporalio/workflow": "^1.11.7",
+    "adm-zip": "^0.5.17",
     "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8"
   }
 }

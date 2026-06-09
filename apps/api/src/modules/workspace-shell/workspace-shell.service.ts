@@ -112,12 +112,14 @@ type WorkflowCalendarRow = {
   state:
     | "awaiting_user_confirmation"
     | "completed"
+    | "execution_failed"
     | "execution_running"
     | "plan_pending_approval"
     | "plan_rejected"
     | "plan_revision_requested"
     | "qa_running"
-    | "review_running";
+    | "review_running"
+    | "summary_running";
   workspace_id: string;
 };
 
@@ -168,6 +170,25 @@ type ActivityRoundStepRow = {
   summary: string | null;
 };
 
+type AgentRunActivityRow = {
+  acting_teammate_name: string | null;
+  agent_id: string;
+  artifact_count: number;
+  channel_id: string;
+  checkpoint: string;
+  completed_at: Date | null;
+  created_at: Date;
+  error_message: string | null;
+  id: string;
+  metadata: Record<string, unknown>;
+  provider: string;
+  started_at: Date | null;
+  status: string;
+  turn_id: string;
+  updated_at: Date;
+  workspace_id: string;
+};
+
 type ApprovalRequestRow = {
   conversation_id: string | null;
   created_at: Date;
@@ -214,6 +235,7 @@ type ArtifactSurfaceRow = {
   message_id: string;
   mime_type: string;
   preview_url: string | null;
+  storage_key: string | null;
   title: string;
   workspace_id: string;
 };
@@ -426,6 +448,7 @@ export class WorkspaceShellService {
         artifacts.message_id,
         artifacts.mime_type,
         artifacts.preview_url,
+        artifacts.storage_key,
         artifacts.title,
         artifacts.workspace_id
       FROM artifacts
@@ -463,6 +486,7 @@ export class WorkspaceShellService {
         messageId: row.message_id,
         mimeType: row.mime_type,
         previewUrl: row.preview_url,
+        storageKey: row.storage_key,
         title: row.title,
         workspaceId: row.workspace_id
       })
@@ -488,6 +512,7 @@ export class WorkspaceShellService {
         artifacts.message_id,
         artifacts.mime_type,
         artifacts.preview_url,
+        artifacts.storage_key,
         artifacts.title,
         artifacts.workspace_id,
         messages.conversation_id
@@ -514,6 +539,7 @@ export class WorkspaceShellService {
         messageId: row.message_id,
         mimeType: row.mime_type,
         previewUrl: row.preview_url,
+        storageKey: row.storage_key,
         title: row.title,
         workspaceId: row.workspace_id
       })
@@ -711,7 +737,7 @@ export class WorkspaceShellService {
     workflowId?: string;
     workspaceId: string;
   }): Promise<ActivityRound[]> {
-    const [roundResult, stepResult] = await Promise.all([
+    const [roundResult, stepResult, agentRunResult] = await Promise.all([
       this.database.execute<ActivityRoundRow>(sql`
         SELECT
           acting_teammate_id,
@@ -747,6 +773,56 @@ export class WorkspaceShellService {
           summary
         FROM activity_round_steps
         ORDER BY created_at ASC, id ASC
+      `),
+      this.database.execute<AgentRunActivityRow>(sql`
+        SELECT
+          agent_run_ledger.agent_id,
+          COALESCE(
+            multi_agent_participants.display_name,
+            conversation_agents.agent_name
+          ) AS acting_teammate_name,
+          agent_run_ledger.artifact_count,
+          agent_run_ledger.channel_id,
+          agent_run_ledger.checkpoint,
+          multi_agent_turns.completed_at,
+          agent_run_ledger.created_at,
+          multi_agent_turns.error_message,
+          agent_run_ledger.id,
+          agent_run_ledger.metadata,
+          agent_run_ledger.provider,
+          multi_agent_turns.started_at,
+          agent_run_ledger.status,
+          agent_run_ledger.turn_id,
+          agent_run_ledger.updated_at,
+          agent_run_ledger.workspace_id
+        FROM agent_run_ledger
+        INNER JOIN conversations
+          ON conversations.id = agent_run_ledger.channel_id
+          AND conversations.workspace_id = agent_run_ledger.workspace_id
+        LEFT JOIN multi_agent_turns
+          ON multi_agent_turns.id = agent_run_ledger.turn_id
+          AND multi_agent_turns.workspace_id = agent_run_ledger.workspace_id
+        LEFT JOIN multi_agent_participants
+          ON multi_agent_participants.id = multi_agent_turns.agent_participant_id
+          AND multi_agent_participants.workspace_id = agent_run_ledger.workspace_id
+        LEFT JOIN conversation_agents
+          ON conversation_agents.conversation_id = agent_run_ledger.channel_id
+          AND conversation_agents.workspace_id = agent_run_ledger.workspace_id
+          AND conversation_agents.agent_id = agent_run_ledger.agent_id
+        WHERE conversations.owner_user_id = ${input.ownerUserId}
+          AND agent_run_ledger.workspace_id = ${input.workspaceId}
+          AND NOT (
+            agent_run_ledger.status = 'running'
+            AND EXISTS (
+              SELECT 1
+              FROM messages
+              WHERE messages.conversation_id = agent_run_ledger.channel_id
+                AND messages.workspace_id = agent_run_ledger.workspace_id
+                AND messages.role = 'assistant'
+                AND messages.created_at > agent_run_ledger.updated_at
+            )
+          )
+        ORDER BY agent_run_ledger.updated_at DESC, agent_run_ledger.id DESC
       `)
     ]);
 
@@ -763,30 +839,32 @@ export class WorkspaceShellService {
       stepMap.set(row.round_id, current);
     }
 
-    return roundResult.rows
-      .map((row) =>
-        activityRoundSchema.parse({
-          actingTeammateId: row.acting_teammate_id,
-          actingTeammateName: row.acting_teammate_name,
-          approvalRequestId: row.approval_request_id,
-          channelId: row.channel_id,
-          conversationId: row.conversation_id,
-          createdAt: row.created_at,
-          endedAt: row.ended_at,
-          id: row.id,
-          metadata: row.metadata ?? {},
-          outputPreview: row.output_preview,
-          phase: row.phase,
-          startedAt: row.started_at,
-          status: row.status,
-          steps: stepMap.get(row.id) ?? [],
-          summary: row.summary,
-          toolActivityPreview: row.tool_activity_preview,
-          updatedAt: row.updated_at,
-          workflowId: row.workflow_id,
-          workspaceId: row.workspace_id
-        })
-      )
+    const explicitRounds = roundResult.rows.map((row) =>
+      activityRoundSchema.parse({
+        actingTeammateId: row.acting_teammate_id,
+        actingTeammateName: row.acting_teammate_name,
+        approvalRequestId: row.approval_request_id,
+        channelId: row.channel_id,
+        conversationId: row.conversation_id,
+        createdAt: row.created_at,
+        endedAt: row.ended_at,
+        id: row.id,
+        metadata: row.metadata ?? {},
+        outputPreview: row.output_preview,
+        phase: row.phase,
+        startedAt: row.started_at,
+        status: row.status,
+        steps: stepMap.get(row.id) ?? [],
+        summary: row.summary,
+        toolActivityPreview: row.tool_activity_preview,
+        updatedAt: row.updated_at,
+        workflowId: row.workflow_id,
+        workspaceId: row.workspace_id
+      })
+    );
+    const syntheticRunRounds = agentRunResult.rows.map(buildAgentRunActivityRound);
+
+    return [...explicitRounds, ...syntheticRunRounds]
       .filter((round) => {
         if (input.channelId && round.channelId !== input.channelId) {
           return false;
@@ -801,6 +879,12 @@ export class WorkspaceShellService {
           return false;
         }
         return true;
+      })
+      .sort((left, right) => {
+        const byUpdatedAt =
+          new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+
+        return byUpdatedAt !== 0 ? byUpdatedAt : right.id.localeCompare(left.id);
       });
   }
 
@@ -1367,6 +1451,146 @@ function builtInRoleToRouteId(
   return role;
 }
 
+function buildAgentRunActivityRound(row: AgentRunActivityRow): ActivityRound {
+  const activityStatus = mapAgentRunStatusToActivityStatus(row.status);
+  const teammateName = row.acting_teammate_name ?? row.agent_id;
+  const errorMessage = typeof row.metadata?.errorMessage === "string"
+    ? row.metadata.errorMessage
+    : row.error_message;
+
+  return activityRoundSchema.parse({
+    actingTeammateId: row.agent_id,
+    actingTeammateName: teammateName,
+    approvalRequestId: null,
+    channelId: row.channel_id,
+    conversationId: row.channel_id,
+    createdAt: row.created_at,
+    endedAt: resolveAgentRunEndedAt(row, activityStatus),
+    id: `agent-run-activity:${row.id}`,
+    metadata: {
+      ...normalizeMetadata(row.metadata),
+      artifactCount: row.artifact_count,
+      checkpoint: row.checkpoint,
+      provider: row.provider,
+      source: "agent_run_ledger",
+      turnId: row.turn_id
+    },
+    outputPreview: row.artifact_count > 0 ? `${row.artifact_count} 个产物已生成。` : null,
+    phase: "coordination",
+    startedAt: row.started_at ?? row.created_at,
+    status: activityStatus,
+    steps: [
+      {
+        createdAt: row.updated_at,
+        id: `agent-run-step:${row.id}`,
+        label: formatAgentRunCheckpoint(row.checkpoint),
+        status: activityStatus,
+        summary: errorMessage ?? formatAgentRunStepSummary(row)
+      }
+    ],
+    summary: formatAgentRunActivitySummary({
+      errorMessage,
+      status: activityStatus,
+      teammateName
+    }),
+    toolActivityPreview: `Provider: ${row.provider} · checkpoint: ${row.checkpoint}`,
+    updatedAt: row.updated_at,
+    workflowId: null,
+    workspaceId: row.workspace_id
+  });
+}
+
+function mapAgentRunStatusToActivityStatus(
+  status: string
+): ActivityRound["status"] {
+  switch (status) {
+    case "created":
+      return "pending";
+    case "awaiting_approval":
+      return "waiting_for_approval";
+    case "completed":
+    case "applied":
+      return "succeeded";
+    case "failed":
+    case "cancelled":
+      return "failed";
+    case "planning":
+    case "running":
+    case "verifying":
+    case "patch_ready":
+    default:
+      return "running";
+  }
+}
+
+function resolveAgentRunEndedAt(
+  row: AgentRunActivityRow,
+  status: ActivityRound["status"]
+): Date | null {
+  if (status === "failed" || status === "succeeded") {
+    return row.completed_at ?? row.updated_at;
+  }
+
+  return null;
+}
+
+function formatAgentRunCheckpoint(checkpoint: string): string {
+  switch (checkpoint) {
+    case "context_prepared":
+      return "上下文已准备";
+    case "completed":
+      return "执行已完成";
+    case "failed":
+      return "执行失败";
+    default:
+      return checkpoint;
+  }
+}
+
+function formatAgentRunStepSummary(row: AgentRunActivityRow): string {
+  if (row.status === "completed") {
+    return row.artifact_count > 0
+      ? `已完成并生成 ${row.artifact_count} 个产物。`
+      : "已完成回复。";
+  }
+
+  if (row.status === "failed") {
+    return "执行失败，请检查模型连接或重试。";
+  }
+
+  return "AI 同事正在处理这轮协作。";
+}
+
+function formatAgentRunActivitySummary(input: {
+  errorMessage: string | null;
+  status: ActivityRound["status"];
+  teammateName: string;
+}): string {
+  if (input.status === "failed") {
+    return input.errorMessage
+      ? `${input.teammateName} 的协作执行失败：${input.errorMessage}`
+      : `${input.teammateName} 的协作执行失败。`;
+  }
+
+  if (input.status === "succeeded") {
+    return `${input.teammateName} 已完成本轮协作。`;
+  }
+
+  if (input.status === "waiting_for_approval") {
+    return `${input.teammateName} 正在等待审批。`;
+  }
+
+  if (input.status === "pending") {
+    return `${input.teammateName} 的协作执行已排队。`;
+  }
+
+  return `${input.teammateName} 正在处理本轮协作。`;
+}
+
+function normalizeMetadata(value: Record<string, unknown> | null): Record<string, unknown> {
+  return value && typeof value === "object" ? value : {};
+}
+
 function toSyntheticTeammateId(name: string, agentId: string): string {
   const builtIn = builtInCodingProfiles.find((profile) => profile.name === name);
   return builtIn?.id ?? agentId;
@@ -1401,19 +1625,24 @@ function mapWorkflowStateToCalendarStatus(
   state:
     | "awaiting_user_confirmation"
     | "completed"
+    | "execution_failed"
     | "execution_running"
     | "plan_pending_approval"
     | "plan_rejected"
     | "plan_revision_requested"
     | "qa_running"
     | "review_running"
+    | "summary_running"
 ): CalendarEvent["status"] {
   switch (state) {
     case "completed":
       return "completed";
+    case "execution_failed":
+      return "scheduled";
     case "execution_running":
     case "review_running":
     case "qa_running":
+    case "summary_running":
       return "in_progress";
     default:
       return "scheduled";
@@ -1450,9 +1679,9 @@ function resolveCompatibleRoles(skillId: string): string[] {
     case "code-implementation":
       return ["软件工程师"];
     case "review-and-risk":
-      return ["代码评审", "技术负责人"];
+      return ["代码评审工程师", "技术负责人"];
     case "qa-and-validation":
-      return ["测试工程师", "代码评审"];
+      return ["质量保障测试工程师", "代码评审工程师"];
     case "memory-sync":
       return ["全部 AI 同事"];
     default:

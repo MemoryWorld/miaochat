@@ -195,5 +195,39 @@ describe("artifacts integration", () => {
         storageKey: uploadTarget.storageKey
       })
     ]);
+
+    const conversationListResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "GET",
+      url: `/artifacts?conversationId=${conversationId}&workspaceId=${workspaceId}`
+    });
+
+    expect(conversationListResponse.statusCode).toBe(200);
+    expect(conversationListResponse.json()).toEqual([
+      expect.objectContaining({
+        id: uploadTarget.artifactId,
+        messageId,
+        storageKey: uploadTarget.storageKey
+      })
+    ]);
+
+    const workspaceListResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "GET",
+      url: `/artifacts?workspaceId=${workspaceId}`
+    });
+
+    expect(workspaceListResponse.statusCode).toBe(200);
+    expect(workspaceListResponse.json()).toEqual([
+      expect.objectContaining({
+        id: uploadTarget.artifactId,
+        messageId,
+        storageKey: uploadTarget.storageKey
+      })
+    ]);
   });
 });

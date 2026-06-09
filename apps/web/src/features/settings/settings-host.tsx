@@ -59,8 +59,12 @@ export function SettingsHost({
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
 
   const selectedSection = resolveSettingsSection(initialSection);
-  function refreshWorkspacesAfterAuthChange(): void {
+  function refreshWorkspacesAfterLogin(): void {
     void refreshWorkspaces();
+  }
+
+  function refreshWorkspacesAfterLogout(): void {
+    void refreshWorkspaces({ clearOnAuthFailure: true });
   }
 
   return (
@@ -123,8 +127,8 @@ export function SettingsHost({
             </p>
           </div>
           <AuthPanel
-            onAuthenticated={refreshWorkspacesAfterAuthChange}
-            onLoggedOut={refreshWorkspacesAfterAuthChange}
+            onAuthenticated={refreshWorkspacesAfterLogin}
+            onLoggedOut={refreshWorkspacesAfterLogout}
           />
           <div className="grid gap-3 md:grid-cols-2">
             <ProfileInfo title="语言" value="简体中文" />
@@ -209,7 +213,7 @@ export function SettingsHost({
           <div>
             <h2 className="m-0 text-2xl font-semibold text-slate-950">模型连接</h2>
             <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              添加 DeepSeek API Key，让 AI 同事可以执行真实协作任务。
+              添加国产模型、Codex 或 Claude Code 连接，让 AI 同事可以执行真实协作任务。
             </p>
           </div>
           {isWorkspaceReady ? (

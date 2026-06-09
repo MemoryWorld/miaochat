@@ -7,13 +7,13 @@ import { createSystemNotificationsBridge } from "../src/system-notifications.js"
 describe("desktop shell", () => {
   it("creates an Electron-style application manifest that embeds the web app url", () => {
     const app = createDesktopApplication({
-      preloadModule: "dist/preload.js",
+      preloadModule: "dist/preload.cjs",
       webAppUrl: "http://localhost:3000"
     });
 
     expect(app.runtime).toBe("electron");
     expect(app.window.entryUrl).toBe("http://localhost:3000");
-    expect(app.window.preloadModule).toBe("dist/preload.js");
+    expect(app.window.preloadModule).toBe("dist/preload.cjs");
     expect(app.window.webPreferences).toEqual({
       contextIsolation: true,
       nodeIntegration: false,

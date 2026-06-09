@@ -6,6 +6,7 @@ import {
   HermesAdapter,
   MockDirectAdapter,
   MockGroupAdapter,
+  OpenCodeAdapter,
   OpenClawAdapter,
   createAgentAdapter
 } from "../src";
@@ -56,6 +57,18 @@ describe("createAgentAdapter", () => {
     });
 
     expect(adapter).toBeInstanceOf(OpenClawAdapter);
+  });
+
+  it("returns the OpenCode adapter when runtime streaming options are provided", () => {
+    const adapter = createAgentAdapter({
+      executionMode: "direct",
+      provider: "opencode",
+      streamingClientOptions: {
+        credentialResolver
+      }
+    });
+
+    expect(adapter).toBeInstanceOf(OpenCodeAdapter);
   });
 
   it("returns the Claude Code adapter when runtime streaming options are provided", () => {

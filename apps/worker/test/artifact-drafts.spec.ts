@@ -4,7 +4,8 @@ import { multiAgentOutputEnvelopeSchema } from "@agenthub/contracts";
 
 import {
   extractRuntimeArtifactDrafts,
-  runtimeMarkdownArtifactToolName
+  runtimeMarkdownArtifactToolName,
+  runtimeWebpageArtifactToolName
 } from "../src/activities/artifact-drafts.js";
 
 describe("runtime artifact draft extraction", () => {
@@ -53,6 +54,42 @@ describe("runtime artifact draft extraction", () => {
     ]);
   });
 
+  it("extracts normalized webpage artifact drafts from low-risk tool plans", () => {
+    const envelope = multiAgentOutputEnvelopeSchema.parse({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:transformers-page",
+              input: {
+                fileName: "../Transformers movie page",
+                html: "<!doctype html><html><body><h1>Transformers</h1></body></html>",
+                title: " Transformers movie page "
+              },
+              inputSchemaVersion: "1",
+              toolName: runtimeWebpageArtifactToolName
+            }
+          ],
+          expectedSideEffects: ["Create an HTML webpage artifact."],
+          riskLevel: "low",
+          summary: "Create the requested webpage artifact.",
+          type: "tool_plan"
+        }
+      ],
+      visibleMessage: "网页已经生成。"
+    });
+
+    expect(extractRuntimeArtifactDrafts(envelope)).toEqual([
+      {
+        fileName: "Transformers-movie-page.html",
+        html: "<!doctype html><html><body><h1>Transformers</h1></body></html>",
+        mimeType: "text/html",
+        title: "Transformers movie page",
+        type: "webpage"
+      }
+    ]);
+  });
+
   it("ignores invalid drafts and caps extraction at three Markdown artifacts", () => {
     const markdown = "# Artifact";
     const calls = [
@@ -93,5 +130,48 @@ describe("runtime artifact draft extraction", () => {
       "Artifact 1",
       "Artifact 2"
     ]);
+  });
+
+  it("does not create artifacts from prose claims or unsupported tool names", () => {
+    const envelope = multiAgentOutputEnvelopeSchema.parse({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:unsupported",
+              input: {
+                fileName: "claimed.html",
+                html: "<!doctype html><html><body>Claimed</body></html>",
+                title: "Claimed webpage"
+              },
+              inputSchemaVersion: "1",
+              toolName: "artifact.file.create"
+            }
+          ],
+          riskLevel: "low",
+          summary: "Unsupported artifact tool.",
+          type: "tool_plan"
+        },
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:high-risk-webpage",
+              input: {
+                html: "<!doctype html><html><body>Ignore</body></html>",
+                title: "High risk webpage"
+              },
+              inputSchemaVersion: "1",
+              toolName: runtimeWebpageArtifactToolName
+            }
+          ],
+          riskLevel: "high",
+          summary: "High risk artifact tool.",
+          type: "tool_plan"
+        }
+      ],
+      visibleMessage: "我已经生成了可下载 HTML 文件。"
+    });
+
+    expect(extractRuntimeArtifactDrafts(envelope)).toEqual([]);
   });
 });

@@ -108,6 +108,8 @@ function formatStatusHeading(label: OrchestratorStatusEventPayload["label"]): st
       return "评审阶段";
     case "coding.qa_started":
       return "测试阶段";
+    case "coding.summary_started":
+      return "技术负责人汇总";
     case "coding.awaiting_user_confirmation":
       return "等待用户确认";
     case "coding.completed":

@@ -169,6 +169,37 @@ describe("ChatComposer", () => {
     expect(memberButton).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("keeps editing available while submit is disabled with a visible reason", () => {
+    const onSend = vi.fn(async () => undefined);
+
+    render(
+      <ChatComposer
+        disabledReason="正在连接实时流，稍后即可发送。"
+        onSend={onSend}
+        submitDisabled
+      />
+    );
+
+    const textarea = screen.getByLabelText("消息内容");
+
+    expect(textarea).not.toBeDisabled();
+    expect(screen.getByText("正在连接实时流，稍后即可发送。")).toBeInTheDocument();
+
+    fireEvent.change(textarea, {
+      target: {
+        value: "连接好以后再发送这条消息"
+      }
+    });
+
+    const sendButton = screen.getByRole("button", { name: "发送消息" });
+    expect(sendButton).toBeDisabled();
+
+    fireEvent.click(sendButton);
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textarea).toHaveValue("连接好以后再发送这条消息");
+  });
+
   it("uses the workspace button style for file attachments while keeping the input accessible", () => {
     render(<ChatComposer onSend={async () => undefined} />);
 

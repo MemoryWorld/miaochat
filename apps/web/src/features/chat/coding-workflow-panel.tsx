@@ -261,8 +261,8 @@ function renderRole(role: NonNullable<CodingWorkflowDetail["teammates"][number][
     case "software_engineer":
       return "软件工程师";
     case "code_reviewer":
-      return "代码评审";
+      return "代码评审工程师";
     case "qa_tester":
-      return "测试工程师";
+      return "质量保障测试工程师";
   }
 }

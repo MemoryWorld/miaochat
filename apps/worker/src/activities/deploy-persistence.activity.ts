@@ -11,19 +11,7 @@ import {
   type DeployTargetKind
 } from "@agenthub/contracts";
 
-type PreparedDeployRecord = {
-  artifactId: string;
-  artifactStorageKey: string | null;
-  artifactTitle: string;
-  config: Record<string, unknown>;
-  credentialSource: CredentialSource;
-  deployTargetId: string;
-  deploymentId: string;
-  hasSecret: boolean;
-  targetKind: DeployTargetKind;
-  targetName: string;
-  workspaceId: string;
-};
+import type { PreparedDeployRecord } from "./deploy-types.js";
 
 type PrepareDeployActivityInput = {
   artifactId: string;
@@ -144,6 +132,7 @@ export async function prepareDeployActivity(
       deployTargetId: input.deployTargetId,
       deploymentId,
       hasSecret: row.encrypted_secret !== null,
+      ownerUserId: input.ownerUserId,
       targetKind: row.target_kind,
       targetName: row.target_name,
       workspaceId: input.workspaceId

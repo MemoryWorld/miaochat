@@ -10,11 +10,14 @@ export default defineConfig({
     alias: {
       "@agenthub/contracts": fileURLToPath(
         new URL("../../packages/contracts/src/index.ts", import.meta.url)
+      ),
+      "react-native": fileURLToPath(
+        new URL("./test/react-native-test-double.tsx", import.meta.url)
       )
     }
   },
   test: {
-    environment: "jsdom",
-    include: ["test/**/*.spec.tsx"]
+    environment: "node",
+    include: ["test/**/*.spec.ts", "test/**/*.spec.tsx"]
   }
 });

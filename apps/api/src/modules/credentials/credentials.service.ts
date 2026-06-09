@@ -36,6 +36,7 @@ import { validateClaudeCodeCredential } from "./providers/claude-code-validator.
 import { validateCodexCredential } from "./providers/codex-validator.js";
 import { validateDeepSeekCredential } from "./providers/deepseek-validator.js";
 import { validateHermesCredential } from "./providers/hermes-validator.js";
+import { validateOpenCodeCredential } from "./providers/opencode-validator.js";
 import { validateOpenClawCredential } from "./providers/openclaw-validator.js";
 
 type CredentialRow = {
@@ -223,7 +224,7 @@ export class CredentialsService {
     const credential = await this.create(
       {
         label: parsed.label,
-        provider: "deepseek",
+        provider: "opencode",
         providerAccountId: parsed.model,
         rawSecret: parsed.apiKey,
         workspaceId: parsed.workspaceId
@@ -245,7 +246,7 @@ export class CredentialsService {
     const parsed = parseModelConnectionInput(input);
     return this.validate({
       label: parsed.label,
-      provider: "deepseek",
+      provider: "opencode",
       providerAccountId: parsed.model,
       rawSecret: parsed.apiKey,
       workspaceId: parsed.workspaceId
@@ -268,7 +269,7 @@ export class CredentialsService {
       FROM provider_credentials
       WHERE workspace_id = ${workspaceId}
         AND owner_user_id = ${ownerUserId}
-        AND provider = 'deepseek'
+        AND provider IN ('deepseek', 'opencode')
       ORDER BY created_at ASC
     `);
 
@@ -378,6 +379,8 @@ export class CredentialsService {
         return validateDeepSeekCredential(input);
       case "hermes":
         return validateHermesCredential(input);
+      case "opencode":
+        return validateOpenCodeCredential(input);
       case "openclaw":
         return validateOpenClawCredential(input);
     }

@@ -12,6 +12,7 @@ export type PreparedDeployRecord = {
   deployTargetId: string;
   deploymentId: string;
   hasSecret: boolean;
+  ownerUserId: string;
   targetKind: DeployTargetKind;
   targetName: string;
   workspaceId: string;

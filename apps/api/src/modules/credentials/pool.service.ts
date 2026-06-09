@@ -24,6 +24,7 @@ import { validateClaudeCodeCredential } from "./providers/claude-code-validator.
 import { validateCodexCredential } from "./providers/codex-validator.js";
 import { validateDeepSeekCredential } from "./providers/deepseek-validator.js";
 import { validateHermesCredential } from "./providers/hermes-validator.js";
+import { validateOpenCodeCredential } from "./providers/opencode-validator.js";
 import { validateOpenClawCredential } from "./providers/openclaw-validator.js";
 
 type CredentialPoolEntryRow = {
@@ -256,6 +257,8 @@ export class CredentialPoolService {
         return validateDeepSeekCredential(payload);
       case "hermes":
         return validateHermesCredential(payload);
+      case "opencode":
+        return validateOpenCodeCredential(payload);
       case "openclaw":
         return validateOpenClawCredential(payload);
     }

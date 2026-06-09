@@ -80,7 +80,12 @@ describe("coding workflow API", () => {
         deadline: "今天 18:00",
         goal: "把落地页演示拆成计划、实现、评审和测试四段",
         priority: "high",
-        recommendedRoleIds: ["tech_lead", "software_engineer", "qa_tester"],
+        recommendedRoleIds: [
+          "tech_lead",
+          "software_engineer",
+          "code_reviewer",
+          "qa_tester"
+        ],
         repoContext: "apps/web 落地页与演示入口",
         workspaceId
       },
@@ -111,7 +116,15 @@ describe("coding workflow API", () => {
         state: "todo"
       }),
       expect.objectContaining({
+        id: "execution:code_reviewer",
+        state: "todo"
+      }),
+      expect.objectContaining({
         id: "execution:qa_tester",
+        state: "todo"
+      }),
+      expect.objectContaining({
+        id: "summary:tech_lead",
         state: "todo"
       })
     ]);
@@ -130,21 +143,22 @@ describe("coding workflow API", () => {
         }),
         expect.objectContaining({
           isBuiltIn: true,
-          name: "测试工程师",
-          role: "qa_tester"
-        })
-      ])
-    );
-    expect(created.workflow.teammates).not.toEqual(
-      expect.arrayContaining([
+          name: "代码评审工程师",
+          role: "code_reviewer"
+        }),
         expect.objectContaining({
-          name: "代码评审"
+          isBuiltIn: true,
+          name: "质量保障测试工程师",
+          role: "qa_tester"
         })
       ])
     );
     expect(created.workflow.executionStageAssignments).toEqual([
       expect.objectContaining({
         role: "software_engineer"
+      }),
+      expect.objectContaining({
+        role: "code_reviewer"
       }),
       expect.objectContaining({
         role: "qa_tester"
@@ -171,7 +185,8 @@ describe("coding workflow API", () => {
       })
     );
     expect(initialMessages[1]?.content).toContain("技术负责人 计划建议");
-    expect(initialMessages[1]?.content).not.toContain("代码评审检查风险");
+    expect(initialMessages[1]?.content).toContain("代码评审工程师检查风险");
+    expect(initialMessages[1]?.content).toContain("技术负责人最终汇总原始想法完成度");
     expect(initialMessages[1]?.content).toContain("如果计划没有问题");
 
     const getResponse = await app.inject({
@@ -265,7 +280,7 @@ describe("coding workflow API", () => {
     );
   });
 
-  it("rejects recommended teammate sets that cannot enter implementation", async () => {
+  it("rejects recommended teammate sets missing the fixed planning or implementation role", async () => {
     const response = await app.inject({
       headers: {
         cookie: authCookie
@@ -282,7 +297,7 @@ describe("coding workflow API", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual(
       expect.objectContaining({
-        message: "至少要保留 1 位能够进入实现阶段的 AI 同事。"
+        message: "编码工作流必须保留技术负责人和软件工程师。"
       })
     );
   });

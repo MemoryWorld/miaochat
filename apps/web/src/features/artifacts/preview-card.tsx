@@ -2,11 +2,19 @@
 
 import type { Artifact } from "@agenthub/contracts";
 
+import {
+  buildArtifactFileUrl,
+  buildArtifactViewerUrl
+} from "./artifact-links";
+
 type PreviewCardProps = {
   artifact: Artifact;
 };
 
 export function PreviewCard({ artifact }: PreviewCardProps) {
+  const previewHref = getPreviewHref(artifact);
+  const previewLabel = getPreviewLabel(artifact, previewHref);
+
   return (
     <article
       aria-label={`Preview artifact ${artifact.title}`}
@@ -21,16 +29,16 @@ export function PreviewCard({ artifact }: PreviewCardProps) {
         </span>
         <strong style={titleStyle}>{artifact.title}</strong>
       </header>
-      {artifact.previewUrl ? (
+      {previewHref ? (
         <a
           aria-label={`Open the ${artifact.title} preview in a new tab`}
           data-artifact-preview-url
-          href={artifact.previewUrl}
+          href={previewHref}
           rel="noreferrer"
           style={previewLinkStyle}
           target="_blank"
         >
-          {artifact.previewUrl}
+          {previewLabel}
         </a>
       ) : (
         <p style={fallbackStyle}>
@@ -41,6 +49,40 @@ export function PreviewCard({ artifact }: PreviewCardProps) {
       <footer style={footerStyle}>{artifact.mimeType}</footer>
     </article>
   );
+}
+
+function getPreviewHref(artifact: Artifact): string | null {
+  if (artifact.storageKey) {
+    return isMarkdownArtifact(artifact)
+      ? buildArtifactViewerUrl(artifact.id, artifact.workspaceId)
+      : buildArtifactFileUrl(artifact.id, artifact.workspaceId, "inline");
+  }
+
+  return artifact.previewUrl ?? null;
+}
+
+function getPreviewLabel(artifact: Artifact, previewHref: string | null): string {
+  if (!previewHref) {
+    return "";
+  }
+
+  if (!artifact.storageKey) {
+    return previewHref;
+  }
+
+  if (isMarkdownArtifact(artifact)) {
+    return "打开 Markdown";
+  }
+
+  if (artifact.mimeType.toLowerCase().includes("html")) {
+    return "打开网页";
+  }
+
+  return "打开预览";
+}
+
+function isMarkdownArtifact(artifact: Artifact): boolean {
+  return artifact.mimeType.toLowerCase().includes("markdown");
 }
 
 const cardStyle = {

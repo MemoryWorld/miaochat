@@ -24,5 +24,6 @@ export * from "./runtime-execution.js";
 export * from "./skill.js";
 export * from "./stream-event.js";
 export * from "./tool-binding.js";
+export * from "./visual-workflow.js";
 export * from "./workspace.js";
 export * from "./workspace-shell.js";

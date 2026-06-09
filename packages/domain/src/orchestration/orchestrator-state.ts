@@ -18,6 +18,7 @@ export type OrchestratorTarget = {
   agentId: string;
   agentName: string;
   capabilityTags?: string[];
+  modelProfileId?: string | null;
   outputStyle?: string | null;
   participantId?: string;
   provider: ProviderId;

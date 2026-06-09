@@ -25,7 +25,7 @@ export const createCustomAgentInputSchema = z.object({
   avatarUrl: z.string().url().nullable().optional(),
   capabilityTags: z.array(z.string().min(1)).default([]),
   name: z.string().trim().min(1).max(80),
-  provider: providerIdSchema.default("deepseek"),
+  provider: providerIdSchema.default("opencode"),
   modelProfileId: z.string().min(1).nullable().optional(),
   memoryMode: z.enum(["session", "workspace", "workspace_plus_teammate"]).default("workspace_plus_teammate"),
   approvalMode: z.enum(["ask_on_risky", "balanced", "autonomous"]).default("balanced"),
@@ -39,7 +39,6 @@ export const createCustomAgentInputSchema = z.object({
 export const createChannelTeammateInputSchema = z.object({
   workspaceId: workspaceIdSchema.optional(),
   teammate: createCustomAgentInputSchema.omit({
-    provider: true,
     workspaceId: true
   })
 });

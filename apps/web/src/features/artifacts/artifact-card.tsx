@@ -5,6 +5,12 @@ import { useEffect, useState, type CSSProperties } from "react";
 import type { Artifact } from "@agenthub/contracts";
 
 import { ArtifactEditDispatcher } from "../chat/artifact-edit-dispatcher";
+import { MarkdownContent } from "../chat/markdown-content";
+import {
+  buildArtifactContentUrl,
+  buildArtifactFileUrl,
+  buildArtifactViewerUrl
+} from "./artifact-links";
 
 type ArtifactCardProps = {
   artifact: Artifact;
@@ -22,13 +28,22 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
 
   const cardType = getCardType(artifact);
   const isImage = isImageArtifact(artifact);
-  const canLoadTextPreview = isTextPreviewArtifact(artifact) && Boolean(artifact.previewUrl);
+  const imagePreviewUrl = isImage ? getArtifactInlineHref(artifact) : null;
+  const canLoadTextPreview = isTextPreviewArtifact(artifact) && Boolean(
+    artifact.previewUrl || artifact.storageKey
+  );
   const canEmbedPreview = Boolean(
-    artifact.previewUrl && !isImage && !canLoadTextPreview && artifact.kind === "preview"
+    artifact.previewUrl &&
+    !artifact.storageKey &&
+    !isImage &&
+    !canLoadTextPreview &&
+    artifact.kind === "preview"
   );
 
   useEffect(() => {
-    if (!expanded || !artifact.previewUrl || !canLoadTextPreview || previewText !== null) {
+    const previewSource = resolveTextPreviewSource(artifact);
+
+    if (!expanded || !previewSource || !canLoadTextPreview || previewText !== null) {
       return;
     }
 
@@ -36,14 +51,17 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
     setPreviewStatus("loading");
     setPreviewError(null);
 
-    fetch(artifact.previewUrl, {
+    fetch(previewSource.url, {
+      ...(previewSource.requiresCredentials ? { credentials: "include" as const } : {}),
       signal: controller.signal
     })
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(`预览加载失败（${response.status}）。`);
         }
-        return readPreviewText(response);
+        return previewSource.kind === "artifact-content"
+          ? readArtifactContentPreview(response)
+          : readPreviewText(response);
       })
       .then((text) => {
         setPreviewText(text);
@@ -58,7 +76,7 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
       });
 
     return () => controller.abort();
-  }, [artifact.previewUrl, canLoadTextPreview, expanded, previewText]);
+  }, [artifact, canLoadTextPreview, expanded, previewText]);
 
   const visiblePreviewText = previewText ?? "";
 
@@ -79,20 +97,18 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
       </header>
 
       <div style={summaryStyle}>
-        {isImage && artifact.previewUrl ? (
+        {imagePreviewUrl ? (
           <img
             alt={`${artifact.title} preview`}
             data-artifact-image-preview
-            src={artifact.previewUrl}
+            src={imagePreviewUrl}
             style={thumbnailStyle}
           />
         ) : null}
-        {artifact.previewUrl ? renderPreviewLink(artifact, cardType) : null}
-        {!artifact.previewUrl && artifact.storageKey ? (
-          <code data-artifact-storage-key style={storageKeyStyle}>
-            {artifact.storageKey}
-          </code>
-        ) : null}
+        {artifact.previewUrl || artifact.storageKey ? renderPreviewLink({
+          artifact,
+          cardType
+        }) : null}
         {!artifact.previewUrl && !artifact.storageKey ? (
           <p style={emptyStateStyle}>Preview content is still being prepared.</p>
         ) : null}
@@ -125,6 +141,17 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
           >
             对话修改
           </button>
+        ) : null}
+        {artifact.previewUrl || artifact.storageKey ? (
+          <a
+            aria-label={`下载 ${artifact.title}`}
+            href={getArtifactDownloadHref(artifact)}
+            rel="noreferrer"
+            style={secondaryLinkStyle}
+            target="_blank"
+          >
+            下载
+          </a>
         ) : null}
       </div>
 
@@ -162,6 +189,42 @@ const previewTextLimit = 16000;
 const previewTruncationNotice =
   "\n\n... preview truncated in the timeline; open the artifact for the full file.";
 
+type TextPreviewSource = {
+  kind: "artifact-content" | "preview-url";
+  requiresCredentials: boolean;
+  url: string;
+};
+
+function resolveTextPreviewSource(artifact: Artifact): TextPreviewSource | null {
+  if (artifact.storageKey) {
+    return {
+      kind: "artifact-content",
+      requiresCredentials: true,
+      url: getArtifactContentUrl(artifact)
+    };
+  }
+
+  if (!artifact.previewUrl) {
+    return null;
+  }
+
+  return {
+    kind: "preview-url",
+    requiresCredentials: false,
+    url: artifact.previewUrl
+  };
+}
+
+async function readArtifactContentPreview(response: Response): Promise<string> {
+  const payload = await response.json() as {
+    content?: unknown;
+    truncated?: unknown;
+  };
+  const content = typeof payload.content === "string" ? payload.content : "";
+
+  return payload.truncated === true ? `${content}${previewTruncationNotice}` : content;
+}
+
 async function readPreviewText(response: Response): Promise<string> {
   const reader = response.body?.getReader();
 
@@ -196,6 +259,10 @@ async function readPreviewText(response: Response): Promise<string> {
   return truncated ? `${text}${previewTruncationNotice}` : text;
 }
 
+function getArtifactContentUrl(artifact: Artifact): string {
+  return buildArtifactContentUrl(artifact.id, artifact.workspaceId);
+}
+
 function truncatePreviewText(text: string): string {
   if (text.length <= previewTextLimit) {
     return text;
@@ -223,12 +290,14 @@ function renderExpandedPreview({
   previewStatus,
   visiblePreviewText
 }: ExpandedPreviewInput) {
-  if (isImage && artifact.previewUrl) {
+  const imagePreviewUrl = isImage ? getArtifactInlineHref(artifact) : null;
+
+  if (imagePreviewUrl) {
     return (
       <img
         alt={`${artifact.title} full preview`}
         data-artifact-expanded-image
-        src={artifact.previewUrl}
+        src={imagePreviewUrl}
         style={expandedImageStyle}
       />
     );
@@ -244,7 +313,19 @@ function renderExpandedPreview({
     }
 
     if (visiblePreviewText) {
-      return (
+      return isMarkdownArtifact(artifact) ? (
+        <div data-artifact-inline-preview style={markdownPreviewStyle}>
+          <MarkdownContent content={visiblePreviewText} />
+        </div>
+      ) : isHtmlArtifact(artifact) ? (
+        <iframe
+          data-artifact-iframe-preview
+          sandbox="allow-scripts"
+          srcDoc={visiblePreviewText}
+          style={iframeStyle}
+          title={`${artifact.title} preview`}
+        />
+      ) : (
         <pre data-artifact-inline-preview style={codePreviewStyle}>
           {visiblePreviewText}
         </pre>
@@ -275,12 +356,50 @@ function renderExpandedPreview({
   return <p style={emptyStateStyle}>No inline preview is available for this artifact yet.</p>;
 }
 
-function renderPreviewLink(artifact: Artifact, cardType: ArtifactCardType) {
+type PreviewLinkInput = {
+  artifact: Artifact;
+  cardType: ArtifactCardType;
+};
+
+function renderPreviewLink({
+  artifact,
+  cardType
+}: PreviewLinkInput) {
+  if (artifact.storageKey) {
+    if (isMarkdownArtifact(artifact)) {
+      return (
+        <a
+          aria-label={`Open ${artifact.title} Markdown in a new tab`}
+          data-artifact-preview-url
+          href={buildArtifactViewerUrl(artifact.id, artifact.workspaceId)}
+          rel="noreferrer"
+          style={actionLinkStyle}
+          target="_blank"
+        >
+          打开 Markdown
+        </a>
+      );
+    }
+
+    return (
+      <a
+        aria-label={`Open the ${artifact.title} preview in a new tab`}
+        data-artifact-preview-url
+        href={buildArtifactFileUrl(artifact.id, artifact.workspaceId, "inline")}
+        rel="noreferrer"
+        style={actionLinkStyle}
+        target="_blank"
+      >
+        {isHtmlArtifact(artifact) ? "打开网页" : "打开产物"}
+      </a>
+    );
+  }
+
   if (!artifact.previewUrl) {
     return null;
   }
 
-  if (artifact.mimeType === "text/markdown") {
+  if (isMarkdownArtifact(artifact)) {
     return (
       <a
         aria-label={`Open ${artifact.title} Markdown in a new tab`}
@@ -290,7 +409,7 @@ function renderPreviewLink(artifact: Artifact, cardType: ArtifactCardType) {
         style={actionLinkStyle}
         target="_blank"
       >
-        Open Markdown
+        打开 Markdown
       </a>
     );
   }
@@ -304,9 +423,25 @@ function renderPreviewLink(artifact: Artifact, cardType: ArtifactCardType) {
       style={cardType === "preview" ? previewLinkStyle : actionLinkStyle}
       target="_blank"
     >
-      {cardType === "preview" ? artifact.previewUrl : "Open artifact"}
+      {cardType === "preview" ? artifact.previewUrl : "打开产物"}
     </a>
   );
+}
+
+function getArtifactDownloadHref(artifact: Artifact): string {
+  if (artifact.storageKey) {
+    return buildArtifactFileUrl(artifact.id, artifact.workspaceId, "attachment");
+  }
+
+  return artifact.previewUrl ?? "#";
+}
+
+function getArtifactInlineHref(artifact: Artifact): string | null {
+  if (artifact.storageKey) {
+    return buildArtifactFileUrl(artifact.id, artifact.workspaceId, "inline");
+  }
+
+  return artifact.previewUrl ?? null;
 }
 
 type ArtifactCardType = "attachment" | "diff" | "preview";
@@ -367,10 +502,18 @@ function isTextPreviewArtifact(artifact: Artifact): boolean {
   }
 
   if (mimeType.includes("html")) {
-    return false;
+    return true;
   }
 
   return mimeType.startsWith("text/");
+}
+
+function isMarkdownArtifact(artifact: Artifact): boolean {
+  return artifact.mimeType.toLowerCase().includes("markdown");
+}
+
+function isHtmlArtifact(artifact: Artifact): boolean {
+  return artifact.mimeType.toLowerCase().includes("html");
 }
 
 const cardStyle: CSSProperties = {
@@ -470,12 +613,10 @@ const secondaryButtonStyle: CSSProperties = {
   padding: "0.4rem 0.65rem"
 };
 
-const storageKeyStyle: CSSProperties = {
-  background: "rgba(15, 23, 42, 0.06)",
-  borderRadius: "8px",
-  fontFamily: "monospace",
-  overflowWrap: "anywhere",
-  padding: "0.15rem 0.45rem"
+const secondaryLinkStyle: CSSProperties = {
+  ...secondaryButtonStyle,
+  display: "inline-flex",
+  textDecoration: "none"
 };
 
 const thumbnailStyle: CSSProperties = {
@@ -507,6 +648,12 @@ const codePreviewStyle: CSSProperties = {
   padding: "0.85rem",
   whiteSpace: "pre-wrap",
   wordBreak: "break-word"
+};
+
+const markdownPreviewStyle: CSSProperties = {
+  maxHeight: "520px",
+  overflow: "auto",
+  padding: "0.85rem"
 };
 
 const iframeStyle: CSSProperties = {

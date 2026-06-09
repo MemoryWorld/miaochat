@@ -273,11 +273,23 @@ function containsInternalArtifactMarkers(raw: string): boolean {
 function stripVisibleCollaborationPlaceholders(content: string): string {
   return content
     .split("\n")
-    .map((line) => removePlaceholderSentences(line))
+    .map((line) => removeVisibleControlLabels(removePlaceholderSentences(line)))
     .join("\n")
-    .replace(/\b(?:JSON|ORCHESTRATOR|metadata|handoff|target)\b/gi, "")
+    .replace(/\b(?:JSON|ORCHESTRATOR|metadata|envelope|handoff|target)\b/gi, "")
     .replace(/\b(?:targetAgentId|targetParticipantId|targetRoleKey|acceptanceCriteria)\b/g, "")
     .replace(/[ \t]+([。！？!?，,；;：:])/g, "$1");
+}
+
+function removeVisibleControlLabels(content: string): string {
+  return content
+    .replace(
+      /^[ \t]*[[【（(]\s*(?:envelope|tool[_ -]?plan|handoff|orchestrator|metadata|内部(?:协作|控制)?(?:内容|数据|信息))\s*(?:内容|数据|信息|metadata)?\s*[\]】）)][ \t]*$/giu,
+      ""
+    )
+    .replace(
+      /[[【（(]\s*(?:envelope|tool[_ -]?plan|handoff|orchestrator|metadata)\s*(?:内容|数据|信息|metadata)?\s*[\]】）)]/giu,
+      ""
+    );
 }
 
 function removePlaceholderSentences(content: string): string {

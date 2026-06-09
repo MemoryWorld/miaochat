@@ -156,7 +156,6 @@ export class ConversationsService {
         {
           ...parsed.teammate,
           name: agentName,
-          provider: "deepseek",
           workspaceId
         },
         ownerUserId,

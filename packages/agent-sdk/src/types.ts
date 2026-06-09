@@ -6,11 +6,13 @@ import type {
   StreamEvent
 } from "@agenthub/contracts";
 
-export type AgentPinnedMessage = Pick<Message, "content" | "id" | "role">;
+export type AgentContextMessage = Pick<Message, "content" | "id" | "role">;
+export type AgentPinnedMessage = AgentContextMessage;
 
 export type AgentExecutionContext = {
   harness?: HarnessRuntimeContext;
   pinnedMessages: AgentPinnedMessage[];
+  recentMessages?: AgentContextMessage[];
 };
 
 export type AgentExecutionRequest = {
@@ -20,6 +22,7 @@ export type AgentExecutionRequest = {
   credentialId?: string;
   instructions?: string;
   message: string;
+  modelProfileId?: string | null;
   provider: ProviderId;
   workspaceId: string;
 };

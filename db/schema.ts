@@ -58,8 +58,10 @@ export const codingWorkflowState = pgEnum("coding_workflow_state", [
   "plan_rejected",
   "plan_revision_requested",
   "execution_running",
+  "execution_failed",
   "review_running",
   "qa_running",
+  "summary_running",
   "awaiting_user_confirmation",
   "completed"
 ]);
@@ -89,6 +91,7 @@ export const providerId = pgEnum("provider_id", [
   "deepseek",
   "hermes",
   "mock",
+  "opencode",
   "openclaw"
 ]);
 
@@ -618,6 +621,48 @@ export const artifacts = pgTable("artifacts", {
   previewUrl: text("preview_url"),
   storageKey: text("storage_key"),
   title: text("title").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const visualWorkflows = pgTable("visual_workflows", {
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
+  description: text("description").notNull(),
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  sourceMessageId: text("source_message_id")
+    .notNull()
+    .references(() => messages.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("preview"),
+  title: text("title").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  ...timestampColumns
+});
+
+export const visualWorkflowRuns = pgTable("visual_workflow_runs", {
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  error: text("error"),
+  id: text("id").primaryKey(),
+  inputValues: jsonb("input_values").$type<Record<string, string>>().notNull().default({}),
+  nodeStates: jsonb("node_states").$type<Record<string, unknown>[]>().notNull(),
+  outputArtifactId: text("output_artifact_id").references(() => artifacts.id, {
+    onDelete: "set null"
+  }),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("queued"),
+  workflowId: text("workflow_id")
+    .notNull()
+    .references(() => visualWorkflows.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull(),
   ...timestampColumns
 });

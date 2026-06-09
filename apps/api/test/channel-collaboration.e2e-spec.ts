@@ -271,6 +271,7 @@ describe("phase f channel collaboration", () => {
     expect(channelFilesResponse.json()).toEqual([
       expect.objectContaining({
         messageId: coworkerMessageId,
+        storageKey: `test/${coworkerMessageId}/notes.txt`,
         title: "notes.txt"
       })
     ]);

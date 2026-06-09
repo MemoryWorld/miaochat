@@ -88,6 +88,7 @@ export async function dispatchAgentActivity(
         systemPrompt: input.systemPrompt
       }),
       message: input.message,
+      modelProfileId: input.modelProfileId,
       provider: runtime.provider,
       workspaceId: input.workspaceId
     });

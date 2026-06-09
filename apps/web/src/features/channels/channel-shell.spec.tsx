@@ -16,6 +16,7 @@ import { ChannelShell } from "./channel-shell";
 
 const fetchMock = vi.fn<typeof fetch>();
 const apiBaseUrl = "/api";
+const routerPushMock = vi.fn();
 
 class MockEventSource {
   static instances: MockEventSource[] = [];
@@ -54,7 +55,10 @@ vi.mock("next/navigation", async () => {
   const actual = await vi.importActual<Record<string, unknown>>("next/navigation");
   return {
     ...actual,
-    usePathname: () => "/channels/conv_phase_d"
+    usePathname: () => "/channels/conv_phase_d",
+    useRouter: () => ({
+      push: routerPushMock
+    })
   };
 });
 
@@ -63,6 +67,7 @@ describe("ChannelShell", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("EventSource", MockEventSource);
     MockEventSource.instances = [];
+    routerPushMock.mockReset();
   });
 
   afterEach(() => {
@@ -70,6 +75,90 @@ describe("ChannelShell", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     fetchMock.mockReset();
+  });
+
+  it("shows the login panel instead of an unavailable channel state when the workspace session is missing", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: false
+        })
+      ],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(401, {
+          message: "请先登录后再继续操作。"
+        })
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(screen.getByText("请先登录后再继续操作。")).toBeInTheDocument();
+    expect(screen.queryByText("频道不可用")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前频道概况")).not.toBeInTheDocument();
+  });
+
+  it("shows synchronization states before workspace-scoped chat surfaces can start loading", async () => {
+    const workspacesResponse = createDeferred<Response>();
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: false
+        })
+      ],
+      [`${apiBaseUrl}/workspaces`]: [workspacesResponse.promise]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    expect(screen.getByText("正在同步频道概况...")).toBeInTheDocument();
+    expect(screen.getByText("正在同步频道消息...")).toBeInTheDocument();
+    expect(screen.getByText("正在同步频道成员...")).toBeInTheDocument();
+    expect(screen.getAllByText("正在同步网页预览...").length).toBeGreaterThan(0);
+    expect(screen.queryByText("AI 同事：0")).not.toBeInTheDocument();
+    expect(screen.queryByText("审批：0")).not.toBeInTheDocument();
+    expect(screen.queryByText("活动轮次：0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 条可见消息/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 位成员/)).not.toBeInTheDocument();
+    expect(screen.queryByText("等待工程师生成真实 HTML 产物")).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有可预览产物")).not.toBeInTheDocument();
+
+    workspacesResponse.resolve(
+      jsonResponse(401, {
+        message: "请先登录后再继续操作。"
+      })
+    );
+
+    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
+  });
+
+  it("shows synchronization states before workspace-scoped file surfaces can start loading", async () => {
+    const workspacesResponse = createDeferred<Response>();
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: false
+        })
+      ],
+      [`${apiBaseUrl}/workspaces`]: [workspacesResponse.promise]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" initialTab="files" />);
+
+    expect(screen.getByText("正在加载文件")).toBeInTheDocument();
+    expect(screen.queryByText("文件面为空")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前频道还没有产出文件。")).not.toBeInTheDocument();
+
+    workspacesResponse.resolve(
+      jsonResponse(401, {
+        message: "请先登录后再继续操作。"
+      })
+    );
+
+    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
   });
 
   it("loads channel-scoped chat, workflow, approvals, activity, and file surfaces", async () => {
@@ -194,6 +283,7 @@ describe("ChannelShell", () => {
             messageId: "msg_plan",
             mimeType: "text/markdown",
             previewUrl: null,
+            storageKey: "artifacts/default-workspace/msg_plan/plan.md",
             title: "计划附件",
             workspaceId: "default-workspace"
           }
@@ -328,6 +418,924 @@ describe("ChannelShell", () => {
     });
   });
 
+  it("shows loading states instead of false empty states while channel surfaces hydrate", async () => {
+    const messagesResponse = createDeferred<Response>();
+    const rosterResponse = createDeferred<Response>();
+    const filesResponse = createDeferred<Response>();
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_phase_d",
+            id: "conv_phase_d",
+            memberTeammateIds: [],
+            sourceType: "conversation",
+            summary: "加载中状态测试",
+            title: "加载中频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [],
+            pinnedMessageIds: [],
+            title: "加载中频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels/conv_phase_d/members?workspaceId=default-workspace`]: [
+        rosterResponse.promise
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        messagesResponse.promise
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        filesResponse.promise
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    expect(await screen.findByText("加载中频道")).toBeInTheDocument();
+    expect(await screen.findByText("正在同步频道消息...")).toBeInTheDocument();
+    expect(screen.getByText("正在同步频道成员...")).toBeInTheDocument();
+    expect(screen.getAllByText("正在同步网页预览...").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/0 条可见消息/)).not.toBeInTheDocument();
+    expect(screen.queryByText("AI 同事：0")).not.toBeInTheDocument();
+    expect(screen.queryByText("等待工程师生成真实 HTML 产物")).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有可预览产物")).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有邀请其他同事。")).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有 AI 同事参与这个频道。")).not.toBeInTheDocument();
+
+    rosterResponse.resolve(
+      jsonResponse(200, {
+        aiCount: 1,
+        channelId: "conv_phase_d",
+        humanCount: 1,
+        members: [
+          {
+            displayName: "你",
+            kind: "human",
+            memberId: "human:user_demo",
+            permission: "manage",
+            role: "owner",
+            status: "active",
+            userId: "user_demo"
+          },
+          {
+            displayName: "软件工程师",
+            kind: "ai",
+            memberId: "ai:agent_engineer",
+            permission: "comment",
+            role: "ai_teammate",
+            status: "available",
+            teammateId: "agent_engineer"
+          }
+        ],
+        totalCount: 2,
+        workspaceId: "default-workspace"
+      })
+    );
+    messagesResponse.resolve(
+      jsonResponse(200, [
+        {
+          content: "已有真实消息",
+          conversationId: "conv_phase_d",
+          createdAt: "2026-05-29T00:00:00.000Z",
+          id: "msg_existing",
+          isPinned: false,
+          mentionedAgentIds: [],
+          ownerUserId: "user_demo",
+          role: "assistant",
+          sourceAgentId: "agent_engineer",
+          workspaceId: "default-workspace"
+        }
+      ])
+    );
+    filesResponse.resolve(jsonResponse(200, []));
+
+    expect(await screen.findByText("已有真实消息")).toBeInTheDocument();
+    expect(screen.getByText("2 位成员 · 1 位同事 · 1 位 AI 同事")).toBeInTheDocument();
+    expect(screen.getByText("还没有可预览产物")).toBeInTheDocument();
+  });
+
+  it("uses same-origin artifact links in the channel file surface", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_phase_d",
+            id: "conv_phase_d",
+            memberTeammateIds: ["agent_tech_lead"],
+            sourceType: "conversation",
+            summary: "文件面测试",
+            title: "文件频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [],
+            pinnedMessageIds: [],
+            title: "文件频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            channelId: "conv_phase_d",
+            conversationId: "conv_phase_d",
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "artifact_file_markdown",
+            kind: "attachment",
+            messageId: "msg_plan",
+            mimeType: "text/markdown",
+            previewUrl: null,
+            storageKey: "artifacts/default-workspace/msg_plan/plan.md",
+            title: "计划附件",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" initialTab="files" />);
+
+    expect(await screen.findByText("计划附件")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "打开 计划附件 Markdown" })).toHaveAttribute(
+      "href",
+      "/artifacts/artifact_file_markdown?workspaceId=default-workspace"
+    );
+    expect(screen.getByRole("link", { name: "下载 计划附件" })).toHaveAttribute(
+      "href",
+      "/api/artifacts/artifact_file_markdown/file?workspaceId=default-workspace&disposition=attachment"
+    );
+  });
+
+  it("renders the latest HTML artifact in the right preview panel through the content API", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_phase_d",
+            id: "conv_phase_d",
+            memberTeammateIds: [],
+            sourceType: "conversation",
+            summary: "网页预览测试",
+            title: "网页预览频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [],
+            pinnedMessageIds: [],
+            title: "网页预览频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            channelId: "conv_phase_d",
+            conversationId: "conv_phase_d",
+            createdAt: "2026-05-29T00:00:02.000Z",
+            id: "artifact_transformers_page",
+            kind: "preview",
+            messageId: "msg_engineer",
+            mimeType: "text/html",
+            previewUrl: "https://storage.example/unsigned.html",
+            storageKey: "artifacts/default-workspace/msg_engineer/transformers.html",
+            title: "变形金刚电影网页.html",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/artifacts/artifact_transformers_page/content?workspaceId=default-workspace`]: [
+        jsonResponse(200, {
+          artifactId: "artifact_transformers_page",
+          content: "<!doctype html><html><body><h1>变形金刚真人电影</h1></body></html>",
+          mimeType: "text/html",
+          title: "变形金刚电影网页.html",
+          truncated: false
+        })
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    expect(await screen.findByText("网页预览频道")).toBeInTheDocument();
+    expect(await screen.findByText("变形金刚电影网页.html")).toBeInTheDocument();
+    const previewFrame = await screen.findByTitle("变形金刚电影网页.html 预览");
+
+    expect(previewFrame).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("变形金刚真人电影")
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${apiBaseUrl}/artifacts/artifact_transformers_page/content?workspaceId=default-workspace`,
+      expect.objectContaining({
+        credentials: "include"
+      })
+    );
+  });
+
+  it("keeps the existing HTML preview visible when a later file surface refresh fails", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_phase_d",
+            id: "conv_phase_d",
+            memberTeammateIds: [],
+            sourceType: "conversation",
+            summary: "网页预览测试",
+            title: "网页预览频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [],
+            pinnedMessageIds: [],
+            title: "网页预览频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            channelId: "conv_phase_d",
+            conversationId: "conv_phase_d",
+            createdAt: "2026-05-29T00:00:02.000Z",
+            id: "artifact_transformers_page",
+            kind: "preview",
+            messageId: "msg_engineer",
+            mimeType: "text/html",
+            previewUrl: null,
+            storageKey: "artifacts/default-workspace/msg_engineer/transformers.html",
+            title: "变形金刚电影网页.html",
+            workspaceId: "default-workspace"
+          }
+        ]),
+        jsonResponse(500, {
+          message: "请求失败。"
+        })
+      ],
+      [`${apiBaseUrl}/artifacts/artifact_transformers_page/content?workspaceId=default-workspace`]: [
+        jsonResponse(200, {
+          artifactId: "artifact_transformers_page",
+          content: "<!doctype html><html><body><h1>变形金刚真人电影</h1></body></html>",
+          mimeType: "text/html",
+          title: "变形金刚电影网页.html",
+          truncated: false
+        })
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    const previewFrame = await screen.findByTitle("变形金刚电影网页.html 预览");
+    expect(previewFrame).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("变形金刚真人电影")
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("请求失败。")).toBeInTheDocument();
+    });
+    expect(screen.getByTitle("变形金刚电影网页.html 预览")).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("变形金刚真人电影")
+    );
+    expect(screen.queryByText("等待工程师生成真实 HTML 产物")).not.toBeInTheDocument();
+    expect(screen.queryByText("频道不可用")).not.toBeInTheDocument();
+  });
+
+  it("opens a newly created HTML artifact in the right preview panel after the stream event arrives", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_phase_d",
+            id: "conv_phase_d",
+            memberTeammateIds: [],
+            sourceType: "conversation",
+            summary: "网页预览测试",
+            title: "网页预览频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [],
+            pinnedMessageIds: [],
+            title: "网页预览频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, []),
+        jsonResponse(200, []),
+        jsonResponse(200, [
+          {
+            channelId: "conv_phase_d",
+            conversationId: "conv_phase_d",
+            createdAt: "2026-05-29T00:00:02.000Z",
+            id: "artifact_transformers_page",
+            kind: "preview",
+            messageId: "msg_engineer",
+            mimeType: "text/html",
+            previewUrl: null,
+            storageKey: "artifacts/default-workspace/msg_engineer/transformers.html",
+            title: "变形金刚电影网页.html",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/artifacts?messageId=msg_engineer&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/artifacts/artifact_transformers_page/content?workspaceId=default-workspace`]: [
+        jsonResponse(200, {
+          artifactId: "artifact_transformers_page",
+          content: "<!doctype html><html><body><h1>变形金刚真人电影</h1></body></html>",
+          mimeType: "text/html",
+          title: "变形金刚电影网页.html",
+          truncated: false
+        })
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    expect(await screen.findByText("还没有可预览产物")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+
+    MockEventSource.instances[0]?.emitMessage({
+      kind: "conversation.status",
+      payload: {
+        artifactStatus: {
+          artifactId: "artifact_transformers_page",
+          messageId: "msg_engineer",
+          status: "created",
+          title: "变形金刚电影网页.html",
+          type: "webpage"
+        },
+        failures: [],
+        label: "coding.execution_started",
+        state: "running",
+        successfulAgentCount: 1,
+        summary: "软件工程师已生成网页产物。",
+        totalAgentCount: 4
+      }
+    });
+
+    const previewFrame = await screen.findByTitle(
+      "变形金刚电影网页.html 预览",
+      {},
+      {
+        timeout: 3_000
+      }
+    );
+    expect(previewFrame).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("变形金刚真人电影")
+    );
+  });
+
+  it("keeps refreshing surfaces after a completed stream message until persisted HTML appears", async () => {
+    const userMessage = {
+      content: "请创建一个变形金刚真人电影网页。",
+      conversationId: "conv_phase_d",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      id: "msg_user",
+      isPinned: false,
+      mentionedAgentIds: [],
+      ownerUserId: "user_demo",
+      role: "user",
+      sourceAgentId: null,
+      workspaceId: "default-workspace"
+    };
+    const assistantMessage = {
+      content: "软件工程师已完成 HTML 网页产物。",
+      conversationId: "conv_phase_d",
+      createdAt: "2026-05-29T00:00:03.000Z",
+      id: "msg_engineer",
+      isPinned: false,
+      mentionedAgentIds: [],
+      ownerUserId: "user_demo",
+      role: "assistant",
+      sourceAgentId: "agent_engineer",
+      workspaceId: "default-workspace"
+    };
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_phase_d",
+            id: "conv_phase_d",
+            memberTeammateIds: ["agent_engineer"],
+            sourceType: "conversation",
+            summary: "网页生成频道",
+            title: "网页生成频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [{ agentId: "agent_engineer", agentName: "软件工程师" }],
+            pinnedMessageIds: [],
+            title: "网页生成频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ]),
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [{ agentId: "agent_engineer", agentName: "软件工程师" }],
+            pinnedMessageIds: [],
+            title: "网页生成频道",
+            updatedAt: "2026-05-29T00:00:03.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [userMessage]),
+        jsonResponse(200, [userMessage]),
+        jsonResponse(200, [userMessage, assistantMessage])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, []),
+        jsonResponse(200, [
+          {
+            channelId: "conv_phase_d",
+            conversationId: "conv_phase_d",
+            createdAt: "2026-05-29T00:00:03.000Z",
+            id: "artifact_transformers_page",
+            kind: "preview",
+            messageId: "msg_engineer",
+            mimeType: "text/html",
+            previewUrl: null,
+            storageKey: "artifacts/default-workspace/msg_engineer/transformers.html",
+            title: "变形金刚电影网页.html",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, []),
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, {
+          activePlanVersion: 1,
+          approvalHistory: [],
+          approvalState: "approved",
+          conversationId: "conv_phase_d",
+          createdAt: "2026-05-29T00:00:00.000Z",
+          deadline: null,
+          engineerAgentId: "agent_engineer",
+          extraAgentIds: [],
+          goal: "创建变形金刚真人电影网页。",
+          id: "workflow_phase_d",
+          kickoffMessageId: "msg_user",
+          ownerUserId: "user_demo",
+          planMessageId: "msg_plan",
+          priority: "normal",
+          qaAgentId: "agent_qa",
+          repoContext: null,
+          reviewerAgentId: "agent_reviewer",
+          runtimeBackend: "enhanced-hermes",
+          state: "execution_running",
+          taskSnapshot: [],
+          teammates: [
+            {
+              agentId: "agent_engineer",
+              isBuiltIn: true,
+              name: "软件工程师",
+              role: "software_engineer",
+              runtimeBackend: "enhanced-hermes"
+            }
+          ],
+          techLeadAgentId: "agent_tech_lead",
+          updatedAt: "2026-05-29T00:00:00.000Z",
+          workspaceId: "default-workspace"
+        }),
+        jsonResponse(200, {
+          activePlanVersion: 1,
+          approvalHistory: [],
+          approvalState: "approved",
+          conversationId: "conv_phase_d",
+          createdAt: "2026-05-29T00:00:00.000Z",
+          deadline: null,
+          engineerAgentId: "agent_engineer",
+          extraAgentIds: [],
+          goal: "创建变形金刚真人电影网页。",
+          id: "workflow_phase_d",
+          kickoffMessageId: "msg_user",
+          ownerUserId: "user_demo",
+          planMessageId: "msg_plan",
+          priority: "normal",
+          qaAgentId: "agent_qa",
+          repoContext: null,
+          reviewerAgentId: "agent_reviewer",
+          runtimeBackend: "enhanced-hermes",
+          state: "completed",
+          taskSnapshot: [],
+          teammates: [
+            {
+              agentId: "agent_engineer",
+              isBuiltIn: true,
+              name: "软件工程师",
+              role: "software_engineer",
+              runtimeBackend: "enhanced-hermes"
+            }
+          ],
+          techLeadAgentId: "agent_tech_lead",
+          updatedAt: "2026-05-29T00:00:03.000Z",
+          workspaceId: "default-workspace"
+        })
+      ],
+      [`${apiBaseUrl}/artifacts?messageId=msg_user&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/artifacts?messageId=msg_engineer&workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:03.000Z",
+            id: "artifact_transformers_page",
+            kind: "preview",
+            messageId: "msg_engineer",
+            mimeType: "text/html",
+            previewUrl: null,
+            storageKey: "artifacts/default-workspace/msg_engineer/transformers.html",
+            title: "变形金刚电影网页.html",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/artifacts/artifact_transformers_page/content?workspaceId=default-workspace`]: [
+        jsonResponse(200, {
+          artifactId: "artifact_transformers_page",
+          content: "<!doctype html><html><body><h1>变形金刚真人电影</h1></body></html>",
+          mimeType: "text/html",
+          title: "变形金刚电影网页.html",
+          truncated: false
+        })
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    expect(await screen.findByText("请创建一个变形金刚真人电影网页。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+
+    MockEventSource.instances[0]?.emitMessage({
+      kind: "conversation.message.completed",
+      payload: {
+        finalContent: "软件工程师已完成 HTML 网页产物。",
+        messageId: "msg_engineer"
+      }
+    });
+
+    expect(await screen.findByText("正在同步持久化结果")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("正在同步持久化结果")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("软件工程师已完成 HTML 网页产物。")).toBeInTheDocument();
+
+    const previewFrame = await screen.findByTitle(
+      "变形金刚电影网页.html 预览",
+      {},
+      {
+        timeout: 3_000
+      }
+    );
+    expect(previewFrame).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("变形金刚真人电影")
+    );
+  });
+
+  it("restores the processing indicator from running agent runs after reload", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_running",
+            id: "conv_running",
+            memberTeammateIds: ["agent_planner", "agent_builder"],
+            sourceType: "conversation",
+            summary: "2 位协作成员共享这个频道。",
+            title: "运行中频道",
+            unreadCount: 0,
+            updatedAt: "2026-06-06T00:19:38.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_running",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [
+              { agentId: "agent_planner", agentName: "规划同事" },
+              { agentId: "agent_builder", agentName: "实现同事" }
+            ],
+            pinnedMessageIds: [],
+            title: "运行中频道",
+            updatedAt: "2026-06-06T00:19:38.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_running&workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            content: "请两位同事协作并生成 Markdown 交付物。",
+            conversationId: "conv_running",
+            createdAt: "2026-06-06T00:19:38.000Z",
+            id: "msg_running_user",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "user",
+            sourceAgentId: null,
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels/conv_running/agent-runs?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            agentId: "agent_planner",
+            artifactCount: 0,
+            channelId: "conv_running",
+            checkpoint: "context_prepared",
+            contextSnapshotId: null,
+            createdAt: "2026-06-06T00:19:38.000Z",
+            id: "agent-run:planner",
+            metadata: {},
+            producedEventIds: [],
+            provider: "deepseek",
+            status: "running",
+            turnId: "turn:planner",
+            updatedAt: "2026-06-06T00:19:39.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_running&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_running&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_running&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_running&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_running" />);
+
+    expect(await screen.findByText("运行中频道")).toBeInTheDocument();
+    expect(
+      await screen.findAllByText("规划同事正在处理，最近进度：已准备上下文。")
+    ).toHaveLength(2);
+    expect(screen.getAllByText("当前同事：规划同事")).toHaveLength(2);
+  });
+
   it("renders the file surface when the files tab is selected", async () => {
     mockFetchByUrl({
       [`${apiBaseUrl}/workspaces`]: [jsonResponse(200, [])],
@@ -444,6 +1452,115 @@ describe("ChannelShell", () => {
       expect(screen.getByLabelText("消息内容")).toBeDisabled();
       expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
     });
+  });
+
+  it("keeps the channel composer editable but prevents sending while the realtime stream is connecting", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_connecting",
+            id: "conv_connecting",
+            memberTeammateIds: ["agent_tech_lead"],
+            sourceType: "conversation",
+            summary: "1 位协作成员共享这个频道。",
+            title: "连接中频道",
+            unreadCount: 0,
+            updatedAt: "2026-06-09T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_connecting",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [
+              { agentId: "agent_tech_lead", agentName: "技术负责人" }
+            ],
+            pinnedMessageIds: [],
+            title: "连接中频道",
+            updatedAt: "2026-06-09T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_connecting&workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            content: "已有历史消息",
+            conversationId: "conv_connecting",
+            createdAt: "2026-06-09T00:00:00.000Z",
+            id: "msg_history",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "assistant",
+            sourceAgentId: "agent_tech_lead",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_connecting&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_connecting&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_connecting&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_connecting&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_connecting" />);
+
+    expect(await screen.findByText("已有历史消息")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+
+    const textarea = screen.getByLabelText("消息内容");
+    fireEvent.change(textarea, {
+      target: {
+        value: "实时流连接后再发"
+      }
+    });
+
+    expect(textarea).not.toBeDisabled();
+    expect(screen.getByText("正在连接实时流，稍后即可发送。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === `${apiBaseUrl}/messages/send`)
+    ).toBe(false);
+
+    MockEventSource.instances[0]?.emitOpen();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
+    });
+    expect(textarea).toHaveValue("实时流连接后再发");
   });
 
   it("lets the user send a message directly inside the opened channel and refreshes after stream completion", async () => {
@@ -630,6 +1747,194 @@ describe("ChannelShell", () => {
     expect(await screen.findByText("收到，先整理计划。")).toBeInTheDocument();
   });
 
+  it("routes to the independent visual workflow workbench from a natural-language workflow request", async () => {
+    const launchedWorkflow = {
+      conversationId: "conv_phase_d",
+      createdAt: "2026-06-08T00:00:01.000Z",
+      definition: {
+        edges: [
+          { from: "input_movie", id: "edge_input_collect", label: "电影名", to: "collect_material" },
+          { from: "collect_material", id: "edge_collect_outline", label: "资料", to: "outline" }
+        ],
+        inputSchema: [
+          {
+            description: "用于资料收集和网页生成的电影名称。",
+            key: "movieName",
+            label: "电影名",
+            placeholder: "例如：变形金刚真人电影",
+            required: true
+          }
+        ],
+        nodes: [
+          {
+            id: "input_movie",
+            inputSummary: "用户输入电影名。",
+            label: "输入节点：电影名",
+            outputSummary: "标准化后的电影名。",
+            role: "用户输入",
+            type: "input"
+          },
+          {
+            id: "collect_material",
+            inputSummary: "接收电影名。",
+            label: "资料收集节点",
+            outputSummary: "影片资料。",
+            role: "资料收集",
+            type: "collection"
+          },
+          {
+            id: "outline",
+            inputSummary: "接收结构化资料。",
+            label: "大纲生成节点",
+            outputSummary: "页面大纲。",
+            role: "信息架构",
+            type: "outline"
+          }
+        ],
+        outputSchema: [
+          { description: "最终网页文件。", key: "htmlArtifact", label: "HTML artifact", mimeType: "text/html" }
+        ]
+      },
+      description:
+        "对话触发 Workflow 验收：请创建一个新的编码 workflow。目标：做一个电影网页。请先由技术负责人拆解计划并等待我批准。",
+      id: "visual_workflow_created",
+      latestRun: null,
+      ownerUserId: "user_demo",
+      sourceMessageId: "msg_workflow_request",
+      status: "preview",
+      title: "做一个电影网页 workflow",
+      updatedAt: "2026-06-08T00:00:01.000Z",
+      workspaceId: "default-workspace"
+    };
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channels?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            conversationId: "conv_phase_d",
+            id: "conv_phase_d",
+            memberTeammateIds: ["agent_tech_lead", "agent_engineer"],
+            sourceType: "conversation",
+            summary: "2 位协作成员共享这个频道。",
+            title: "实时频道",
+            unreadCount: 0,
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            visibility: "workspace",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            archivedAt: null,
+            id: "conv_phase_d",
+            isPinned: false,
+            mode: "group",
+            ownerUserId: "user_demo",
+            participants: [
+              { agentId: "agent_tech_lead", agentName: "技术负责人" },
+              { agentId: "agent_engineer", agentName: "软件工程师" }
+            ],
+            pinnedMessageIds: [],
+            title: "实时频道",
+            updatedAt: "2026-05-29T00:00:00.000Z",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            content: "已有历史消息",
+            conversationId: "conv_phase_d",
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "msg_history",
+            isPinned: false,
+            mentionedAgentIds: [],
+            ownerUserId: "user_demo",
+            role: "assistant",
+            sourceAgentId: "agent_tech_lead",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/channel-files?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/activity?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/approvals?channelId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_phase_d&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ],
+      [`${apiBaseUrl}/messages/send`]: [
+        jsonResponse(202, {
+          content:
+            "对话触发 Workflow 验收：请创建一个新的编码 workflow。目标：做一个电影网页。请先由技术负责人拆解计划并等待我批准。",
+          conversationId: "conv_phase_d",
+          createdAt: "2026-06-08T00:00:01.000Z",
+          id: "msg_workflow_request",
+          isPinned: false,
+          launchedWorkflow,
+          mentionedAgentIds: [],
+          ownerUserId: "user_demo",
+          role: "user",
+          sourceAgentId: null,
+          workspaceId: "default-workspace"
+        })
+      ]
+    });
+
+    render(<ChannelShell channelId="conv_phase_d" />);
+
+    expect(await screen.findByText("已有历史消息")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+    MockEventSource.instances[0]?.emitOpen();
+
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: {
+        value:
+          "对话触发 Workflow 验收：请创建一个新的编码 workflow。目标：做一个电影网页。请先由技术负责人拆解计划并等待我批准。"
+      }
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(await screen.findByText(/对话触发 Workflow 验收/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Workflow 预览" })).toBeInTheDocument();
+    expect(screen.getByText(/输入节点：电影名/)).toBeInTheDocument();
+    expect(screen.getByText(/资料收集节点/)).toBeInTheDocument();
+    expect(screen.getByText(/大纲生成节点/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "打开工作台" })).toHaveAttribute(
+      "href",
+      "/workflows/visual_workflow_created?workspaceId=default-workspace"
+    );
+    expect(screen.queryByRole("button", { name: "执行 workflow" })).not.toBeInTheDocument();
+    expect(routerPushMock).toHaveBeenCalledWith(
+      "/workflows/visual_workflow_created?workspaceId=default-workspace"
+    );
+    expect(screen.queryByText("AI 同事正在处理你的消息")).not.toBeInTheDocument();
+  });
+
   it("falls back to refreshing persisted replies when stream completion is missed", async () => {
     mockFetchByUrl({
       [`${apiBaseUrl}/workspaces`]: [
@@ -735,8 +2040,15 @@ describe("ChannelShell", () => {
     render(<ChannelShell channelId="conv_deepseek_direct" />);
 
     expect(await screen.findByText("软件工程师 session")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+    MockEventSource.instances[0]?.emitOpen();
     fireEvent.change(screen.getByLabelText("消息内容"), {
       target: { value: "请告诉我现在你可以收到我的信息吗？" }
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
     });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
@@ -970,7 +2282,26 @@ describe("ChannelShell", () => {
   });
 });
 
-function mockFetchByUrl(mapping: Record<string, Response[]>) {
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  reject: (reason?: unknown) => void;
+  resolve: (value: T) => void;
+} {
+  let rejectDeferred: (reason?: unknown) => void = () => undefined;
+  let resolveDeferred: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveDeferred = resolve;
+    rejectDeferred = reject;
+  });
+
+  return {
+    promise,
+    reject: rejectDeferred,
+    resolve: resolveDeferred
+  };
+}
+
+function mockFetchByUrl(mapping: Record<string, Array<Promise<Response> | Response>>) {
   fetchMock.mockImplementation(async (input, init) => {
     const url = toRequestUrl(input);
     const method = typeof init === "object" && init !== null && "method" in init ? init.method : "GET";
@@ -979,6 +2310,7 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
       method &&
       method !== "GET" &&
       url !== `${apiBaseUrl}/messages/send` &&
+      !/^\/api\/visual-workflows\/[^/]+\/(?:cancel|regenerate|runs)$/.test(url) &&
       !url.endsWith("/presence") &&
       !url.endsWith("/read-state") &&
       !url.endsWith("/reactions")
@@ -1030,6 +2362,24 @@ function mockFetchByUrl(mapping: Record<string, Response[]>) {
       }
 
       if (/^\/api\/artifacts\?messageId=/.test(url)) {
+        return jsonResponse(200, []);
+      }
+
+      if (/^\/api\/artifacts\/[^/]+\/content\?workspaceId=/.test(url)) {
+        return jsonResponse(200, {
+          artifactId: "artifact",
+          content: "# 预览",
+          mimeType: "text/markdown",
+          title: "预览",
+          truncated: false
+        });
+      }
+
+      if (/^\/api\/channels\/[^/]+\/agent-runs\?workspaceId=/.test(url)) {
+        return jsonResponse(200, []);
+      }
+
+      if (/^\/api\/visual-workflows\?/.test(url)) {
         return jsonResponse(200, []);
       }
 

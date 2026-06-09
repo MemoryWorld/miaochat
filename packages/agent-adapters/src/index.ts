@@ -7,6 +7,7 @@ import { DeepSeekAdapter } from "./deepseek/deepseek-adapter.js";
 import { HermesAdapter } from "./hermes/hermes-adapter.js";
 import { MockDirectAdapter } from "./mock/direct-adapter.js";
 import { MockGroupAdapter } from "./mock/group-adapter.js";
+import { OpenCodeAdapter } from "./opencode/opencode-adapter.js";
 import { OpenClawAdapter } from "./openclaw/openclaw-adapter.js";
 import type { StreamingClientOptions } from "./shared/streaming-client.js";
 
@@ -19,6 +20,8 @@ export * from "./hermes/hermes-adapter.js";
 export * from "./hermes/hermes-types.js";
 export * from "./mock/direct-adapter.js";
 export * from "./mock/group-adapter.js";
+export * from "./opencode/opencode-adapter.js";
+export * from "./opencode/opencode-types.js";
 export * from "./openclaw/openclaw-adapter.js";
 export * from "./openclaw/openclaw-types.js";
 export * from "./shared/agent-run-sandbox.js";
@@ -43,6 +46,8 @@ export function createAgentAdapter(input: CreateAgentAdapterInput): AgentAdapter
       return new HermesAdapter(requireStreamingClientOptions(input));
     case "openclaw":
       return new OpenClawAdapter(requireStreamingClientOptions(input));
+    case "opencode":
+      return new OpenCodeAdapter(requireStreamingClientOptions(input));
     case "codex":
       return new CodexAdapter(requireStreamingClientOptions(input));
     case "deepseek":

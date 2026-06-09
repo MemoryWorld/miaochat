@@ -145,15 +145,16 @@ describe("SettingsHost", () => {
           }
         ])
       ],
-      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
         jsonResponse(200, [
           {
+            credentialSource: "user_provided",
             id: "conn_1",
-            kind: "deepseek_api",
-            label: "DeepSeek 工作区连接",
-            model: "deepseek-chat",
-            preset: "balanced",
-            status: "valid",
+            label: "DeepSeek（OpenCode）连接",
+            ownerUserId: "user_demo",
+            provider: "opencode",
+            providerAccountId: "deepseek/deepseek-chat",
+            validationState: "valid",
             workspaceId: "default-workspace"
           }
         ])
@@ -162,7 +163,7 @@ describe("SettingsHost", () => {
 
     render(<SettingsHost initialSection="credentials" legacySetupMode />);
 
-    expect(await screen.findByText("DeepSeek 工作区连接")).toBeInTheDocument();
+    expect(await screen.findByText("DeepSeek（OpenCode）连接")).toBeInTheDocument();
     expect(screen.getByText(/\/setup/)).toBeInTheDocument();
     expect(screen.getAllByText("模型连接").length).toBeGreaterThan(0);
   });

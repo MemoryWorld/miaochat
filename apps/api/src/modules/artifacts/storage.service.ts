@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
+import { Readable } from "node:stream";
 
 import { Injectable } from "@nestjs/common";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import {
@@ -11,13 +12,24 @@ import {
   type ArtifactUploadTarget,
   type PrepareArtifactUploadInput,
   type RuntimeDiffArtifactDraft,
-  type RuntimeMarkdownArtifactDraft
+  type RuntimeMarkdownArtifactDraft,
+  type RuntimeWebpageArtifactDraft
 } from "@agenthub/contracts";
 
 type RuntimeArtifactWriteResult = {
   artifactId: string;
   previewUrl: string;
   storageKey: string;
+};
+
+type TextObjectReadResult = {
+  content: string;
+  truncated: boolean;
+};
+
+type ObjectReadResult = {
+  body: Readable;
+  contentLength: number | null;
 };
 
 @Injectable()
@@ -145,6 +157,129 @@ export class StorageService {
       storageKey
     };
   }
+
+  async writeRuntimeWebpageArtifact(input: {
+    draft: RuntimeWebpageArtifactDraft;
+    messageId: string;
+    workspaceId: string;
+  }): Promise<RuntimeArtifactWriteResult> {
+    const artifactId = randomUUID();
+    const storageKey = buildStorageKey({
+      artifactId,
+      fileName: input.draft.fileName,
+      messageId: input.messageId,
+      workspaceId: input.workspaceId
+    });
+    const command = new PutObjectCommand({
+      Body: Buffer.from(input.draft.html, "utf8"),
+      Bucket: this.bucket,
+      ContentType: input.draft.mimeType,
+      Key: storageKey,
+      Metadata: {
+        artifactId,
+        artifactKind: "preview",
+        messageId: input.messageId,
+        runtimeArtifactType: input.draft.type,
+        workspaceId: input.workspaceId
+      }
+    });
+
+    await this.s3.send(command);
+
+    return {
+      artifactId,
+      previewUrl: buildObjectUrl(this.endpoint, this.bucket, storageKey),
+      storageKey
+    };
+  }
+
+  async readTextObject(input: {
+    maxBytes: number;
+    storageKey: string;
+  }): Promise<TextObjectReadResult> {
+    const response = await this.s3.send(new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: input.storageKey,
+      Range: `bytes=0-${input.maxBytes}`
+    }));
+    const body = response.Body;
+
+    if (!body) {
+      return {
+        content: "",
+        truncated: false
+      };
+    }
+
+    const { buffer, truncated } = await readBodyWithLimit(body, input.maxBytes);
+
+    return {
+      content: buffer.toString("utf8"),
+      truncated: truncated || isRangeResponseTruncated(response.ContentRange, input.maxBytes)
+    };
+  }
+
+  async readObject(input: {
+    storageKey: string;
+  }): Promise<ObjectReadResult> {
+    const response = await this.s3.send(new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: input.storageKey
+    }));
+
+    return {
+      body: await toReadableBody(response.Body),
+      contentLength: typeof response.ContentLength === "number" ? response.ContentLength : null
+    };
+  }
+
+  async getDownloadUrl(input: {
+    fileName: string;
+    mimeType: string;
+    storageKey: string;
+  }): Promise<string> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: input.storageKey,
+      ResponseContentDisposition: `attachment; filename="${sanitizeDownloadFileName(input.fileName)}"`,
+      ResponseContentType: input.mimeType
+    });
+
+    return getSignedUrl(this.s3, command, {
+      expiresIn: 900
+    });
+  }
+}
+
+async function toReadableBody(body: unknown): Promise<Readable> {
+  if (!body) {
+    return Readable.from([]);
+  }
+
+  if (body instanceof Readable) {
+    return body;
+  }
+
+  if (typeof body === "string" || body instanceof Uint8Array) {
+    return Readable.from([body]);
+  }
+
+  if (typeof body === "object" && body !== null && "transformToWebStream" in body) {
+    return Readable.fromWeb(
+      (body as { transformToWebStream: () => ReadableStream<Uint8Array> }).transformToWebStream()
+    );
+  }
+
+  if (isAsyncIterable(body)) {
+    return Readable.from(body as AsyncIterable<Buffer | string | Uint8Array>);
+  }
+
+  if (typeof body === "object" && body !== null && "transformToByteArray" in body) {
+    const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+    return Readable.from([Buffer.from(bytes)]);
+  }
+
+  return Readable.from([]);
 }
 
 function buildStorageKey(input: {
@@ -174,4 +309,93 @@ function buildObjectUrl(endpoint: string, bucket: string, storageKey: string): s
 
 function sanitizeStorageSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
+}
+
+async function readBodyWithLimit(
+  body: unknown,
+  maxBytes: number
+): Promise<{ buffer: Buffer; truncated: boolean }> {
+  if (typeof body === "object" && body !== null && "transformToByteArray" in body) {
+    const bytes = Buffer.from(
+      await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray()
+    );
+
+    return {
+      buffer: bytes.subarray(0, maxBytes),
+      truncated: bytes.length > maxBytes
+    };
+  }
+
+  if (typeof body === "string" || body instanceof Uint8Array) {
+    const bytes = Buffer.from(body);
+    return {
+      buffer: bytes.subarray(0, maxBytes),
+      truncated: bytes.length > maxBytes
+    };
+  }
+
+  if (body instanceof Readable || isAsyncIterable(body)) {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let truncated = false;
+
+    for await (const chunk of body as AsyncIterable<Buffer | string | Uint8Array>) {
+      const bytes = Buffer.from(chunk);
+      const remainingBytes = maxBytes - totalBytes;
+
+      if (remainingBytes <= 0) {
+        truncated = true;
+        break;
+      }
+
+      chunks.push(bytes.subarray(0, remainingBytes));
+      totalBytes += Math.min(bytes.length, remainingBytes);
+
+      if (bytes.length > remainingBytes) {
+        truncated = true;
+        break;
+      }
+    }
+
+    return {
+      buffer: Buffer.concat(chunks),
+      truncated
+    };
+  }
+
+  return {
+    buffer: Buffer.alloc(0),
+    truncated: false
+  };
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Symbol.asyncIterator in value
+  );
+}
+
+function sanitizeDownloadFileName(fileName: string): string {
+  const sanitized = fileName
+    .replace(/["\\\r\n]/g, "")
+    .replace(/[/]+/g, "-")
+    .trim();
+
+  return sanitized.length > 0 ? sanitized : "artifact";
+}
+
+function isRangeResponseTruncated(
+  contentRange: string | undefined,
+  maxBytes: number
+): boolean {
+  if (!contentRange) {
+    return false;
+  }
+
+  const match = /bytes\s+\d+-\d+\/(\d+)/i.exec(contentRange);
+  const totalBytes = match ? Number.parseInt(match[1] ?? "", 10) : Number.NaN;
+
+  return Number.isFinite(totalBytes) && totalBytes > maxBytes;
 }

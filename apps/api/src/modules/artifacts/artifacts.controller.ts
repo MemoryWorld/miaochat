@@ -6,8 +6,10 @@ import {
   Inject,
   Param,
   Post,
-  Query
+  Query,
+  Res
 } from "@nestjs/common";
+import { z } from "zod";
 
 import { workspaceIdSchema } from "@agenthub/contracts";
 
@@ -16,6 +18,13 @@ import { WorkspacePermissionGuard } from "../workspaces/permission.guard.js";
 import { ArtifactsService } from "./artifacts.service.js";
 import { ArtifactConflictDetectorService } from "./conflict-detector.service.js";
 import { ArtifactRevisionsService } from "./revisions.service.js";
+
+type ArtifactFileReply = {
+  header: (name: string, value: string) => ArtifactFileReply;
+  send: (payload: unknown) => unknown;
+};
+
+const artifactFileDispositionSchema = z.enum(["inline", "attachment"]).default("attachment");
 
 @Controller("artifacts")
 export class ArtifactsController {
@@ -43,6 +52,7 @@ export class ArtifactsController {
 
   @Get()
   async list(
+    @Query("conversationId") conversationId?: string,
     @Query("messageId") messageId?: string,
     @Query("workspaceId") workspaceId?: string,
     @Headers("cookie") cookieHeader?: string
@@ -50,6 +60,7 @@ export class ArtifactsController {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
     return this.artifactsService.list({
+      conversationId,
       messageId,
       workspaceId: parsedWorkspaceId
     }, user.id);
@@ -62,6 +73,62 @@ export class ArtifactsController {
   ) {
     const user = await this.authService.requireAuthenticatedUser(cookieHeader);
     return this.artifactsService.prepareUploadTarget(input, user.id);
+  }
+
+  @Get(":artifactId/content")
+  async readContent(
+    @Param("artifactId") artifactId: string,
+    @Query("workspaceId") workspaceId: string | undefined,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+    return this.artifactsService.readTextContent({
+      artifactId,
+      workspaceId: parsedWorkspaceId
+    }, user.id);
+  }
+
+  @Get(":artifactId/download")
+  async createDownloadUrl(
+    @Param("artifactId") artifactId: string,
+    @Query("workspaceId") workspaceId: string | undefined,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+    return this.artifactsService.createDownloadUrl({
+      artifactId,
+      workspaceId: parsedWorkspaceId
+    }, user.id);
+  }
+
+  @Get(":artifactId/file")
+  async readFile(
+    @Param("artifactId") artifactId: string,
+    @Query("workspaceId") workspaceId: string | undefined,
+    @Query("disposition") disposition: string | undefined,
+    @Headers("cookie") cookieHeader: string | undefined,
+    @Res() reply: ArtifactFileReply
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+    const parsedDisposition = artifactFileDispositionSchema.parse(disposition ?? "attachment");
+    const file = await this.artifactsService.readFileContent({
+      artifactId,
+      workspaceId: parsedWorkspaceId
+    }, user.id);
+
+    reply.header("Content-Type", file.mimeType);
+    reply.header("Content-Disposition", buildContentDisposition(parsedDisposition, file.fileName));
+    reply.header("Cache-Control", "no-store");
+    reply.header("X-Content-Type-Options", "nosniff");
+
+    if (typeof file.contentLength === "number") {
+      reply.header("Content-Length", String(file.contentLength));
+    }
+
+    return reply.send(file.body);
   }
 
   @Get(":artifactId/revisions")
@@ -131,4 +198,26 @@ export class ArtifactsController {
       workspaceId: parsedWorkspaceId
     });
   }
+}
+
+function buildContentDisposition(
+  disposition: "attachment" | "inline",
+  fileName: string
+): string {
+  const sanitizedFileName = sanitizeHeaderFileName(fileName);
+  const asciiFallback = sanitizedFileName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replace(/[%;]/g, "_");
+  const fallback = asciiFallback.length > 0 ? asciiFallback : "artifact";
+
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(sanitizedFileName)}`;
+}
+
+function sanitizeHeaderFileName(fileName: string): string {
+  const sanitized = fileName
+    .replace(/["\\\r\n]/g, "")
+    .replace(/[/]+/g, "-")
+    .trim();
+
+  return sanitized.length > 0 ? sanitized : "artifact";
 }

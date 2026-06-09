@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 
 import { messageSchema, type Message } from "@agenthub/contracts";
-import { assemblePinnedContext, type ConversationContext } from "@agenthub/domain";
+import { assembleConversationContext, type ConversationContext } from "@agenthub/domain";
 
 import { MessagesRepository, type MessageRow } from "./messages.repository.js";
 
@@ -14,16 +14,57 @@ export class PinMessageService {
   async loadConversationContext(
     conversationId: string,
     workspaceId: string,
-    ownerUserId: string
+    ownerUserId: string,
+    options: {
+      excludeMessageId?: string;
+      maxContextChars?: number;
+      recentLimit?: number;
+    } = {}
   ): Promise<ConversationContext> {
-    const result = await this.messagesRepository.listPinnedMessages(
-      conversationId,
-      workspaceId,
-      ownerUserId
+    const recentLimit = clampPositiveInteger(
+      options.recentLimit ?? parseIntegerEnv("MIAOCHAT_AGENT_HISTORY_MESSAGE_LIMIT") ?? 12,
+      24
     );
+    const maxContextChars = clampPositiveInteger(
+      options.maxContextChars ?? parseIntegerEnv("MIAOCHAT_AGENT_CONTEXT_CHAR_BUDGET") ?? 12_000,
+      48_000
+    );
+    const [pinnedRows, recentRows] = await Promise.all([
+      this.messagesRepository.listPinnedMessages(conversationId, workspaceId, ownerUserId),
+      this.messagesRepository.listRecentContextMessages({
+        conversationId,
+        excludeMessageId: options.excludeMessageId,
+        limit: recentLimit,
+        ownerUserId,
+        workspaceId
+      })
+    ]);
 
-    return assemblePinnedContext(result.map(mapPinnedMessageRow));
+    return assembleConversationContext({
+      maxChars: maxContextChars,
+      pinnedMessages: pinnedRows.map(mapPinnedMessageRow),
+      recentMessages: recentRows.map(mapPinnedMessageRow)
+    });
   }
+}
+
+function parseIntegerEnv(name: string): number | null {
+  const value = process.env[name];
+
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clampPositiveInteger(value: number, max: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return max;
+  }
+
+  return Math.min(Math.floor(value), max);
 }
 
 function mapPinnedMessageRow(row: MessageRow): Message {

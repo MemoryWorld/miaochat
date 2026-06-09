@@ -26,7 +26,7 @@ import {
   deriveExecutionRoles,
   derivePlanningRole,
   getBuiltInCodingProfileName,
-  hasCodingWorkflowExecutor,
+  hasRequiredCodingWorkflowRoles,
   normalizeRecommendedRoleIds,
   type BuiltInCodingRole,
   type CodingWorkflowApproval,
@@ -118,8 +118,8 @@ export class CodingWorkflowsService {
   async create(input: unknown, ownerUserId: string) {
     const parsed = createCodingWorkflowInputSchema.parse(input);
     const recommendedRoleIds = normalizeRecommendedRoleIds(parsed.recommendedRoleIds);
-    if (!hasCodingWorkflowExecutor(recommendedRoleIds)) {
-      throw new BadRequestException("至少要保留 1 位能够进入实现阶段的 AI 同事。");
+    if (!hasRequiredCodingWorkflowRoles(recommendedRoleIds)) {
+      throw new BadRequestException("编码工作流必须保留技术负责人和软件工程师。");
     }
     const runtimeAssignment = await this.resolveRuntimeAssignment(
       ownerUserId,
@@ -180,6 +180,14 @@ export class CodingWorkflowsService {
         participants,
         tx
       );
+      await this.conversationsRepository.insertOwnerChannelMembership(
+        {
+          conversationId,
+          ownerUserId,
+          workspaceId: parsed.workspaceId
+        },
+        tx
+      );
 
       await this.insertMessage(
         tx,
@@ -216,6 +224,7 @@ export class CodingWorkflowsService {
             repoContext: parsed.repoContext ?? null
           }),
           conversationId,
+          createdAtOffsetMs: 1,
           id: planMessageId,
           ownerUserId,
           role: "assistant",
@@ -550,6 +559,13 @@ export class CodingWorkflowsService {
     `);
 
     const providers = result.rows.map((row) => row.provider);
+
+    if (providers.includes("opencode")) {
+      return {
+        provider: "opencode",
+        runtimeBackend: "enhanced-hermes"
+      };
+    }
 
     if (providers.includes("deepseek")) {
       return {
@@ -1074,6 +1090,7 @@ export class CodingWorkflowsService {
     input: {
       content: string;
       conversationId: string;
+      createdAtOffsetMs?: number;
       id: string;
       ownerUserId: string;
       role: "assistant" | "system" | "user";
@@ -1091,7 +1108,9 @@ export class CodingWorkflowsService {
         owner_user_id,
         role,
         source_agent_id,
-        workspace_id
+        workspace_id,
+        created_at,
+        updated_at
       )
       VALUES (
         ${input.id},
@@ -1102,7 +1121,9 @@ export class CodingWorkflowsService {
         ${input.ownerUserId},
         ${input.role},
         ${input.sourceAgentId},
-        ${input.workspaceId}
+        ${input.workspaceId},
+        now() + (${input.createdAtOffsetMs ?? 0} * interval '1 millisecond'),
+        now() + (${input.createdAtOffsetMs ?? 0} * interval '1 millisecond')
       )
     `);
 
@@ -1405,6 +1426,7 @@ function mapApprovalRow(row: CodingWorkflowApprovalRow): CodingWorkflowApproval 
 function mapProviderToRuntimeBackend(provider: ProviderId): RuntimeBackend {
   switch (provider) {
     case "deepseek":
+    case "opencode":
       return "enhanced-hermes";
     case "hermes":
       return "hermes-compat";

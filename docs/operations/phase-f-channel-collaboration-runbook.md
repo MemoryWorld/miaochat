@@ -8,7 +8,7 @@
 
 - 已完成 `pnpm db:migrate`，包含 `0024_phase_f_channel_members.sql` 和 `0025_phase_f_channel_chat_capabilities.sql`。
 - API、Worker、Web 均已启动。
-- 当前工作区已配置可用的 DeepSeek 模型连接。
+- 当前工作区已配置可用的 OpenCode-backed 模型连接。
 - 当前频道至少有一位 AI 同事。
 
 ## 演示路径

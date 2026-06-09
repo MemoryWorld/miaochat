@@ -8,7 +8,7 @@ export const providerCredentialSchema = z.object({
   encryptedSecret: z.string().min(1),
   label: z.string().min(1),
   ownerUserId: userIdSchema,
-  provider: z.enum(["claude-code", "codex", "deepseek", "hermes", "openclaw"]),
+  provider: z.enum(["claude-code", "codex", "deepseek", "hermes", "opencode", "openclaw"]),
   providerAccountId: z.string().min(1),
   validationState: z.enum(["invalid", "pending", "valid"]).default("pending"),
   workspaceId: z.string().min(1).default("default-workspace")
@@ -17,7 +17,7 @@ export const providerCredentialSchema = z.object({
 export const createProviderCredentialInputSchema = z.object({
   credentialSource: credentialSourceSchema.default("user_provided"),
   label: z.string().trim().min(1).max(100),
-  provider: z.enum(["claude-code", "codex", "deepseek", "hermes", "openclaw"]),
+  provider: z.enum(["claude-code", "codex", "deepseek", "hermes", "opencode", "openclaw"]),
   providerAccountId: z.string().trim().min(1),
   rawSecret: z.string().trim().min(1),
   workspaceId: z.string().min(1).default("default-workspace")
@@ -28,7 +28,7 @@ export type CreateProviderCredentialInput = z.infer<
 >;
 export type ProviderCredential = z.infer<typeof providerCredentialSchema>;
 
-export const modelConnectionKindSchema = z.enum(["deepseek_api"]);
+export const modelConnectionKindSchema = z.enum(["deepseek_api", "opencode_model"]);
 
 export const modelConnectionStatusSchema = z.enum([
   "invalid",
@@ -55,7 +55,7 @@ export const modelConnectionSchema = z.object({
 export const createModelConnectionInputSchema = z.object({
   apiKey: z.string().trim().min(1),
   label: z.string().trim().min(1).max(100),
-  model: z.string().trim().min(1).default("deepseek-chat"),
+  model: z.string().trim().min(1).default("deepseek/deepseek-chat"),
   preset: modelConnectionPresetSchema.default("balanced"),
   workspaceId: z.string().min(1).default("default-workspace")
 });

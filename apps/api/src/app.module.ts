@@ -15,6 +15,7 @@ import { MultiAgentHarnessModule } from "./modules/multi-agent-harness/multi-age
 import { QuotaModule } from "./modules/quota/quota.module.js";
 import { StreamsModule } from "./modules/streams/streams.module.js";
 import { ToolsModule } from "./modules/tools/tools.module.js";
+import { VisualWorkflowsModule } from "./modules/visual-workflows/visual-workflows.module.js";
 import { WorkspaceShellModule } from "./modules/workspace-shell/workspace-shell.module.js";
 import { WorkspacesModule } from "./modules/workspaces/workspaces.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
@@ -37,6 +38,7 @@ import { ObservabilityModule } from "./observability/observability.module.js";
     QuotaModule,
     StreamsModule,
     ToolsModule,
+    VisualWorkflowsModule,
     WorkspaceShellModule,
     WorkspacesModule
   ]

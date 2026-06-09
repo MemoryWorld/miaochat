@@ -23,6 +23,7 @@ export type ExecuteDirectAgentActivityInput = {
   context?: AgentExecutionContext;
   harnessRunId?: string;
   message: string;
+  modelProfileId?: string | null;
   ownerUserId: string;
   outputStyle?: string | null;
   provider: ProviderId;
@@ -65,6 +66,7 @@ export async function executeDirectAgentActivity(
         systemPrompt: input.systemPrompt
       }),
       message: input.message,
+      modelProfileId: input.modelProfileId,
       provider: runtime.provider,
       workspaceId: input.workspaceId
     });

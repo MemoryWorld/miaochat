@@ -58,7 +58,8 @@ export class OpenClawAdapter implements AgentAdapter {
       messages: buildPromptMessages(
         request.message,
         request.context?.pinnedMessages,
-        request.instructions
+        request.instructions,
+        request.context?.recentMessages
       ),
       stream: true,
       workspaceId: request.workspaceId

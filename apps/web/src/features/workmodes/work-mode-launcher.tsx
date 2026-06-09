@@ -7,7 +7,7 @@ import type {
   CodingWorkflowPriority,
   CustomAgent
 } from "@agenthub/contracts";
-import { hasCodingWorkflowExecutor } from "@agenthub/contracts";
+import { hasRequiredCodingWorkflowRoles } from "@agenthub/contracts";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -38,7 +38,7 @@ type WorkModeLauncherProps = {
 type RecommendedTeammateDialogState =
   | {
       kind: "blocked";
-      reason: "last_teammate" | "missing_executor";
+      reason: "last_teammate" | "required_role";
       teammateName: string;
     }
   | {
@@ -46,6 +46,11 @@ type RecommendedTeammateDialogState =
       teammateId: string;
       teammateName: string;
     };
+
+const requiredRecommendedRoleIds = new Set<BuiltInCodingRole>([
+  "tech_lead",
+  "software_engineer"
+]);
 
 export function WorkModeLauncher({
   canStartCoding,
@@ -75,12 +80,30 @@ export function WorkModeLauncher({
 
   const canSubmit = goal.trim().length > 0 && canStartCoding && !isLaunching;
   const recommendedTeammateCount = recommendedTeammates.length;
-  const hasExecutionTeammate = hasCodingWorkflowExecutor(
-    recommendedTeammates.map((teammate) => teammate.id as BuiltInCodingRole)
+  const currentRecommendedRoleIds = recommendedTeammates.map(
+    (teammate) => teammate.id as BuiltInCodingRole
   );
-  const planningTeammateName = recommendedTeammates[0]?.name ?? "当前排在首位的 AI 同事";
+  const hasRequiredTeammates = hasRequiredCodingWorkflowRoles(
+    currentRecommendedRoleIds
+  );
+  const planningTeammateName =
+    recommendedTeammates.find((teammate) => teammate.id === "tech_lead")?.name ??
+    "技术负责人";
+
+  function isRequiredRecommendedRole(teammateId: string): boolean {
+    return requiredRecommendedRoleIds.has(teammateId as BuiltInCodingRole);
+  }
 
   function requestDeleteTeammate(teammateId: string, teammateName: string) {
+    if (isRequiredRecommendedRole(teammateId)) {
+      setDialogState({
+        kind: "blocked",
+        reason: "required_role",
+        teammateName
+      });
+      return;
+    }
+
     if (recommendedTeammateCount <= 1) {
       setDialogState({
         kind: "blocked",
@@ -94,10 +117,10 @@ export function WorkModeLauncher({
       .filter((teammate) => teammate.id !== teammateId)
       .map((teammate) => teammate.id as BuiltInCodingRole);
 
-    if (!hasCodingWorkflowExecutor(nextRecommendedRoleIds)) {
+    if (!hasRequiredCodingWorkflowRoles(nextRecommendedRoleIds)) {
       setDialogState({
         kind: "blocked",
-        reason: "missing_executor",
+        reason: "required_role",
         teammateName
       });
       return;
@@ -130,7 +153,7 @@ export function WorkModeLauncher({
           </span>
           <h2 className="mb-0 mt-3 text-xl font-semibold text-slate-950">先选择你要推进的工作</h2>
           <p className="mb-0 mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-            当前先把“编码”做成一条完整闭环。系统会先给出一组推荐 AI 同事，你可以按自己的习惯删减后再开始协作。
+            当前先把“编码”做成一条完整闭环。系统会先给出一组推荐 AI 同事，技术负责人和软件工程师固定保留，其余成员可以按场景删减。
           </p>
         </div>
         {!canStartCoding ? (
@@ -171,7 +194,7 @@ export function WorkModeLauncher({
               当前保留 {recommendedTeammateCount} 位推荐 AI 同事
             </span>
             <span className="rounded-full bg-white px-3 py-1">
-              可按需删除不需要的成员
+              技术负责人和软件工程师固定保留
             </span>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -180,20 +203,22 @@ export function WorkModeLauncher({
                 key={template.id}
                 className="relative grid gap-2 rounded-3xl border border-white/80 bg-white/90 p-4 shadow-sm"
               >
-                <button
-                  aria-label={`删除${template.name}`}
-                  className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-red-50 text-sm font-bold text-red-600 transition hover:bg-red-100"
-                  onClick={() => {
-                    requestDeleteTeammate(template.id, template.name);
-                  }}
-                  type="button"
-                >
-                  ×
-                </button>
+                {!isRequiredRecommendedRole(template.id) ? (
+                  <button
+                    aria-label={`删除${template.name}`}
+                    className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-red-50 text-sm font-bold text-red-600 transition hover:bg-red-100"
+                    onClick={() => {
+                      requestDeleteTeammate(template.id, template.name);
+                    }}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                ) : null}
                 <div className="flex items-center justify-between gap-3">
                   <strong className="text-slate-950">{template.name}</strong>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                    推荐
+                    {isRequiredRecommendedRole(template.id) ? "固定" : "推荐"}
                   </span>
                 </div>
                 <p className="mb-0 text-sm leading-6 text-slate-600">{template.summary}</p>
@@ -238,10 +263,10 @@ export function WorkModeLauncher({
               return;
             }
 
-            if (!hasExecutionTeammate) {
+            if (!hasRequiredTeammates) {
               setDialogState({
                 kind: "blocked",
-                reason: "missing_executor",
+                reason: "required_role",
                 teammateName: planningTeammateName
               });
               return;
@@ -402,7 +427,7 @@ export function WorkModeLauncher({
               >
                 取消
               </Button>
-              <Button disabled={!canSubmit || !hasExecutionTeammate} type="submit">
+              <Button disabled={!canSubmit || !hasRequiredTeammates} type="submit">
                 {isLaunching ? "正在启动..." : "开始协作"}
               </Button>
             </div>
@@ -450,8 +475,8 @@ export function WorkModeLauncher({
                   <h3 className="m-0 text-xl font-semibold text-slate-950">无法删除</h3>
                   <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
                     {dialogState.reason === "last_teammate"
-                      ? `对不起，不能这样哦。至少要保留 1 位 AI 同事，当前不能删除「${dialogState.teammateName}」。`
-                      : `当前不能删除「${dialogState.teammateName}」。至少要保留 1 位能够进入实现阶段的 AI 同事。`}
+                      ? `至少要保留 1 位 AI 同事，当前不能删除「${dialogState.teammateName}」。`
+                      : `当前不能删除「${dialogState.teammateName}」。编码工作流必须保留技术负责人和软件工程师；技术负责人负责计划与最终汇总，软件工程师负责实现。`}
                   </p>
                 </div>
                 <div className="flex justify-end">

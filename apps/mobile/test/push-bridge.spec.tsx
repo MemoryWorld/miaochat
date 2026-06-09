@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createPushBridge } from "../src/notifications/push-bridge";
+import { createPushBridge } from "../src/notifications/push-bridge.js";
 
 describe("mobile push bridge", () => {
   it("maps a workspace-scoped push payload into a client notification model", () => {

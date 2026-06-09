@@ -15,30 +15,38 @@ type ChatSendInput = {
 
 type ChatComposerProps = {
   disabled?: boolean;
+  disabledReason?: string | null;
   draftContent?: string | null;
   members?: ChannelMember[];
   onDraftApplied?: () => void;
   onSend: (input: ChatSendInput) => Promise<boolean | void>;
   onTyping?: () => void;
   participants?: ConversationAgentMember[];
+  submitDisabled?: boolean;
 };
 
 export function ChatComposer({
   disabled = false,
+  disabledReason = null,
   draftContent = null,
   members,
   onDraftApplied,
   onSend,
   onTyping,
-  participants = []
+  participants = [],
+  submitDisabled = false
 }: ChatComposerProps) {
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const fileInputId = useId();
+  const disabledReasonId = useId();
   const mentionMembers = members ?? participants.map(mapParticipantToMember);
   const mentionableMembers = mentionMembers.filter(isMentionableMember);
   const showActionSuggestions = content.trimStart().startsWith("/");
+  const isSubmitBlocked = disabled || submitDisabled;
+  const showDisabledReason = Boolean(disabledReason && isSubmitBlocked);
+  const isSendButtonDisabled = isSubmitBlocked || content.trim().length === 0;
 
   useEffect(() => {
     if (draftContent === null) {
@@ -57,7 +65,7 @@ export function ChatComposer({
 
         const trimmed = content.trim();
 
-        if (!trimmed || disabled) {
+        if (!trimmed || isSubmitBlocked) {
           return;
         }
 
@@ -200,10 +208,20 @@ export function ChatComposer({
           ))}
         </div>
       ) : null}
-      <div>
+      <div className="grid gap-2">
+        {showDisabledReason ? (
+          <p
+            className="m-0 text-sm font-medium text-amber-700"
+            id={disabledReasonId}
+            role="status"
+          >
+            {disabledReason}
+          </p>
+        ) : null}
         <button
-          disabled={disabled || content.trim().length === 0}
-          style={buttonStyle}
+          aria-describedby={showDisabledReason ? disabledReasonId : undefined}
+          disabled={isSendButtonDisabled}
+          style={isSendButtonDisabled ? disabledButtonStyle : buttonStyle}
           type="submit"
         >
           发送消息
@@ -222,6 +240,12 @@ const buttonStyle = {
   font: "inherit",
   fontWeight: 600,
   padding: "0.75rem 1.1rem"
+} as const;
+
+const disabledButtonStyle = {
+  ...buttonStyle,
+  cursor: "not-allowed",
+  opacity: 0.55
 } as const;
 
 function appendMentionLabel(content: string, mentionLabel: string): string {

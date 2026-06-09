@@ -6,6 +6,7 @@ export const providerIdSchema = z.enum([
   "deepseek",
   "hermes",
   "mock",
+  "opencode",
   "openclaw"
 ]);
 

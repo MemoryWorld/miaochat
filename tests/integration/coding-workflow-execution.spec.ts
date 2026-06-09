@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   ActivityRound,
   ApprovalRequest,
+  Artifact,
   CodingWorkflowDetail,
   InboxItem,
   MemoryRecord,
@@ -14,7 +15,6 @@ import type {
 } from "@agenthub/contracts";
 import { encryptCredentialSecret } from "../../packages/domain/src/index.ts";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
-import type { Worker } from "@temporalio/worker";
 import { Client } from "pg";
 
 import { createApp } from "../../apps/api/src/main.js";
@@ -23,21 +23,22 @@ import { signupSessionViaFetch } from "../support/auth-session.js";
 
 const decoder = new TextDecoder();
 const workspaceId = "workspace_coding_workflow_execution";
-const workerTaskQueue = "worker-task-coding-workflow-execution";
+const workerTaskQueue = `worker-task-coding-workflow-execution-${Date.now()}`;
 const encryptionKey =
   process.env.CREDENTIAL_ENCRYPTION_KEY ?? "agenthub-dev-credential-key";
+const deepseekRequests: string[] = [];
+let forceMissingWebpageArtifact = false;
+let forceRepeatedRepairBlock = false;
 
 describe("coding workflow execution integration", () => {
   let app: NestFastifyApplication;
   let authCookie: string;
   let baseUrl: string;
   let client: Client;
-  const deepseekRequests: string[] = [];
   let deepseekServer: Server;
   let ownerUserId: string;
   let previousDeepSeekBaseUrl: string | undefined;
   let previousWorkerTaskQueue: string | undefined;
-  let worker: Worker;
 
   beforeAll(async () => {
     previousWorkerTaskQueue = process.env.WORKER_TASK_QUEUE;
@@ -88,8 +89,7 @@ describe("coding workflow execution integration", () => {
     ownerUserId = session.user.id;
 
     await seedCredential(client, ownerUserId);
-    worker = await bootstrapWorker();
-  }, 20_000);
+  }, 30_000);
 
   afterAll(async () => {
     if (app) {
@@ -109,14 +109,23 @@ describe("coding workflow execution integration", () => {
     restoreEnv("DEEPSEEK_BASE_URL", previousDeepSeekBaseUrl);
   }, 30_000);
 
-  it("runs only the remaining recommended teammates through the internal runtime path after plan approval", async () => {
-    await worker.runUntil(async () => {
+  it("runs the four-role coding workflow and returns the final tech-lead summary after plan approval", async () => {
+    deepseekRequests.length = 0;
+    forceMissingWebpageArtifact = false;
+    forceRepeatedRepairBlock = false;
+
+    await runWithWorker(async () => {
       const created = await createCodingWorkflow({
         authCookie,
         baseUrl,
         deadline: "今晚前给出演示版",
         goal: "把 landing page 演示拆成清晰的编码闭环",
-        recommendedRoleIds: ["tech_lead", "software_engineer", "qa_tester"],
+        recommendedRoleIds: [
+          "tech_lead",
+          "software_engineer",
+          "code_reviewer",
+          "qa_tester"
+        ],
         repoContext: "apps/web landing page",
         workspaceId
       });
@@ -147,9 +156,17 @@ describe("coding workflow execution integration", () => {
         const messages = await waitForMessages(
           baseUrl,
           created.workflow.conversationId,
-          5,
+          9,
           authCookie
         );
+        const finalSummaryMessage = messages
+          .filter(
+            (message) =>
+              message.sourceAgentId === workflow.planningTeammateId &&
+              message.content.includes("原始想法完成度")
+          )
+          .at(-1);
+        expect(finalSummaryMessage).toBeDefined();
 
         expect(workflow.state).toBe("completed");
         expect(workflow.approvalState).toBe("approved");
@@ -167,6 +184,7 @@ describe("coding workflow execution integration", () => {
             null,
             workflow.planningTeammateId,
             workflow.engineerAgentId,
+            workflow.reviewerAgentId,
             workflow.qaAgentId
           ])
         );
@@ -177,45 +195,43 @@ describe("coding workflow execution integration", () => {
               sourceAgentId: workflow.engineerAgentId
             }),
             expect.objectContaining({
-              content: expect.stringContaining("测试工程师"),
+              content: expect.stringContaining("代码评审工程师"),
+              sourceAgentId: workflow.reviewerAgentId
+            }),
+            expect.objectContaining({
+              content: expect.stringContaining("质量保障测试工程师"),
               sourceAgentId: workflow.qaAgentId
+            }),
+            expect.objectContaining({
+              content: expect.stringContaining("原始想法完成度：90%"),
+              sourceAgentId: workflow.planningTeammateId
             })
           ])
         );
-        expect(messages).not.toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              sourceAgentId: workflow.reviewerAgentId
-            })
-          ])
+        expect(messages[0]).toEqual(expect.objectContaining({ role: "user" }));
+        expect(messages[1]).toEqual(
+          expect.objectContaining({ sourceAgentId: workflow.planningTeammateId })
         );
 
-        expect(
-          events
-            .filter(
-              (event): event is StreamEvent & { kind: "conversation.status" } =>
-                event.kind === "conversation.status"
-            )
-            .map((event) => event.payload.label)
-        ).toEqual(
+        const statusLabels = events
+          .filter(
+            (event): event is StreamEvent & { kind: "conversation.status" } =>
+              event.kind === "conversation.status"
+          )
+          .map((event) => event.payload.label);
+        expect(statusLabels).toEqual(
           expect.arrayContaining([
             "coding.execution_started",
+            "coding.review_started",
             "coding.qa_started",
-            "coding.awaiting_user_confirmation",
+            "coding.summary_started",
             "coding.completed"
           ])
         );
-        expect(
-          events
-            .filter(
-              (event): event is StreamEvent & { kind: "conversation.status" } =>
-                event.kind === "conversation.status"
-            )
-            .map((event) => event.payload.label)
-        ).not.toContain("coding.review_started");
-        expect(deepseekRequests).toHaveLength(2);
+        expect(statusLabels).not.toContain("coding.awaiting_user_confirmation");
+        expect(deepseekRequests).toHaveLength(6);
 
-        const [activityRounds, approvals, memoryRecords, inboxItems] = await Promise.all([
+        const [activityRounds, approvals, memoryRecords, inboxItems, artifacts, artifactRows] = await Promise.all([
           fetchJson<ActivityRound[]>(
             `${baseUrl}/activity?workflowId=${workflow.id}&workspaceId=${workspaceId}`,
             authCookie
@@ -231,6 +247,23 @@ describe("coding workflow execution integration", () => {
           fetchJson<InboxItem[]>(
             `${baseUrl}/inbox?workspaceId=${workspaceId}`,
             authCookie
+          ),
+          fetchJson<Artifact[]>(
+            `${baseUrl}/artifacts?messageId=${finalSummaryMessage!.id}&workspaceId=${workspaceId}`,
+            authCookie
+          ),
+          client.query<{
+            message_id: string;
+            mime_type: string;
+            title: string;
+          }>(
+            `
+              SELECT message_id, mime_type, title
+              FROM artifacts
+              WHERE workspace_id = $1
+              ORDER BY created_at ASC, id ASC
+            `,
+            [workspaceId]
           )
         ]);
 
@@ -242,19 +275,54 @@ describe("coding workflow execution integration", () => {
               status: "succeeded"
             }),
             expect.objectContaining({
+              actingTeammateId: "code_reviewer",
+              phase: "review",
+              status: "succeeded"
+            }),
+            expect.objectContaining({
               actingTeammateId: "qa_tester",
               phase: "qa",
+              status: "succeeded"
+            }),
+            expect.objectContaining({
+              actingTeammateId: "tech_lead",
+              phase: "coordination",
               status: "succeeded"
             })
           ])
         );
-        expect(activityRounds).not.toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              actingTeammateId: "code_reviewer"
-            })
-          ])
-        );
+        expect(activityRounds.filter((round) => round.status === "running")).toEqual([]);
+        expect(
+          activityRounds.filter(
+            (round) =>
+              round.actingTeammateId === "software_engineer" &&
+              round.phase === "implementation"
+          )
+        ).toHaveLength(2);
+        expect(
+          activityRounds.filter(
+            (round) =>
+              round.actingTeammateId === "code_reviewer" && round.phase === "review"
+          )
+        ).toHaveLength(2);
+        expect(artifactRows.rows).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            mime_type: "text/html",
+            title: "Landing page demo"
+          }),
+          expect.objectContaining({
+            message_id: finalSummaryMessage!.id,
+            mime_type: "text/markdown",
+            title: "编码工作流验收报告"
+          })
+        ]));
+        expect(artifacts).toEqual([
+          expect.objectContaining({
+            messageId: finalSummaryMessage!.id,
+            mimeType: "text/markdown",
+            title: "编码工作流验收报告"
+          })
+        ]);
         expect(approvals).toEqual([
           expect.objectContaining({
             planVersion: 1,
@@ -272,7 +340,17 @@ describe("coding workflow execution integration", () => {
             expect.objectContaining({
               scope: "actor",
               source: "actor_self_memory",
+              teammateId: "code_reviewer"
+            }),
+            expect.objectContaining({
+              scope: "actor",
+              source: "actor_self_memory",
               teammateId: "qa_tester"
+            }),
+            expect.objectContaining({
+              scope: "actor",
+              source: "actor_self_memory",
+              teammateId: "tech_lead"
             }),
             expect.objectContaining({
               scope: "workspace",
@@ -295,19 +373,291 @@ describe("coding workflow execution integration", () => {
             })
           ])
         );
-        expect(memoryRecords).not.toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              teammateId: "code_reviewer"
-            })
-          ])
-        );
       } finally {
         await stream.reader.cancel();
       }
     });
-  }, 20_000);
+  }, 60_000);
+
+  it("falls back to a persisted HTML artifact when the engineer claims tool use without an envelope", async () => {
+    deepseekRequests.length = 0;
+    forceMissingWebpageArtifact = true;
+    forceRepeatedRepairBlock = false;
+
+    await runWithWorker(async () => {
+      const created = await createCodingWorkflow({
+        authCookie,
+        baseUrl,
+        deadline: "今天内给出演示级网页",
+        goal: "回归测试 2026-06-07：请创建一个有关变形金刚真人电影的沉浸式网页，包含首屏、电影时间线、主要角色/阵营、影片卡片、关键看点和移动端响应式布局，并生成真实可预览的 HTML 网页 artifact。",
+        recommendedRoleIds: [
+          "tech_lead",
+          "software_engineer",
+          "code_reviewer",
+          "qa_tester"
+        ],
+        repoContext: "对话式创建网页验收",
+        workspaceId
+      });
+
+      const stream = await openStream({
+        authCookie,
+        baseUrl,
+        conversationId: created.workflow.conversationId,
+        workspaceId
+      });
+
+      try {
+        await sendWorkflowDecision({
+          authCookie,
+          baseUrl,
+          decision: "approved",
+          workflowId: created.workflow.id,
+          workspaceId
+        });
+
+        const events = await readEventsUntil(
+          stream.reader,
+          (event) =>
+            event.kind === "conversation.status" &&
+            event.payload.label === "coding.completed"
+        );
+        const workflow = await waitForWorkflow(baseUrl, created.workflow.conversationId, authCookie);
+        const messages = await waitForMessages(
+          baseUrl,
+          created.workflow.conversationId,
+          7,
+          authCookie
+        );
+        const channelArtifacts = await fetchJson<Artifact[]>(
+          `${baseUrl}/artifacts?conversationId=${created.workflow.conversationId}&workspaceId=${workspaceId}`,
+          authCookie
+        );
+        const activityRounds = await fetchJson<ActivityRound[]>(
+          `${baseUrl}/activity?workflowId=${workflow.id}&workspaceId=${workspaceId}`,
+          authCookie
+        );
+        const htmlArtifact = channelArtifacts.find((artifact) => artifact.mimeType === "text/html");
+        const completedStreamMessageIds = events
+          .filter(
+            (event): event is StreamEvent & { kind: "conversation.message.completed" } =>
+              event.kind === "conversation.message.completed"
+          )
+          .map((event) => event.payload.messageId);
+        const persistedMessageIds = new Set(messages.map((message) => message.id));
+
+        expect(workflow.state).toBe("completed");
+        expect(workflow.taskSnapshot).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              ownerRole: "software_engineer",
+              state: "done"
+            }),
+            expect.objectContaining({
+              ownerRole: "code_reviewer",
+              state: "done"
+            }),
+            expect.objectContaining({
+              ownerRole: "qa_tester",
+              state: "done"
+            }),
+            expect.objectContaining({
+              ownerRole: "tech_lead",
+              state: "done"
+            })
+          ])
+        );
+        expect(htmlArtifact).toEqual(
+          expect.objectContaining({
+            kind: "preview",
+            mimeType: "text/html",
+            storageKey: expect.any(String),
+            title: expect.stringContaining("变形金刚")
+          })
+        );
+        expect(messages.map((message) => message.sourceAgentId)).toEqual(
+          expect.arrayContaining([
+            workflow.engineerAgentId,
+            workflow.reviewerAgentId,
+            workflow.qaAgentId,
+            workflow.planningTeammateId
+          ])
+        );
+        expect(completedStreamMessageIds.length).toBeGreaterThan(0);
+        expect(completedStreamMessageIds.every((messageId) => persistedMessageIds.has(messageId))).toBe(true);
+        expect(activityRounds).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              actingTeammateId: "software_engineer",
+              phase: "implementation",
+              status: "succeeded"
+            }),
+            expect.objectContaining({
+              actingTeammateId: "code_reviewer",
+              phase: "review",
+              status: "succeeded"
+            }),
+            expect.objectContaining({
+              actingTeammateId: "qa_tester",
+              phase: "qa",
+              status: "succeeded"
+            }),
+            expect.objectContaining({
+              actingTeammateId: "tech_lead",
+              phase: "coordination",
+              status: "succeeded"
+            })
+          ])
+        );
+        expect(
+          activityRounds.filter(
+            (round) =>
+              round.actingTeammateId === "software_engineer" &&
+              round.phase === "implementation" &&
+              round.status === "failed"
+          )
+        ).toEqual([]);
+        expect(
+          activityRounds.filter(
+            (round) =>
+              round.actingTeammateId === "software_engineer" &&
+              round.phase === "implementation" &&
+              round.status === "succeeded"
+          )
+        ).toHaveLength(1);
+        expect(
+          deepseekRequests
+            .map(readPromptFromDeepSeekRequest)
+            .filter((prompt) => prompt.includes("请以软件工程师身份"))
+        ).toHaveLength(1);
+        expect(
+          deepseekRequests
+            .map(readPromptFromDeepSeekRequest)
+            .filter((prompt) => prompt.includes("请以质量保障测试工程师身份"))
+        ).toHaveLength(1);
+        expect(messages.map((message) => message.content).join("\n")).not.toMatch(
+          /artifact\.webpage\.create|隐藏的工作流|tool_plan|envelope/
+        );
+      } finally {
+        await stream.reader.cancel();
+        forceMissingWebpageArtifact = false;
+      }
+    });
+  }, 60_000);
+
+  it("runs QA blocked-confirmation and fails when repeated engineer repairs do not change the HTML", async () => {
+    deepseekRequests.length = 0;
+    forceRepeatedRepairBlock = true;
+
+    await runWithWorker(async () => {
+      const created = await createCodingWorkflow({
+        authCookie,
+        baseUrl,
+        deadline: "今天内给出可验收版本",
+        goal: "请创建一个有关变形金刚真人电影的网页，必须包含首屏、时间线、角色阵营、影片卡片和响应式布局。",
+        recommendedRoleIds: [
+          "tech_lead",
+          "software_engineer",
+          "code_reviewer",
+          "qa_tester"
+        ],
+        repoContext: "返修质量回归测试",
+        workspaceId
+      });
+
+      const stream = await openStream({
+        authCookie,
+        baseUrl,
+        conversationId: created.workflow.conversationId,
+        workspaceId
+      });
+
+      try {
+        await sendWorkflowDecision({
+          authCookie,
+          baseUrl,
+          decision: "approved",
+          workflowId: created.workflow.id,
+          workspaceId
+        });
+
+        await readEventsUntil(
+          stream.reader,
+          (event) =>
+            event.kind === "conversation.status" &&
+            event.payload.label === "coding.execution_failed"
+        );
+        const workflow = await waitForWorkflow(
+          baseUrl,
+          created.workflow.conversationId,
+          authCookie,
+          "execution_failed"
+        );
+        const messages = await waitForMessages(
+          baseUrl,
+          created.workflow.conversationId,
+          8,
+          authCookie
+        );
+        const activityRounds = await fetchJson<ActivityRound[]>(
+          `${baseUrl}/activity?workflowId=${workflow.id}&workspaceId=${workspaceId}`,
+          authCookie
+        );
+        const prompts = deepseekRequests.map(readPromptFromDeepSeekRequest);
+
+        expect(workflow.state).toBe("execution_failed");
+        expect(messages).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              content: expect.stringContaining("阻塞风险确认"),
+              sourceAgentId: workflow.qaAgentId
+            }),
+            expect.objectContaining({
+              content: expect.stringContaining("返修无实质变化"),
+              sourceAgentId: workflow.planningTeammateId
+            })
+          ])
+        );
+        expect(activityRounds).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              actingTeammateId: "qa_tester",
+              phase: "qa",
+              status: "succeeded"
+            }),
+            expect.objectContaining({
+              actingTeammateId: "tech_lead",
+              phase: "coordination",
+              status: "failed"
+            })
+          ])
+        );
+        expect(
+          prompts.filter(
+            (prompt) =>
+              prompt.includes("请以质量保障测试工程师身份") &&
+              prompt.includes("阻塞风险确认")
+          )
+        ).toHaveLength(1);
+        expect(
+          prompts.filter(
+            (prompt) =>
+              prompt.includes("请以软件工程师身份") &&
+              prompt.includes("返修产物与上一版无实质差异")
+          )
+        ).toHaveLength(1);
+      } finally {
+        await stream.reader.cancel();
+        forceRepeatedRepairBlock = false;
+      }
+    });
+  }, 60_000);
 });
+
+async function runWithWorker<T>(callback: () => Promise<T>): Promise<T> {
+  const worker = await bootstrapWorker();
+  return worker.runUntil(callback);
+}
 
 async function createCodingWorkflow(input: {
   authCookie: string;
@@ -364,7 +714,8 @@ async function sendWorkflowDecision(input: {
 async function waitForWorkflow(
   baseUrl: string,
   conversationId: string,
-  authCookie: string
+  authCookie: string,
+  expectedState: CodingWorkflowDetail["state"] = "completed"
 ): Promise<CodingWorkflowDetail> {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const response = await fetch(
@@ -377,7 +728,7 @@ async function waitForWorkflow(
     );
     const payload = (await response.json()) as CodingWorkflowDetail | null;
 
-    if (payload?.state === "completed") {
+    if (payload?.state === expectedState) {
       return payload;
     }
 
@@ -386,7 +737,7 @@ async function waitForWorkflow(
     });
   }
 
-  throw new Error("Timed out waiting for the coding workflow to complete.");
+  throw new Error(`Timed out waiting for the coding workflow to reach ${expectedState}.`);
 }
 
 async function openStream(input: {
@@ -458,6 +809,7 @@ async function waitForMessages(
 ): Promise<
   Array<{
     content: string;
+    id: string;
     role: string;
     sourceAgentId: string | null;
   }>
@@ -473,6 +825,7 @@ async function waitForMessages(
     );
     const payload = (await response.json()) as Array<{
       content: string;
+      id: string;
       role: string;
       sourceAgentId: string | null;
     }>;
@@ -580,17 +933,191 @@ function readPromptFromDeepSeekRequest(body: string): string {
 }
 
 function resolveDeepSeekResponseForPrompt(prompt: string): string {
-  if (prompt.includes("请以测试工程师身份")) {
-    return "测试工程师：主路径通过，建议补一次视觉回归检查。";
+  const matchingPromptCount = (needle: string) =>
+    deepseekRequests
+      .map(readPromptFromDeepSeekRequest)
+      .filter((entry) => entry.includes(needle)).length;
+
+  if (prompt.includes("请以技术负责人身份向用户做最终汇报")) {
+    if (forceRepeatedRepairBlock) {
+      return [
+        "技术负责人：原始想法完成度：45%（未完成）。",
+        "",
+        "## 完成项",
+        "- 已完成首版网页产物和多轮返修尝试。",
+        "- 已触发代码评审与 QA 阻塞风险确认。",
+        "",
+        "## 未完成项",
+        "- 代码评审指出的问题仍未解决。",
+        "- 返修无实质变化，不能进入完整 QA 验收。",
+        "",
+        "## 阻塞项/风险",
+        "- 返修无实质变化，首屏主视觉层级仍不清晰。",
+        "",
+        "## 下一步",
+        "- 需要软件工程师基于评审意见重新设计 HTML 结构与样式。"
+      ].join("\n");
+    }
+
+    return [
+      "技术负责人：原始想法完成度：90%（部分完成）。",
+      "",
+      "## 完成项",
+      "- 已完成实现、评审返修、QA 验证和风险汇总。",
+      "",
+      "## 未完成项",
+      "- 仍需补录演示视频。",
+      "",
+      "## 阻塞项/风险",
+      "- 暂无高严重度阻塞。",
+      "",
+      "## 下一步",
+      "- 进入真实设备验收。"
+    ].join("\n");
   }
 
-  if (prompt.includes("请以代码评审身份")) {
-    return "代码评审：实现路径清晰，但还需要关注一处样式回归。";
+  if (prompt.includes("请以质量保障测试工程师身份")) {
+    if (forceRepeatedRepairBlock || prompt.includes("阻塞风险确认")) {
+      return [
+        "质量保障测试工程师：阻塞风险确认。",
+        "代码评审仍未通过，因此本轮不做完整验收。",
+        "确认风险：首屏主视觉层级仍不清晰，返修版本没有体现评审反馈。",
+        "结论：BLOCKED",
+        "阻塞项：代码评审阻塞未解除，返修无实质变化"
+      ].join("\n");
+    }
+
+    return "质量保障测试工程师：主路径通过，建议补一次视觉回归检查。\n结论：PASS\n阻塞项：无";
+  }
+
+  if (prompt.includes("请以代码评审工程师身份")) {
+    if (forceRepeatedRepairBlock) {
+      return [
+        "代码评审工程师：Request Changes。",
+        "高严重度：首屏主视觉层级仍不清晰，无法快速识别主题。",
+        "结论：REQUEST_CHANGES",
+        "阻塞项：首屏主视觉层级仍不清晰"
+      ].join("\n");
+    }
+
+    if (forceMissingWebpageArtifact) {
+      return "代码评审工程师：网页 artifact 已真实落库，内容覆盖首屏、时间线、角色阵营、影片卡片和响应式布局。未发现高严重度风险，也没有阻塞项。建议进入 QA 验收。";
+    }
+
+    if (matchingPromptCount("请以代码评审工程师身份") === 1) {
+      return "代码评审工程师：Request Changes。高严重度：Markdown artifact 未真实落库。\n结论：REQUEST_CHANGES\n阻塞项：Markdown artifact 未真实落库";
+    }
+
+    return "代码评审工程师：返修后通过，artifact 落库路径和最终汇报格式都有验证。\n结论：PASS\n阻塞项：无";
   }
 
   if (prompt.includes("请以软件工程师身份")) {
-    return "软件工程师：已按计划完成实现，并回写了主要改动和验证结果。";
+    if (forceRepeatedRepairBlock) {
+      return JSON.stringify({
+        intents: [
+          {
+            calls: [
+              {
+                idempotencyKey: `artifact:repeated-transformers-${matchingPromptCount("请以软件工程师身份")}`,
+                input: {
+                  fileName: "transformers-page.html",
+                  html: buildLandingPageHtml("重复版 transformers page"),
+                  title: "Transformers repeated page"
+                },
+                inputSchemaVersion: "1",
+                toolName: "artifact.webpage.create"
+              }
+            ],
+            riskLevel: "low",
+            summary: "Create repeated transformers HTML.",
+            type: "tool_plan"
+          }
+        ],
+        visibleMessage: "软件工程师：已按评审意见完成返修，并重新提交 HTML 产物。"
+      });
+    }
+
+    if (forceMissingWebpageArtifact) {
+      return [
+        "我来实现这份计划，产出可预览的变形金刚真人电影沉浸式网页。",
+        "",
+        "已在隐藏的工作流中调用 artifact.webpage.create，输出完整单文件 HTML。",
+        "",
+        "HTML 已合并内联 CSS 与少量内联 JS，无需外部资源，可直接在 iframe 中预览。"
+      ].join("\n");
+    }
+
+    if (matchingPromptCount("请以软件工程师身份") > 1) {
+      return JSON.stringify({
+        intents: [
+          {
+            calls: [
+              {
+                idempotencyKey: "artifact:landing-page-demo-repair",
+                input: {
+                  fileName: "landing-page-demo.html",
+                  html: buildLandingPageHtml("返修版 landing page"),
+                  title: "Landing page demo"
+                },
+                inputSchemaVersion: "1",
+                toolName: "artifact.webpage.create"
+              }
+            ],
+            riskLevel: "low",
+            summary: "Create repaired landing page HTML.",
+            type: "tool_plan"
+          }
+        ],
+        visibleMessage: "软件工程师：已完成返修，补上真实 HTML 网页产物、artifact 持久化和百分比汇报兜底。"
+      });
+    }
+
+    return JSON.stringify({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:landing-page-demo",
+              input: {
+                fileName: "landing-page-demo.html",
+                html: buildLandingPageHtml("首版 landing page"),
+                title: "Landing page demo"
+              },
+              inputSchemaVersion: "1",
+              toolName: "artifact.webpage.create"
+            }
+          ],
+          riskLevel: "low",
+          summary: "Create landing page HTML.",
+          type: "tool_plan"
+        }
+      ],
+      visibleMessage: "软件工程师：已按计划完成实现，并生成真实 HTML 网页产物。"
+    });
   }
 
   throw new Error(`Unexpected prompt shape for local model runtime:\n${prompt}`);
+}
+
+function buildLandingPageHtml(heading: string): string {
+  return [
+    "<!doctype html>",
+    '<html lang="zh-CN">',
+    "<head>",
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    `<title>${heading}</title>`,
+    "<style>",
+    "body{margin:0;font-family:Inter,Arial,sans-serif;background:#101820;color:#f7fafc}",
+    ".hero{min-height:60vh;padding:48px;display:grid;place-items:center;background:#19324a}",
+    ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;padding:24px}",
+    ".card{border:1px solid #486581;border-radius:8px;padding:16px;background:#243b53}",
+    "</style>",
+    "</head>",
+    "<body>",
+    `<section class="hero"><h1>${heading}</h1></section>`,
+    '<section class="grid"><article class="card">首屏</article><article class="card">时间线</article><article class="card">角色阵营</article><article class="card">影片卡片</article></section>',
+    "</body>",
+    "</html>"
+  ].join("");
 }

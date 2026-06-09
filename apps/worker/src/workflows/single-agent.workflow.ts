@@ -28,6 +28,7 @@ export type SingleAgentWorkflowInput = {
   conversationId: string;
   context?: AgentExecutionContext;
   message: string;
+  modelProfileId?: string | null;
   ownerUserId: string;
   outputStyle?: string | null;
   provider: ProviderId;

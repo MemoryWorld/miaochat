@@ -5,6 +5,7 @@ const pendingAssistantMessagePrefix = "pending-assistant:";
 export type LiveAssistantMessage = {
   content: string;
   id: string;
+  isComplete?: boolean;
   userMessageId?: string;
 };
 

@@ -64,8 +64,9 @@ describe("deploy targets integration", () => {
       payload: {
         config: {
           projectName: "marketing-site",
-          provider: "netlify",
-          siteId: "site_marketing"
+          provider: "vercel",
+          target: "preview",
+          teamId: "team_marketing"
         },
         credentialSource: "user_provided",
         kind: "static-site",
@@ -80,8 +81,9 @@ describe("deploy targets integration", () => {
     expect(staticSiteResponse.json()).toMatchObject({
       config: {
         projectName: "marketing-site",
-        provider: "netlify",
-        siteId: "site_marketing"
+        provider: "vercel",
+        target: "preview",
+        teamId: "team_marketing"
       },
       credentialSource: "user_provided",
       hasSecret: true,
@@ -100,9 +102,10 @@ describe("deploy targets integration", () => {
       method: "POST",
       payload: {
         config: {
-          imageName: "agenthub/web",
-          provider: "k8s",
-          registry: "ghcr.io/agenthub"
+          appName: "agenthub-web",
+          orgSlug: "personal",
+          provider: "fly",
+          region: "syd"
         },
         credentialSource: "platform_managed",
         kind: "container",
@@ -127,8 +130,10 @@ describe("deploy targets integration", () => {
       method: "POST",
       payload: {
         config: {
-          fileName: "agenthub-source.zip",
-          provider: "download"
+          bucket: "agenthub-public",
+          provider: "s3-compatible",
+          publicBaseUrl: "https://public.example.com/agenthub-public",
+          storagePrefix: "deployments/source-archives"
         },
         kind: "source-archive",
         name: "Source Bundle",

@@ -130,6 +130,34 @@ describe("multi-agent harness api contract", () => {
         })
       ])
     );
+
+    const activityResponse = await apiRequest(app)
+      .get("/activity")
+      .query({ channelId: conversationId, workspaceId })
+      .set("Cookie", owner.cookie);
+
+    expect(activityResponse.status).toBe(200);
+    expect(activityResponse.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actingTeammateId: agentIds.engineer,
+          actingTeammateName: "Engineer",
+          channelId: conversationId,
+          conversationId,
+          id: "agent-run-activity:agent-run:contract:engineer",
+          metadata: expect.objectContaining({
+            checkpoint: "context_prepared",
+            checkpointSource: "contract-test",
+            source: "agent_run_ledger",
+            turnId: "turn:contract:engineer"
+          }),
+          phase: "coordination",
+          status: "running",
+          summary: "Engineer 正在处理本轮协作。",
+          workflowId: null
+        })
+      ])
+    );
   });
 });
 

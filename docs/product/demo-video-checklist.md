@@ -10,9 +10,16 @@ verification.
 
 - Run database migrations.
 - Start `api`, `worker`, and `web`.
+- Install the Miaochat mobile app on Android or iOS with
+  `EXPO_PUBLIC_API_BASE_URL` pointing at an API URL reachable by the phone.
+  Expo Go and mobile browser footage are not final mobile delivery evidence.
+- Start the Electron desktop app if desktop footage is included.
 - Confirm the demo user can log in.
 - Confirm one valid DeepSeek model connection exists in settings.
 - Confirm the workbench can launch a coding workflow.
+- Confirm the same pending approval is visible from the mobile app.
+- Confirm `pnpm deploy:acceptance:real` has produced at least one Vercel, Fly.io,
+  or public source-archive URL if deployment footage is included.
 
 ## Shot List
 
@@ -34,23 +41,28 @@ verification.
 - Show recommended AI 同事 cards.
 - Delete one teammate and confirm the remaining set still works.
 
-### 1:30-2:15
+### 1:30-2:10
 
 - Start the workflow.
 - Show plan pending approval.
-- Approve the plan and show execution updates.
+- Switch to the installed mobile app and approve the pending plan.
+- Return to Web and show execution updates.
 
-### 2:15-2:45
+### 2:10-2:40
 
 - Open channel detail and switch tabs.
 - Confirm the channel title and workspace context remain stable.
 - Show recovery actions for a failed activity if present.
+- Briefly show a mobile artifact preview card.
 
-### 2:45-3:00
+### 2:40-3:00
 
+- Show one deployment status card or the saved real deploy acceptance report
+  with the preview/download URL visible.
 - Summarize what is ready for customer testing.
-- State that additional model choices are later expansion, not the current
-  setup path.
+- State that Web is the full workspace client, mobile is the lightweight
+  approval/preview client, and desktop provides local-file, notification, and
+  agent-process extensions.
 
 ## Recording Rules
 

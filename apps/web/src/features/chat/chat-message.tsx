@@ -8,6 +8,7 @@ import {
 } from "@agenthub/contracts";
 
 import { ArtifactCard } from "../artifacts/artifact-card";
+import { MarkdownContent } from "./markdown-content";
 import { MessageActionsMenu } from "./message-actions-menu";
 import { PinMessageAction } from "./pin-message-action";
 
@@ -76,7 +77,7 @@ export function ChatMessage({
           </div>
         </div>
       ) : null}
-      <div style={{ lineHeight: 1.7 }}>{visibleContent}</div>
+      <MarkdownContent content={visibleContent} tone={isUser ? "dark" : "light"} />
       {artifactStatuses.length > 0 ? (
         <div
           aria-label={`Markdown file status for message ${message.id}`}

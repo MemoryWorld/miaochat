@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   activityRoundSchema,
   artifactMarkdownCreateToolInputSchema,
+  artifactWebpageCreateToolInputSchema,
   artifactUploadTargetSchema,
   approvalRequestSchema,
   buildCodingKickoffMessage,
@@ -23,7 +24,7 @@ import {
   deriveExecutionRoles,
   derivePlanningRole,
   executionPlaneBindingSchema,
-  hasCodingWorkflowExecutor,
+  hasRequiredCodingWorkflowRoles,
   inboxItemSchema,
   memoryRecordSchema,
   messageThreadSchema,
@@ -32,6 +33,7 @@ import {
   prepareArtifactUploadInputSchema,
   runtimeDiffArtifactDraftSchema,
   runtimeMarkdownArtifactDraftSchema,
+  runtimeWebpageArtifactDraftSchema,
   runtimeBackendCatalog,
   skillBindingSchema,
   streamEventSchema,
@@ -74,18 +76,18 @@ describe("@agenthub/contracts", () => {
     expect(parsed.credentialSource).toBe("user_provided");
   });
 
-  it("accepts DeepSeek-first model connections without exposing raw credentials", () => {
+  it("accepts OpenCode-backed model connections without exposing raw credentials", () => {
     const parsed = createModelConnectionInputSchema.parse({
       apiKey: "sk-test",
-      label: "DeepSeek 工作区连接",
-      model: "deepseek-chat",
+      label: "DeepSeek（OpenCode）连接",
+      model: "deepseek/deepseek-chat",
       preset: "powerful",
       workspaceId: "workspace_1"
     });
 
     expect(parsed).toMatchObject({
-      label: "DeepSeek 工作区连接",
-      model: "deepseek-chat",
+      label: "DeepSeek（OpenCode）连接",
+      model: "deepseek/deepseek-chat",
       preset: "powerful",
       workspaceId: "workspace_1"
     });
@@ -111,6 +113,15 @@ describe("@agenthub/contracts", () => {
     expect(parsed.memoryMode).toBe("workspace_plus_teammate");
     expect(parsed.approvalMode).toBe("balanced");
     expect(parsed.outputStyle).toContain("清晰");
+  });
+
+  it("defaults newly created custom agents to OpenCode", () => {
+    const parsed = createCustomAgentInputSchema.parse({
+      name: "Builder",
+      systemPrompt: "Build"
+    });
+
+    expect(parsed.provider).toBe("opencode");
   });
 
   it("requires owner user ids on persisted user-scoped resources", () => {
@@ -382,6 +393,53 @@ describe("@agenthub/contracts", () => {
     ).toBe(false);
   });
 
+  it("supports runtime webpage artifact draft contracts", () => {
+    const toolInput = artifactWebpageCreateToolInputSchema.parse({
+      fileName: "transformers.html",
+      html: "<!doctype html><html><body><h1>Transformers</h1></body></html>",
+      title: "Transformers movie page"
+    });
+    const draft = runtimeWebpageArtifactDraftSchema.parse({
+      ...toolInput,
+      mimeType: "text/html",
+      type: "webpage"
+    });
+    const parsed = streamEventSchema.parse({
+      kind: "conversation.status",
+      payload: {
+        artifactStatus: {
+          messageId: "msg_webpage",
+          status: "created",
+          title: "Transformers movie page",
+          type: "webpage"
+        },
+        failures: [],
+        label: "orchestrator.aggregated",
+        state: "succeeded",
+        successfulAgentCount: 1,
+        summary: "网页预览已生成：Transformers movie page",
+        totalAgentCount: 1
+      }
+    });
+
+    expect(draft).toEqual({
+      fileName: "transformers.html",
+      html: "<!doctype html><html><body><h1>Transformers</h1></body></html>",
+      mimeType: "text/html",
+      title: "Transformers movie page",
+      type: "webpage"
+    });
+    expect(parsed.payload.artifactStatus?.type).toBe("webpage");
+    expect(
+      runtimeWebpageArtifactDraftSchema.safeParse({
+        fileName: "transformers.md",
+        html: "<!doctype html><html></html>",
+        title: "Wrong extension",
+        type: "webpage"
+      }).success
+    ).toBe(false);
+  });
+
   it("supports the Phase D actor, inbox, activity, approval, memory, and skill contracts", () => {
     const actor = buildBuiltInActorProfile({
       profile: {
@@ -488,7 +546,7 @@ describe("@agenthub/contracts", () => {
   it("supports Phase E admin and queue contracts", () => {
     const member = workspaceMemberDirectoryEntrySchema.parse({
       actorType: "ai",
-      displayName: "测试工程师",
+      displayName: "质量保障测试工程师",
       id: "ai:qa_tester",
       principalKind: "ai_teammate",
       role: "agent",
@@ -508,7 +566,7 @@ describe("@agenthub/contracts", () => {
       workspaceId: "workspace_1"
     });
     const capability = capabilityManagementEntrySchema.parse({
-      compatibleRoles: ["测试工程师"],
+      compatibleRoles: ["质量保障测试工程师"],
       enabled: true,
       id: "qa-and-validation",
       installState: "enabled",
@@ -537,7 +595,7 @@ describe("@agenthub/contracts", () => {
     expect(inbox.kind).toBe("connection_alert");
   });
 
-  it("derives planning and execution roles from the remaining recommended teammates", () => {
+  it("derives the fixed planning role and execution roles from the recommended teammates", () => {
     expect(
       normalizeRecommendedRoleIds([
         "software_engineer",
@@ -545,61 +603,106 @@ describe("@agenthub/contracts", () => {
         "qa_tester"
       ])
     ).toEqual(["software_engineer", "qa_tester"]);
-    expect(derivePlanningRole(["software_engineer", "qa_tester"])).toBe(
-      "software_engineer"
-    );
-    expect(deriveExecutionRoles(["software_engineer", "qa_tester"])).toEqual([
+    expect(
+      derivePlanningRole([
+        "tech_lead",
+        "software_engineer",
+        "code_reviewer",
+        "qa_tester"
+      ])
+    ).toBe("tech_lead");
+    expect(
+      deriveExecutionRoles([
+        "tech_lead",
+        "software_engineer",
+        "code_reviewer",
+        "qa_tester"
+      ])
+    ).toEqual([
       "software_engineer",
+      "code_reviewer",
       "qa_tester"
     ]);
-    expect(hasCodingWorkflowExecutor(["software_engineer", "qa_tester"])).toBe(true);
-    expect(hasCodingWorkflowExecutor(["code_reviewer", "qa_tester"])).toBe(false);
-    expect(buildInitialCodingTaskSnapshotForRoles(["software_engineer", "qa_tester"])).toEqual([
+    expect(
+      hasRequiredCodingWorkflowRoles(["tech_lead", "software_engineer", "qa_tester"])
+    ).toBe(true);
+    expect(
+      hasRequiredCodingWorkflowRoles(["tech_lead", "code_reviewer", "qa_tester"])
+    ).toBe(false);
+    expect(
+      buildInitialCodingTaskSnapshotForRoles([
+        "tech_lead",
+        "software_engineer",
+        "code_reviewer",
+        "qa_tester"
+      ])
+    ).toEqual([
       expect.objectContaining({
         id: "plan",
-        ownerRole: "software_engineer",
-        title: "软件工程师提交计划"
+        ownerRole: "tech_lead",
+        title: "技术负责人提交计划"
       }),
       expect.objectContaining({
         id: "execution:software_engineer",
         ownerRole: "software_engineer"
       }),
       expect.objectContaining({
+        id: "execution:code_reviewer",
+        ownerRole: "code_reviewer"
+      }),
+      expect.objectContaining({
         id: "execution:qa_tester",
         ownerRole: "qa_tester"
+      }),
+      expect.objectContaining({
+        id: "summary:tech_lead",
+        ownerRole: "tech_lead",
+        title: "技术负责人汇总完成度"
       })
     ]);
   });
 
-  it("uses unique participant counts when one teammate both plans and executes", () => {
+  it("counts the fixed planner as successful only after the final summary is done", () => {
     expect(
       calculateCodingWorkflowAgentProgress({
-        executionRoles: ["software_engineer", "qa_tester"],
-        planningRole: "software_engineer",
+        executionRoles: ["software_engineer", "code_reviewer", "qa_tester"],
+        planningRole: "tech_lead",
         taskSnapshot: [
           {
             id: "plan",
-            ownerRole: "software_engineer",
+            ownerRole: "tech_lead",
             state: "done",
-            title: "软件工程师提交计划"
+            title: "技术负责人提交计划"
           },
           {
             id: "execution:software_engineer",
             ownerRole: "software_engineer",
-            state: "in_progress",
+            state: "done",
             title: "软件工程师按计划实现"
+          },
+          {
+            id: "execution:code_reviewer",
+            ownerRole: "code_reviewer",
+            state: "done",
+            title: "代码评审工程师检查风险与回归"
           },
           {
             id: "execution:qa_tester",
             ownerRole: "qa_tester",
+            state: "done",
+            title: "质量保障测试工程师完成验证"
+          },
+          {
+            id: "summary:tech_lead",
+            ownerRole: "tech_lead",
             state: "todo",
-            title: "测试工程师完成验证"
+            title: "技术负责人汇总完成度"
           }
         ]
       })
     ).toEqual({
-      successfulAgentCount: 0,
-      totalAgentCount: 2
+      successfulAgentCount: 3,
+      totalAgentCount: 4
     });
   });
 

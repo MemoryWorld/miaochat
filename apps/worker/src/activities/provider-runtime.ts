@@ -8,12 +8,13 @@ import { ProviderCredentialError } from "./activity-errors.js";
 
 type PhaseARuntimeProvider = Extract<
   ProviderId,
-  "claude-code" | "codex" | "deepseek" | "hermes" | "mock" | "openclaw"
+  "claude-code" | "codex" | "deepseek" | "hermes" | "mock" | "opencode" | "openclaw"
 >;
 
 type RuntimeCredentialRow = {
   encrypted_secret: string;
   id: string;
+  provider: Exclude<PhaseARuntimeProvider, "mock">;
   provider_account_id: string;
   workspace_id: string;
 };
@@ -86,6 +87,7 @@ export function assertPhaseARuntimeProvider(provider: ProviderId): PhaseARuntime
     case "codex":
     case "deepseek":
     case "hermes":
+    case "opencode":
     case "openclaw":
       return provider;
   }
@@ -102,6 +104,7 @@ async function selectLatestByokCredential(input: {
         SELECT
           encrypted_secret,
           id,
+          provider,
           provider_account_id,
           workspace_id
         FROM provider_credentials
@@ -116,7 +119,11 @@ async function selectLatestByokCredential(input: {
       [input.ownerUserId, input.workspaceId, input.provider]
     );
 
-    const row = result.rows[0];
+    const row =
+      result.rows[0] ??
+      (input.provider === "opencode"
+        ? await selectLatestLegacyDeepSeekCredential(client, input)
+        : null);
     if (!row) {
       throw new ProviderCredentialError(
         `No valid BYOK credential found for provider ${input.provider} in workspace ${input.workspaceId}.`
@@ -125,7 +132,7 @@ async function selectLatestByokCredential(input: {
 
     return {
       id: row.id,
-      providerAccountId: row.provider_account_id,
+      providerAccountId: normalizeRuntimeProviderAccountId(row),
       secret: decryptCredentialSecret(
         row.encrypted_secret,
         process.env.CREDENTIAL_ENCRYPTION_KEY ?? "agenthub-dev-credential-key"
@@ -133,6 +140,44 @@ async function selectLatestByokCredential(input: {
       workspaceId: row.workspace_id
     };
   });
+}
+
+async function selectLatestLegacyDeepSeekCredential(
+  client: Client,
+  input: {
+    ownerUserId: string;
+    workspaceId: string;
+  }
+): Promise<RuntimeCredentialRow | null> {
+  const result = await client.query<RuntimeCredentialRow>(
+    `
+      SELECT
+        encrypted_secret,
+        id,
+        provider,
+        provider_account_id,
+        workspace_id
+      FROM provider_credentials
+      WHERE owner_user_id = $1
+        AND workspace_id = $2
+        AND provider = 'deepseek'
+        AND credential_source = 'user_provided'
+        AND validation_state = 'valid'
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `,
+    [input.ownerUserId, input.workspaceId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+function normalizeRuntimeProviderAccountId(row: RuntimeCredentialRow): string {
+  if (row.provider !== "deepseek" || row.provider_account_id.includes("/")) {
+    return row.provider_account_id;
+  }
+
+  return `deepseek/${row.provider_account_id || "deepseek-chat"}`;
 }
 
 async function withDatabase<T>(callback: (client: Client) => Promise<T>): Promise<T> {

@@ -132,7 +132,14 @@ export class MessagesRepository {
         AND messages.workspace_id = ${workspaceId}
         AND messages.owner_user_id = ${ownerUserId}
         AND messages.thread_parent_message_id IS NULL
-      ORDER BY messages.created_at ASC
+      ORDER BY
+        messages.created_at ASC,
+        CASE messages.role
+          WHEN 'user' THEN 0
+          WHEN 'system' THEN 1
+          ELSE 2
+        END ASC,
+        messages.id ASC
     `);
 
     return result.rows;
@@ -173,7 +180,14 @@ export class MessagesRepository {
       WHERE messages.thread_parent_message_id = ${parentMessageId}
         AND messages.workspace_id = ${workspaceId}
         AND messages.owner_user_id = ${ownerUserId}
-      ORDER BY messages.created_at ASC
+      ORDER BY
+        messages.created_at ASC,
+        CASE messages.role
+          WHEN 'user' THEN 0
+          WHEN 'system' THEN 1
+          ELSE 2
+        END ASC,
+        messages.id ASC
     `);
 
     return result.rows;
@@ -377,6 +391,35 @@ export class MessagesRepository {
         AND messages.owner_user_id = ${ownerUserId}
         AND messages.is_pinned = true
       ORDER BY messages.created_at ASC
+    `);
+
+    return result.rows;
+  }
+
+  async listRecentContextMessages(input: {
+    conversationId: string;
+    excludeMessageId?: string;
+    limit: number;
+    ownerUserId: string;
+    workspaceId: string;
+  }): Promise<MessageRow[]> {
+    const result = await this.database.execute<MessageRow>(sql`
+      SELECT *
+      FROM (
+        SELECT
+          ${messageSelectFields()}
+        FROM messages
+        ${messageSelectJoins(input.ownerUserId)}
+        WHERE messages.conversation_id = ${input.conversationId}
+          AND messages.workspace_id = ${input.workspaceId}
+          AND messages.owner_user_id = ${input.ownerUserId}
+          AND messages.thread_parent_message_id IS NULL
+          AND messages.content <> ''
+          AND (${input.excludeMessageId ?? null}::text IS NULL OR messages.id <> ${input.excludeMessageId ?? null})
+        ORDER BY messages.created_at DESC, messages.id DESC
+        LIMIT ${input.limit}
+      ) AS recent_context_messages
+      ORDER BY created_at ASC, id ASC
     `);
 
     return result.rows;

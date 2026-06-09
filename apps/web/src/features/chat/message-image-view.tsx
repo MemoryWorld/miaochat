@@ -2,6 +2,8 @@
 
 import type { Artifact } from "@agenthub/contracts";
 
+import { buildArtifactFileUrl } from "../artifacts/artifact-links";
+
 type MessageImageViewProps = {
   artifact: Artifact;
   scanStatus?: "clean" | "rejected" | "pending";
@@ -17,6 +19,8 @@ const safeMimeTypes = new Set([
 
 export function MessageImageView({ artifact, scanStatus = "clean" }: MessageImageViewProps) {
   const mimeOk = safeMimeTypes.has(artifact.mimeType);
+  const imageHref = getImageHref(artifact);
+  const downloadHref = getDownloadHref(artifact);
 
   if (scanStatus === "rejected") {
     return (
@@ -26,10 +30,10 @@ export function MessageImageView({ artifact, scanStatus = "clean" }: MessageImag
     );
   }
 
-  if (!mimeOk || scanStatus === "pending" || !artifact.previewUrl) {
+  if (!mimeOk || scanStatus === "pending" || !imageHref) {
     return (
       <figure data-testid="message-image-view" data-artifact-id={artifact.id}>
-        <a href={artifact.previewUrl ?? "#"} download={artifact.title}>
+        <a href={downloadHref} download={artifact.title}>
           Download {artifact.title}
         </a>
       </figure>
@@ -38,8 +42,24 @@ export function MessageImageView({ artifact, scanStatus = "clean" }: MessageImag
 
   return (
     <figure data-testid="message-image-view" data-artifact-id={artifact.id}>
-      <img alt={artifact.title} src={artifact.previewUrl} />
+      <img alt={artifact.title} src={imageHref} />
       <figcaption>{artifact.title}</figcaption>
     </figure>
   );
+}
+
+function getImageHref(artifact: Artifact): string | null {
+  if (artifact.storageKey) {
+    return buildArtifactFileUrl(artifact.id, artifact.workspaceId, "inline");
+  }
+
+  return artifact.previewUrl ?? null;
+}
+
+function getDownloadHref(artifact: Artifact): string {
+  if (artifact.storageKey) {
+    return buildArtifactFileUrl(artifact.id, artifact.workspaceId, "attachment");
+  }
+
+  return artifact.previewUrl ?? "#";
 }

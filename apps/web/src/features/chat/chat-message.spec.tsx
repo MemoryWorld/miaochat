@@ -110,12 +110,43 @@ describe("ChatMessage", () => {
       />
     );
 
-    expect(container.textContent).toContain("## 技术方案");
-    expect(container.textContent).toContain("| 模块 | 处理 |");
+    expect(screen.getByRole("heading", { name: "技术方案" })).toBeInTheDocument();
+    expect(container.querySelector("table")).not.toBeNull();
     expect(container.textContent).not.toContain("handoff_request");
     expect(container.textContent).not.toContain("targetRoleKey");
     expect(container.textContent).not.toContain("constraints");
     expect(container.textContent).not.toContain("acceptanceCriteria");
+  });
+
+  it("renders assistant Markdown as structured content instead of plain text", () => {
+    const { container } = render(
+      <ChatMessage
+        artifacts={[]}
+        isPinDisabled={false}
+        isPinPending={false}
+        message={makeMessage({
+          content: [
+            "## 验收总结",
+            "",
+            "| 项目 | 状态 |",
+            "| --- | --- |",
+            "| Markdown 渲染 | 已完成 |",
+            "",
+            "```ts",
+            "const done = true;",
+            "```"
+          ].join("\n")
+        })}
+        onPin={vi.fn()}
+        onReply={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("heading", { name: "验收总结" })).toBeInTheDocument();
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.querySelector("pre code")).toHaveTextContent("const done = true;");
+    expect(container.textContent).not.toContain("## 验收总结");
+    expect(container.textContent).not.toContain("| 项目 | 状态 |");
   });
 
   it("renders runtime Markdown artifact statuses as plain UI text", () => {

@@ -52,6 +52,7 @@ export type ResolvedConversationAgentRow = {
   agent_id: string;
   agent_name: string;
   capability_tags: string[];
+  model_profile_id: string | null;
   mode: "direct" | "group";
   output_style: string;
   provider: ProviderId;
@@ -562,6 +563,7 @@ export class ConversationsRepository {
         conversation_agents.agent_id,
         conversation_agents.agent_name,
         custom_agents.capability_tags,
+        custom_agents.model_profile_id,
         conversations.mode,
         custom_agents.output_style,
         custom_agents.provider,

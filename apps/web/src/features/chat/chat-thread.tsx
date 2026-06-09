@@ -2,29 +2,35 @@ import {
   sanitizeAssistantVisibleContent,
   type Artifact,
   type Message,
+  type OrchestratorStatusEventPayload,
   type RuntimeArtifactStatus
 } from "@agenthub/contracts";
 
 import { DeployStatusCard } from "../artifacts/deploy-status-card";
 import type { DeployCommandResult } from "./deploy-command";
 import { ChatMessage } from "./chat-message";
+import { MarkdownContent } from "./markdown-content";
 
 type ChatThreadProps = {
   artifactsByMessageId: Record<string, Artifact[]>;
   artifactStatusesByMessageId?: Record<string, RuntimeArtifactStatus[]>;
   connectionState: "connecting" | "error" | "idle" | "open";
   deployments: DeployCommandResult[];
+  isLoading?: boolean;
   isPinningMessageId: string | null;
   liveAssistantMessage: {
     content: string;
     id: string;
+    isComplete?: boolean;
   } | null;
+  liveStatus?: OrchestratorStatusEventPayload | null;
   messages: Message[];
   onApplyDiffMessage?: (message: Message) => Promise<string | void> | string | void;
   onPinMessage: (messageId: string) => Promise<void>;
   onQuoteMessage?: (quoted: string) => void;
   onReplyMessage?: (message: Message) => void;
   resolveAuthorLabel?: (message: Message) => string | undefined;
+  suppressEmptyState?: boolean;
 };
 
 export function ChatThread({
@@ -32,14 +38,17 @@ export function ChatThread({
   artifactStatusesByMessageId = {},
   connectionState,
   deployments,
+  isLoading = false,
   isPinningMessageId,
   liveAssistantMessage,
+  liveStatus = null,
   messages,
   onApplyDiffMessage,
   onPinMessage,
   onQuoteMessage,
   onReplyMessage,
-  resolveAuthorLabel
+  resolveAuthorLabel,
+  suppressEmptyState = false
 }: ChatThreadProps) {
   const hasPersistedLiveMessage =
     liveAssistantMessage &&
@@ -71,7 +80,23 @@ export function ChatThread({
           target={entry.target}
         />
       ))}
-      {messages.length === 0 && deployments.length === 0 && !liveAssistantMessage ? (
+      {isLoading && messages.length === 0 && deployments.length === 0 && !liveAssistantMessage ? (
+        <div
+          style={{
+            border: "1px dashed rgba(15, 23, 42, 0.16)",
+            borderRadius: "20px",
+            color: "#475467",
+            padding: "1rem 1.1rem"
+          }}
+        >
+          正在加载频道消息...
+        </div>
+      ) : null}
+      {!suppressEmptyState &&
+      !isLoading &&
+      messages.length === 0 &&
+      deployments.length === 0 &&
+      !liveAssistantMessage ? (
         <div
           style={{
             border: "1px dashed rgba(15, 23, 42, 0.16)",
@@ -148,7 +173,7 @@ export function ChatThread({
           </div>
           <div style={{ lineHeight: 1.7 }}>
             {liveAssistantMessage.content.trim().length > 0 ? (
-              liveAssistantVisibleContent
+              <MarkdownContent content={liveAssistantVisibleContent} />
             ) : (
               <TypingIndicator />
             )}
@@ -161,9 +186,25 @@ export function ChatThread({
             }}
           >
             {liveAssistantMessage.content.trim().length > 0
-              ? "正在通过实时流返回内容"
-              : "AI 同事正在处理你的消息"}
+              ? liveAssistantMessage.isComplete
+                ? "正在同步持久化结果"
+                : "正在通过实时流返回内容"
+              : formatLiveStatusSummary(liveStatus) ?? "AI 同事正在处理你的消息"}
           </div>
+          {liveAssistantMessage.content.trim().length === 0 && liveStatus ? (
+            <div
+              aria-live="polite"
+              className="mt-2 grid gap-1 rounded-xl border border-sky-100 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-700"
+            >
+              {liveStatus.activeAgentName ? (
+                <span>当前同事：{liveStatus.activeAgentName}</span>
+              ) : null}
+              <span>
+                进度：{Math.min(liveStatus.successfulAgentCount, liveStatus.totalAgentCount)}
+                /{liveStatus.totalAgentCount}
+              </span>
+            </div>
+          ) : null}
         </article>
       ) : null}
     </section>
@@ -213,4 +254,24 @@ function formatConnectionState(
     case "idle":
       return "空闲";
   }
+}
+
+function formatLiveStatusSummary(
+  status: OrchestratorStatusEventPayload | null
+): string | null {
+  if (!status) {
+    return null;
+  }
+
+  if (status.summary) {
+    return status.summary
+      .replace(/\bORCHESTRATOR\s+[A-Z_]+\s*/gi, "")
+      .trim();
+  }
+
+  if (status.activeAgentName) {
+    return `${status.activeAgentName}正在处理你的消息`;
+  }
+
+  return "AI 同事正在处理你的消息";
 }

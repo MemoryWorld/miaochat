@@ -178,6 +178,7 @@ export const fileSurfaceEntrySchema = z.object({
   messageId: z.string().min(1),
   mimeType: z.string().min(1),
   previewUrl: z.string().nullable().default(null),
+  storageKey: z.string().min(1).nullable().default(null),
   title: z.string().min(1),
   workspaceId: workspaceIdSchema
 });

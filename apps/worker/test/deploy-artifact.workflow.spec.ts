@@ -42,6 +42,7 @@ describe("deployArtifactWorkflow", () => {
       deployTargetId: "target_static_1",
       deploymentId: "deployment_static_1",
       hasSecret: true,
+      ownerUserId: "user_static_1",
       targetKind: "static-site",
       targetName: "Marketing Preview",
       workspaceId: "workspace_deploy_1"
@@ -139,6 +140,7 @@ describe("deployArtifactWorkflow", () => {
       deployTargetId: "target_container_1",
       deploymentId: "deployment_container_1",
       hasSecret: false,
+      ownerUserId: "user_container_1",
       targetKind: "container",
       targetName: "Worker Container",
       workspaceId: "workspace_deploy_1"
@@ -218,6 +220,7 @@ describe("deployArtifactWorkflow", () => {
       deployTargetId: "target_source_1",
       deploymentId: "deployment_source_1",
       hasSecret: false,
+      ownerUserId: "user_source_1",
       targetKind: "source-archive",
       targetName: "Source Download",
       workspaceId: "workspace_deploy_1"

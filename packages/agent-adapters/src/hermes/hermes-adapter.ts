@@ -57,7 +57,8 @@ export class HermesAdapter implements AgentAdapter {
       pinnedMessages: buildPromptMessages(
         request.message,
         request.context?.pinnedMessages,
-        request.instructions
+        request.instructions,
+        request.context?.recentMessages
       ).slice(0, -1),
       prompt: request.message,
       workspaceId: request.workspaceId

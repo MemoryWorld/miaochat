@@ -1,98 +1,233 @@
-import "@testing-library/jest-dom/vitest";
-
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, create } from "react-test-renderer";
+import type { ReactElement } from "react";
+import { Image, Pressable, Text } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApprovalCard } from "../src/components/approval-card";
-import { ConversationListScreen } from "../src/screens/conversation-list";
-import { ConversationThreadScreen } from "../src/screens/conversation-thread";
+import type { ApprovalRequest, Artifact, Conversation, Message } from "@agenthub/contracts";
 
-describe("mobile shell", () => {
-  it("renders a compact conversation list for browsing", () => {
-    render(
-      <ConversationListScreen
-        conversations={[
-          {
-            id: "conv_mobile_1",
-            subtitle: "Waiting for approval",
-            title: "Release Ops"
-          },
-          {
-            id: "conv_mobile_2",
-            subtitle: "2 attachments",
-            title: "Design Review"
-          }
-        ]}
-      />
-    );
+import { ApprovalCard } from "../src/components/approval-card.js";
+import { ConversationListScreen } from "../src/screens/conversation-list.js";
+import { ConversationThreadScreen } from "../src/screens/conversation-thread.js";
 
-    expect(screen.getByText("Release Ops")).toBeInTheDocument();
-    expect(screen.getByText("Design Review")).toBeInTheDocument();
-    expect(screen.getByText("Waiting for approval")).toBeInTheDocument();
-  });
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true;
 
+describe("mobile shell components", () => {
   it("surfaces approve and reject actions through the approval card callbacks", () => {
     const onApprove = vi.fn();
     const onReject = vi.fn();
-
-    render(
+    const renderer = renderWithAct(
       <ApprovalCard
-        description="Publish the preview deployment to the workspace."
+        description="发布预览部署到当前工作区。"
         onApprove={onApprove}
         onReject={onReject}
-        title="Deploy approval"
+        title="部署审批"
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    const buttons = renderer.root.findAllByType(Pressable);
+    act(() => {
+      buttons[0]?.props.onPress();
+      buttons[1]?.props.onPress();
+    });
 
     expect(onApprove).toHaveBeenCalledTimes(1);
     expect(onReject).toHaveBeenCalledTimes(1);
+    expect(renderedText(renderer)).toContain("待审批");
   });
 
-  it("renders approval cards and attachment previews inside the thread screen", () => {
-    render(
+  it("renders browseable conversations and reports selection", () => {
+    const onSelectConversation = vi.fn();
+    const renderer = renderWithAct(
+      <ConversationListScreen
+        conversations={[
+          buildConversation({
+            id: "conv_mobile_1",
+            isPinned: true,
+            mode: "group",
+            title: "发布协作"
+          }),
+          buildConversation({
+            id: "conv_mobile_2",
+            mode: "direct",
+            title: "设计复核"
+          })
+        ]}
+        onRefresh={() => undefined}
+        onSelectConversation={onSelectConversation}
+        selectedConversationId="conv_mobile_1"
+      />
+    );
+
+    expect(renderedText(renderer)).toContain("发布协作");
+    expect(renderedText(renderer)).toContain("置顶");
+
+    const conversationButtons = renderer.root
+      .findAllByType(Pressable)
+      .filter((button) => button.props.children);
+
+    act(() => {
+      conversationButtons[1]?.props.onPress();
+    });
+
+    expect(onSelectConversation).toHaveBeenCalledWith("conv_mobile_1");
+  });
+
+  it("renders approval cards, messages, and image artifact previews inside a thread", () => {
+    const onApprove = vi.fn();
+    const renderer = renderWithAct(
       <ConversationThreadScreen
-        approvalRequests={[
-          {
-            description: "Ship the latest marketing site preview.",
+        approvals={[
+          buildApproval({
+            conversationId: "conv_mobile_1",
             id: "approval_mobile_1",
-            title: "Marketing deploy"
-          }
+            title: "计划审批"
+          })
         ]}
-        attachments={[
-          {
-            id: "artifact_mobile_1",
-            kind: "image",
-            previewUrl: "https://files.example/preview.png",
-            title: "Preview screenshot"
-          },
-          {
-            id: "artifact_mobile_2",
-            kind: "attachment",
-            previewUrl: "https://files.example/release-notes.md",
-            title: "Release notes"
-          }
-        ]}
+        artifactsByMessageId={{
+          message_mobile_1: [
+            buildArtifact({
+              id: "artifact_mobile_1",
+              kind: "image",
+              messageId: "message_mobile_1",
+              previewUrl: "https://files.example/preview.png",
+              title: "预览截图"
+            })
+          ]
+        }}
+        conversation={buildConversation({
+          id: "conv_mobile_1",
+          mode: "group",
+          title: "发布协作"
+        })}
+        isLoading={false}
         messages={[
-          {
-            id: "message_mobile_1",
-            role: "assistant",
-            text: "Review the preview and approve if it looks good."
-          }
+          buildMessage({
+            content: "请确认计划后继续执行。",
+            id: "message_mobile_1"
+          })
         ]}
-        onApprove={() => undefined}
+        onApprove={onApprove}
         onReject={() => undefined}
       />
     );
 
-    expect(screen.getByText("Marketing deploy")).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Preview attachment Preview screenshot" })
-    ).toHaveAttribute("src", "https://files.example/preview.png");
-    expect(
-      screen.getByRole("link", { name: "Open attachment Release notes" })
-    ).toHaveAttribute("href", "https://files.example/release-notes.md");
+    expect(renderedText(renderer)).toContain("计划审批");
+    expect(renderedText(renderer)).toContain("请确认计划后继续执行。");
+    expect(renderer.root.findByType(Image).props.source).toEqual({
+      uri: "https://files.example/preview.png"
+    });
+
+    const approveButton = renderer.root.findAllByType(Pressable)[0];
+    act(() => {
+      approveButton?.props.onPress();
+    });
+
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "approval_mobile_1"
+      })
+    );
   });
 });
+
+function renderWithAct(node: ReactElement): ReturnType<typeof create> {
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(node);
+  });
+
+  if (!renderer) {
+    throw new Error("Renderer did not initialize.");
+  }
+
+  return renderer;
+}
+
+function renderedText(renderer: ReturnType<typeof create>): string {
+  return renderer.root.findAllByType(Text).map((node) => node.props.children).flat(4).join(" ");
+}
+
+function buildConversation(input: Partial<Conversation>): Conversation {
+  return {
+    archivedAt: null,
+    id: input.id ?? "conv_mobile",
+    isPinned: input.isPinned ?? false,
+    mode: input.mode ?? "direct",
+    ownerUserId: "user_mobile",
+    participants: [
+      {
+        agentId: "agent_mobile",
+        agentName: "移动端助手"
+      }
+    ],
+    pinnedMessageIds: [],
+    title: input.title ?? "移动端会话",
+    updatedAt: new Date("2026-06-05T00:00:00.000Z"),
+    workspaceId: "workspace_mobile"
+  };
+}
+
+function buildApproval(input: Partial<ApprovalRequest>): ApprovalRequest {
+  return {
+    conversationId: input.conversationId ?? "conv_mobile",
+    createdAt: new Date("2026-06-05T00:00:00.000Z"),
+    id: input.id ?? "approval_mobile",
+    kind: "coding_plan",
+    note: null,
+    planVersion: 1,
+    requesterTeammateId: "tech_lead",
+    requesterTeammateName: "技术负责人",
+    respondedAt: null,
+    responseNote: null,
+    status: "pending",
+    summary: "技术负责人已经提交计划，等待移动端确认。",
+    targetUserId: "user_mobile",
+    title: input.title ?? "计划审批",
+    updatedAt: new Date("2026-06-05T00:00:00.000Z"),
+    workflowId: "workflow_mobile",
+    workspaceId: "workspace_mobile"
+  };
+}
+
+function buildMessage(input: Partial<Message>): Message {
+  return {
+    author: {
+      avatarUrl: null,
+      displayName: "技术负责人",
+      kind: "ai",
+      teammateId: "tech_lead"
+    },
+    authorUserId: null,
+    content: input.content ?? "移动端消息",
+    conversationId: "conv_mobile_1",
+    createdAt: new Date("2026-06-05T00:00:00.000Z"),
+    id: input.id ?? "message_mobile",
+    isPinned: false,
+    mentionedAgentIds: [],
+    mentionedUserIds: [],
+    ownerUserId: "user_mobile",
+    reactions: [],
+    role: "assistant",
+    sourceAgentId: "agent_mobile",
+    threadLastReplyAt: null,
+    threadParentMessageId: null,
+    threadReplyCount: 0,
+    workspaceId: "workspace_mobile"
+  };
+}
+
+function buildArtifact(input: Partial<Artifact>): Artifact {
+  return {
+    createdAt: new Date("2026-06-05T00:00:00.000Z"),
+    id: input.id ?? "artifact_mobile",
+    kind: input.kind ?? "image",
+    messageId: input.messageId ?? "message_mobile",
+    mimeType: "image/png",
+    previewUrl: input.previewUrl ?? "https://files.example/preview.png",
+    storageKey: null,
+    title: input.title ?? "预览截图",
+    workspaceId: "workspace_mobile"
+  };
+}

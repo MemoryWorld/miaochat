@@ -172,6 +172,21 @@ describe("assistant visible content sanitization", () => {
     expect(cleaned).toBe("MVP 范围：导入人体扫描、参数化护具、输出打印调校清单。");
   });
 
+  it("removes visible envelope placeholder labels from group replies", () => {
+    const cleaned = sanitizeAssistantVisibleContent(
+      [
+        "已完成方案汇总，下一步可以进入验收。",
+        "[envelope 内容]",
+        "【tool_plan 内容】"
+      ].join("\n"),
+      { stripCollaborationPlaceholders: true }
+    );
+
+    expect(cleaned).toBe("已完成方案汇总，下一步可以进入验收。");
+    expect(cleaned).not.toContain("envelope");
+    expect(cleaned).not.toContain("tool_plan");
+  });
+
   it("removes handoff-only visible messages in strict group mode", () => {
     const cleaned = sanitizeAssistantVisibleContent(
       "我会先给出方案，再让实现同事继续。",

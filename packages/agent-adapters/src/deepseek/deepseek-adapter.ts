@@ -61,7 +61,8 @@ export class DeepSeekAdapter implements AgentAdapter {
           messages: buildPromptMessages(
             request.message,
             request.context?.pinnedMessages,
-            request.instructions
+            request.instructions,
+            request.context?.recentMessages
           ),
           model,
           stream: true

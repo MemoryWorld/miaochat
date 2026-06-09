@@ -97,8 +97,10 @@ export const codingWorkflowStateSchema = z.enum([
   "plan_rejected",
   "plan_revision_requested",
   "execution_running",
+  "execution_failed",
   "review_running",
   "qa_running",
+  "summary_running",
   "awaiting_user_confirmation",
   "completed"
 ]);
@@ -128,17 +130,17 @@ export const builtInCodingProfiles = [
       "channel:coordinator"
     ],
     id: "tech_lead",
-    mission: "先梳理需求、拆解计划，再把执行顺序和风险清晰交给用户确认。",
+    mission: "先梳理需求、拆解计划，协调执行，并在最后汇总原始目标完成度。",
     name: "技术负责人",
     responsibilities: [
       "澄清目标与边界",
       "先提交计划再进入执行",
-      "在关键节点向用户请求确认"
+      "把其他同事的结果汇总成最终交付报告"
     ],
     runtimeBackend: "enhanced-hermes",
     starterPrompt:
-      "你是这条编码工作流的技术负责人。先阅读用户目标，输出清晰的实施计划、风险、依赖和验证方案，再等待用户确认。不要直接开始改代码。",
-    summary: "负责需求澄清、计划拆解和风险把控。",
+      "你是这条编码工作流的技术负责人。先阅读用户目标，输出清晰的实施计划、职责分工、风险、依赖和验证方案，再等待用户确认。计划获批并且其他同事完成后，你要汇总原始目标完成度、已完成项、未完成项、风险和下一步。",
+    summary: "负责需求澄清、计划拆解、风险把控和最终汇总。",
     toolPolicy: "默认只读上下文和计划输出，不直接执行高风险改动。",
     visibilityPolicy: "始终在时间线里公开计划、风险和审批请求。"
   },
@@ -175,7 +177,7 @@ export const builtInCodingProfiles = [
     ],
     id: "code_reviewer",
     mission: "从风险、回归和可维护性角度审视实现结果。",
-    name: "代码评审",
+    name: "代码评审工程师",
     responsibilities: [
       "审查实现是否符合计划",
       "指出潜在风险与回归点",
@@ -183,7 +185,7 @@ export const builtInCodingProfiles = [
     ],
     runtimeBackend: "enhanced-hermes",
     starterPrompt:
-      "你是这条编码工作流的代码评审。重点检查风险、行为变化、回归概率和缺失测试，不要直接替代工程师实施。",
+      "你是这条编码工作流的代码评审工程师。重点检查风险、行为变化、回归概率和缺失测试，不要直接替代工程师实施。",
     summary: "负责审查实现质量、风险与回归。",
     toolPolicy: "读取 diff、构建记录和测试结果，不直接合入。",
     visibilityPolicy: "必须回写审查结论、阻塞项和建议。"
@@ -198,7 +200,7 @@ export const builtInCodingProfiles = [
     ],
     id: "qa_tester",
     mission: "验证需求是否真正达成，并尽早暴露缺陷或遗漏。",
-    name: "测试工程师",
+    name: "质量保障测试工程师",
     responsibilities: [
       "设计验证路径",
       "执行测试并报告结果",
@@ -206,7 +208,7 @@ export const builtInCodingProfiles = [
     ],
     runtimeBackend: "enhanced-hermes",
     starterPrompt:
-      "你是这条编码工作流的测试工程师。针对计划和实现设计验证路径，回报失败点、覆盖缺口和回归结果。",
+      "你是这条编码工作流的质量保障测试工程师。针对计划和实现设计验证路径，回报失败点、覆盖缺口和回归结果。",
     summary: "负责验证、回归和验收建议。",
     toolPolicy: "运行测试并整理验证结果。",
     visibilityPolicy: "必须回写覆盖范围、失败点和验收建议。"
@@ -344,13 +346,12 @@ const defaultBuiltInRoleOrder = builtInCodingProfiles.map((profile) => profile.i
 const executionRolePriority: BuiltInCodingRole[] = [
   "software_engineer",
   "code_reviewer",
-  "qa_tester",
-  "tech_lead"
+  "qa_tester"
 ];
 const implementationCapableRoles: BuiltInCodingRole[] = [
-  "software_engineer",
-  "tech_lead"
+  "software_engineer"
 ];
+export const codingWorkflowFinalSummaryTaskId = "summary:tech_lead";
 
 export function getBuiltInCodingProfileByRole(role: BuiltInCodingRole) {
   return builtInCodingProfiles.find((profile) => profile.id === role) ?? null;
@@ -399,7 +400,13 @@ export function buildInitialCodingTaskSnapshotForRoles(
       ownerRole: role,
       state: "todo" as const,
       title: buildExecutionTaskTitle(role)
-    }))
+    })),
+    {
+      id: codingWorkflowFinalSummaryTaskId,
+      ownerRole: "tech_lead",
+      state: "todo",
+      title: "技术负责人汇总完成度"
+    }
   ];
 }
 
@@ -486,7 +493,7 @@ export function buildCodingPlanSummary(input: {
   plan.push(
     "",
     "## 执行顺序",
-    `${1}. ${parsed.planningName}澄清范围并固定验收边界`,
+    `${1}. ${parsed.planningName}复述原始想法、澄清范围并固定验收边界`,
     ...executionSteps.map((step, index) => `${index + 2}. ${step}`)
   );
 
@@ -540,7 +547,8 @@ export function normalizeRecommendedRoleIds(
 export function derivePlanningRole(
   selectedRolesInput: readonly BuiltInCodingRole[]
 ): BuiltInCodingRole {
-  return normalizeRecommendedRoleIds(selectedRolesInput)[0] ?? "tech_lead";
+  void selectedRolesInput;
+  return "tech_lead";
 }
 
 export function hasCodingWorkflowExecutor(
@@ -551,6 +559,13 @@ export function hasCodingWorkflowExecutor(
   );
 }
 
+export function hasRequiredCodingWorkflowRoles(
+  selectedRolesInput: readonly BuiltInCodingRole[]
+): boolean {
+  const selectedRoles = normalizeRecommendedRoleIds(selectedRolesInput);
+  return selectedRoles.includes("tech_lead") && selectedRoles.includes("software_engineer");
+}
+
 export function deriveExecutionRoles(
   selectedRolesInput: readonly BuiltInCodingRole[]
 ): BuiltInCodingRole[] {
@@ -559,14 +574,6 @@ export function deriveExecutionRoles(
   const remainingRoles = executionRolePriority.filter(
     (role) => selectedRoles.includes(role) && role !== planningRole
   );
-
-  if (selectedRoles.length === 1) {
-    return [planningRole];
-  }
-
-  if (planningRole !== "tech_lead" && !remainingRoles.includes(planningRole)) {
-    return [planningRole, ...remainingRoles];
-  }
 
   return remainingRoles.length > 0 ? remainingRoles : [planningRole];
 }
@@ -609,9 +616,9 @@ function buildExecutionTaskTitle(role: BuiltInCodingRole): string {
     case "software_engineer":
       return "软件工程师按计划实现";
     case "code_reviewer":
-      return "代码评审检查风险与回归";
+      return "代码评审工程师检查风险与回归";
     case "qa_tester":
-      return "测试工程师完成验证";
+      return "质量保障测试工程师完成验证";
     case "tech_lead":
       return "技术负责人继续推进执行与验收";
   }
@@ -630,12 +637,12 @@ function buildPlanExecutionSteps(
       case "qa_tester":
         return `${getBuiltInCodingProfileName(role)}完成验证并给出验收建议`;
       case "tech_lead":
-        return `${planningName}在计划获批后继续推进实现、协调风险并回写验收结论`;
+        return `${planningName}最终汇总原始想法完成度、风险和下一步`;
     }
   });
 
   return steps.length > 0
-    ? steps
+    ? [...steps, `${planningName}最终汇总原始想法完成度、风险和下一步`]
     : [`${planningName}在计划获批后继续推进实现、验证并回写结果`];
 }
 
@@ -673,10 +680,14 @@ export function formatCodingWorkflowState(state: CodingWorkflowState): string {
       return "计划待修改";
     case "execution_running":
       return "执行中";
+    case "execution_failed":
+      return "执行失败";
     case "review_running":
       return "评审中";
     case "qa_running":
       return "测试中";
+    case "summary_running":
+      return "汇总中";
     case "awaiting_user_confirmation":
       return "待用户确认";
     case "completed":

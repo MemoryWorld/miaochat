@@ -29,9 +29,10 @@ describe("WorkModeLauncher", () => {
 
     expect(screen.queryByText("内置角色")).not.toBeInTheDocument();
     expect(screen.getAllByText("推荐").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("固定")).toHaveLength(2);
   });
 
-  it("asks for confirmation before deleting a recommended teammate", () => {
+  it("asks for confirmation before deleting a removable recommended teammate", () => {
     render(
       <WorkModeLauncher
         canStartCoding
@@ -40,17 +41,17 @@ describe("WorkModeLauncher", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "删除技术负责人" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除代码评审工程师" }));
 
     expect(screen.getByRole("dialog", { name: "确认删除推荐 AI 同事" })).toBeInTheDocument();
-    expect(screen.getByText(/你确定要移除「技术负责人」吗/)).toBeInTheDocument();
+    expect(screen.getByText(/你确定要移除「代码评审工程师」吗/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
-    expect(screen.queryByText("技术负责人")).not.toBeInTheDocument();
+    expect(screen.queryByText("代码评审工程师")).not.toBeInTheDocument();
   });
 
-  it("blocks deleting the last remaining recommended teammate", () => {
+  it("does not show a delete action for the fixed tech lead role", () => {
     render(
       <WorkModeLauncher
         canStartCoding
@@ -59,35 +60,24 @@ describe("WorkModeLauncher", () => {
       />
     );
 
-    for (const label of ["删除代码评审", "删除测试工程师", "删除技术负责人"]) {
-      fireEvent.click(screen.getByRole("button", { name: label }));
-      fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    }
-
-    fireEvent.click(screen.getByRole("button", { name: "删除软件工程师" }));
-
-    expect(screen.getByRole("dialog", { name: "无法删除推荐 AI 同事" })).toBeInTheDocument();
-    expect(screen.getByText(/对不起，不能这样哦/)).toBeInTheDocument();
-    expect(screen.getByText("软件工程师")).toBeInTheDocument();
-  });
-
-  it("blocks deleting the last implementation-capable teammate", () => {
-    render(
-      <WorkModeLauncher
-        canStartCoding
-        customAgents={[]}
-        onLaunchCoding={vi.fn().mockResolvedValue(undefined)}
-      />
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "删除技术负责人" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除软件工程师" }));
-
-    expect(screen.getByRole("dialog", { name: "无法删除推荐 AI 同事" })).toBeInTheDocument();
     expect(
-      screen.getByText(/至少要保留 1 位能够进入实现阶段的 AI 同事/)
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "删除技术负责人" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("技术负责人")).toBeInTheDocument();
+  });
+
+  it("does not show a delete action for the fixed implementation role", () => {
+    render(
+      <WorkModeLauncher
+        canStartCoding
+        customAgents={[]}
+        onLaunchCoding={vi.fn().mockResolvedValue(undefined)}
+      />
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "删除软件工程师" })
+    ).not.toBeInTheDocument();
     expect(screen.getByText("软件工程师")).toBeInTheDocument();
   });
 
@@ -102,7 +92,7 @@ describe("WorkModeLauncher", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "删除代码评审" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除代码评审工程师" }));
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     fireEvent.click(screen.getByRole("button", { name: "启动编码工作流" }));
     fireEvent.change(screen.getByLabelText("本次目标"), {
@@ -122,7 +112,7 @@ describe("WorkModeLauncher", () => {
     });
   });
 
-  it("updates the planner copy when the first recommended teammate changes", () => {
+  it("keeps the planner copy fixed on the tech lead role", () => {
     render(
       <WorkModeLauncher
         canStartCoding
@@ -131,12 +121,10 @@ describe("WorkModeLauncher", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "删除技术负责人" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     fireEvent.click(screen.getByRole("button", { name: "启动编码工作流" }));
 
     expect(
-      screen.getByText(/会先由软件工程师提交计划，得到用户确认后才进入执行/)
+      screen.getByText(/会先由技术负责人提交计划，得到用户确认后才进入执行/)
     ).toBeInTheDocument();
   });
 });

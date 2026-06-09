@@ -9,6 +9,9 @@ import type {
 const { executeInternalRuntimeAgentActivity } = proxyActivities<{
   executeInternalRuntimeAgentActivity: typeof executeInternalRuntimeAgentActivityFn;
 }>({
+  retry: {
+    maximumAttempts: 1
+  },
   startToCloseTimeout: "1 minute"
 });
 

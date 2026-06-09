@@ -25,10 +25,16 @@ describe("inline attachments", () => {
     };
 
     const { rerender } = render(<MessageImageView artifact={baseArtifact} scanStatus="clean" />);
-    expect(screen.getByRole("img", { name: "Diagram" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Diagram" })).toHaveAttribute(
+      "src",
+      "/api/artifacts/art_image/file?workspaceId=default-workspace&disposition=inline"
+    );
 
     rerender(<MessageImageView artifact={baseArtifact} scanStatus="pending" />);
-    expect(screen.getByRole("link", { name: "Download Diagram" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download Diagram" })).toHaveAttribute(
+      "href",
+      "/api/artifacts/art_image/file?workspaceId=default-workspace&disposition=attachment"
+    );
 
     rerender(<MessageImageView artifact={baseArtifact} scanStatus="rejected" />);
     expect(screen.getByRole("alert")).toHaveTextContent(/blocked/i);
@@ -48,7 +54,10 @@ describe("inline attachments", () => {
     };
 
     render(<MessageFileView artifact={baseArtifact} scanStatus="clean" />);
-    expect(screen.getByRole("link", { name: "View inline" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View inline" })).toHaveAttribute(
+      "href",
+      "/artifacts/art_file?workspaceId=default-workspace"
+    );
 
     cleanup();
     render(
@@ -57,6 +66,9 @@ describe("inline attachments", () => {
         scanStatus="clean"
       />
     );
-    expect(screen.getByRole("link", { name: "Download" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
+      "href",
+      "/api/artifacts/art_file/file?workspaceId=default-workspace&disposition=attachment"
+    );
   });
 });

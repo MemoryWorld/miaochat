@@ -7,6 +7,7 @@ const pooledProviderSchema = z.enum([
   "codex",
   "deepseek",
   "hermes",
+  "opencode",
   "openclaw"
 ]);
 

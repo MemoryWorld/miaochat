@@ -44,6 +44,7 @@ describe("buildAgentHarnessInstructions", () => {
     expect(instructions).toContain("普通文本里的 @某位同事 不会触发交接");
     expect(instructions).toContain("handoff_request");
     expect(instructions).toContain("artifact.markdown.create");
+    expect(instructions).toContain("artifact.webpage.create");
     expect(instructions).toContain("visibleMessage");
     expect(instructions).toContain("Prompt Manifest");
     expect(instructions).toContain("short_term_memory");

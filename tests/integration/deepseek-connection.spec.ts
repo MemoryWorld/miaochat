@@ -1,6 +1,3 @@
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
-
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import type { ModelConnection } from "@agenthub/contracts";
@@ -12,34 +9,12 @@ import { signupSessionViaInject } from "../support/auth-session.js";
 
 const workspaceId = "workspace_deepseek_connection";
 
-describe("DeepSeek model connection integration", () => {
+describe("OpenCode-backed model connection integration", () => {
   let app: NestFastifyApplication;
   let authCookie: string;
   let client: Client;
-  let deepseekServer: Server;
-  let previousDeepSeekBaseUrl: string | undefined;
-  const validationRequests: string[] = [];
 
   beforeAll(async () => {
-    previousDeepSeekBaseUrl = process.env.DEEPSEEK_BASE_URL;
-    deepseekServer = createServer((request, response) => {
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk.toString("utf8");
-      });
-      request.on("end", () => {
-        validationRequests.push(body);
-        response.writeHead(200, {
-          "content-type": "application/json"
-        });
-        response.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
-      });
-    });
-    await new Promise<void>((resolve) => {
-      deepseekServer.listen(0, "127.0.0.1", resolve);
-    });
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${(deepseekServer.address() as AddressInfo).port}`;
-
     client = new Client({
       connectionString:
         process.env.DATABASE_URL ?? "postgres://agenthub:agenthub@localhost:5432/agenthub"
@@ -59,17 +34,12 @@ describe("DeepSeek model connection integration", () => {
   });
 
   afterEach(async () => {
-    validationRequests.length = 0;
     await clearWorkspace(client);
   });
 
   afterAll(async () => {
     await app.close();
     await client.end();
-    await new Promise<void>((resolve, reject) => {
-      deepseekServer.close((error) => (error ? reject(error) : resolve()));
-    });
-    restoreEnv("DEEPSEEK_BASE_URL", previousDeepSeekBaseUrl);
   });
 
   it("validates, saves, and lists a workspace model connection without exposing the secret", async () => {
@@ -79,9 +49,9 @@ describe("DeepSeek model connection integration", () => {
       },
       method: "POST",
       payload: {
-        apiKey: "sk-test-deepseek",
-        label: "DeepSeek 工作区连接",
-        model: "deepseek-chat",
+        apiKey: "sk-test-opencode",
+        label: "DeepSeek（OpenCode）连接",
+        model: "deepseek/deepseek-chat",
         preset: "powerful",
         workspaceId
       },
@@ -91,7 +61,7 @@ describe("DeepSeek model connection integration", () => {
     expect(validateResponse.statusCode).toBe(200);
     expect(validateResponse.json()).toEqual(
       expect.objectContaining({
-        providerAccountId: "deepseek-chat",
+        providerAccountId: "deepseek/deepseek-chat",
         valid: true
       })
     );
@@ -102,9 +72,9 @@ describe("DeepSeek model connection integration", () => {
       },
       method: "POST",
       payload: {
-        apiKey: "sk-test-deepseek",
-        label: "DeepSeek 工作区连接",
-        model: "deepseek-chat",
+        apiKey: "sk-test-opencode",
+        label: "DeepSeek（OpenCode）连接",
+        model: "deepseek/deepseek-chat",
         preset: "powerful",
         workspaceId
       },
@@ -115,9 +85,9 @@ describe("DeepSeek model connection integration", () => {
     const created = createResponse.json() as ModelConnection;
     expect(created).toEqual(
       expect.objectContaining({
-        kind: "deepseek_api",
-        label: "DeepSeek 工作区连接",
-        model: "deepseek-chat",
+        kind: "opencode_model",
+        label: "DeepSeek（OpenCode）连接",
+        model: "deepseek/deepseek-chat",
         preset: "powerful",
         status: "valid",
         workspaceId
@@ -140,9 +110,7 @@ describe("DeepSeek model connection integration", () => {
         status: "valid"
       })
     ]);
-    expect(JSON.stringify(listResponse.json())).not.toContain("sk-test-deepseek");
-    expect(validationRequests.length).toBeGreaterThanOrEqual(2);
-    expect(validationRequests.map(readValidationModel)).toContain("deepseek-chat");
+    expect(JSON.stringify(listResponse.json())).not.toContain("sk-test-opencode");
   });
 
   it("returns a product-safe validation failure for keys with the wrong shape", async () => {
@@ -152,9 +120,9 @@ describe("DeepSeek model connection integration", () => {
       },
       method: "POST",
       payload: {
-        apiKey: "bad-key",
-        label: "DeepSeek 工作区连接",
-        model: "deepseek-chat",
+        apiKey: "bad",
+        label: "DeepSeek（OpenCode）连接",
+        model: "deepseek/deepseek-chat",
         workspaceId
       },
       url: "/credentials/model-connections/validate"
@@ -163,11 +131,10 @@ describe("DeepSeek model connection integration", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(
       expect.objectContaining({
-        message: "请输入以 sk- 开头的 DeepSeek API Key。",
+        message: "OpenCode 凭证格式不正确，请检查 provider id 和 API Key。",
         valid: false
       })
     );
-    expect(validationRequests).toHaveLength(0);
   });
 });
 
@@ -175,21 +142,4 @@ async function clearWorkspace(client: Client): Promise<void> {
   await client.query("DELETE FROM provider_credentials WHERE workspace_id = $1", [
     workspaceId
   ]);
-}
-
-function readValidationModel(body: string): string | null {
-  try {
-    return (JSON.parse(body) as { model?: string }).model ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function restoreEnv(name: string, value: string | undefined) {
-  if (value === undefined) {
-    delete process.env[name];
-    return;
-  }
-
-  process.env[name] = value;
 }

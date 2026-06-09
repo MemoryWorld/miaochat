@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { startTransition, useMemo, useState } from "react";
 
-import type { Conversation, CreateCustomAgentInput } from "@agenthub/contracts";
+import type {
+  Conversation,
+  CreateCustomAgentInput,
+  ProviderCredential
+} from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
 import { Badge } from "../../components/ui/badge";
@@ -48,6 +52,18 @@ type HarnessDesignOption = {
   description: string;
   id: string;
   label: string;
+};
+
+type CredentialMetadata = Omit<ProviderCredential, "encryptedSecret">;
+type RuntimeProvider = Extract<
+  CreateCustomAgentInput["provider"],
+  "claude-code" | "codex" | "opencode"
+>;
+
+type ProviderOption = {
+  label: string;
+  provider: RuntimeProvider;
+  summary: string;
 };
 
 const wizardSteps: Array<{ id: WizardStepId; label: string }> = [
@@ -150,6 +166,23 @@ const templateCatalog: TeammateTemplate[] = [
 ];
 
 const toolOptions = ["代码修改", "命令执行", "文档整理", "任务拆解", "频道总结", "测试验证"];
+const providerOptions: ProviderOption[] = [
+  {
+    label: "国产模型 / OpenCode",
+    provider: "opencode",
+    summary: "通过 OpenCode 接入 DeepSeek、Qwen、Kimi、GLM、MiniMax 等模型"
+  },
+  {
+    label: "Codex",
+    provider: "codex",
+    summary: "OpenAI Codex SDK"
+  },
+  {
+    label: "Claude Code",
+    provider: "claude-code",
+    summary: "Anthropic Claude Agent SDK"
+  },
+];
 const defaultTemplate = templateCatalog[0]!;
 const defaultWizardStep = wizardSteps[0]!;
 
@@ -172,6 +205,7 @@ export function TeammateCreateWizard() {
   const [name, setName] = useState(defaultTemplate.name);
   const [outputStyle, setOutputStyle] = useState(defaultTemplate.outputStyle);
   const [roleDescription, setRoleDescription] = useState(defaultTemplate.mission);
+  const [runtimeProvider, setRuntimeProvider] = useState<RuntimeProvider>("opencode");
   const [scopeDescription, setScopeDescription] = useState("");
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplate.id);
@@ -189,6 +223,10 @@ export function TeammateCreateWizard() {
     isChannelScopedCreate && workspaceId ? `/conversations?workspaceId=${workspaceId}` : null,
     []
   );
+  const credentials = useSurfaceData<CredentialMetadata[]>(
+    workspaceId ? `/credentials?workspaceId=${workspaceId}` : null,
+    []
+  );
 
   const selectedTemplate = useMemo<TeammateTemplate>(
     () => templateCatalog.find((template) => template.id === selectedTemplateId) ?? defaultTemplate,
@@ -203,10 +241,18 @@ export function TeammateCreateWizard() {
   );
   const channelNameWarning = resolveChannelNameWarning(name, channelMemberNames);
   const currentStep = wizardSteps[selectedStepIndex] ?? defaultWizardStep;
+  const selectedProviderOption = resolveProviderOption(runtimeProvider);
+  const credentialList = Array.isArray(credentials.data) ? credentials.data : [];
+  const hasValidProviderCredential = credentialList.some(
+    (credential) => isValidCredentialForRuntimeProvider(credential, runtimeProvider)
+  );
   const disabledReason = resolveCreateDisabledReason({
+    hasValidProviderCredential,
+    isLoadingCredentials: credentials.isLoading,
     isLoadingWorkspaces,
     isSaving,
     name,
+    providerLabel: selectedProviderOption.label,
     roleDescription,
     workspaceId
   });
@@ -247,6 +293,7 @@ export function TeammateCreateWizard() {
         modelProfileId,
         name,
         outputStyle,
+        provider: runtimeProvider,
         scopeDescription: scopeDescription.trim() || null,
         systemPrompt: buildSystemPrompt({
           approvalMode,
@@ -261,7 +308,7 @@ export function TeammateCreateWizard() {
           workspaceId
         }),
         toolBindings: []
-      } satisfies Omit<CreateCustomAgentInput, "provider" | "workspaceId">;
+      } satisfies Omit<CreateCustomAgentInput, "workspaceId">;
       const response = await fetch(resolveCreateEndpoint(channelId), {
         body: JSON.stringify(
           channelId
@@ -271,7 +318,6 @@ export function TeammateCreateWizard() {
               }
             : ({
                 ...teammate,
-                provider: "deepseek",
                 workspaceId
               } satisfies CreateCustomAgentInput)
         ),
@@ -484,6 +530,22 @@ export function TeammateCreateWizard() {
         {currentStep.id === "advanced" ? (
           <section className="grid gap-4 rounded-[28px] border border-slate-200 bg-white/80 p-5">
             <label className={fieldLabelClassName}>
+              运行 Provider
+              <Select
+                value={runtimeProvider}
+                onChange={(event) => setRuntimeProvider(event.target.value as RuntimeProvider)}
+              >
+                {providerOptions.map((option) => (
+                  <option key={option.provider} value={option.provider}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <span className="text-xs font-normal leading-5 text-slate-500">
+                {selectedProviderOption.summary}
+              </span>
+            </label>
+            <label className={fieldLabelClassName}>
               记忆方式
               <Select value={memoryMode} onChange={(event) => setMemoryMode(event.target.value as CreateCustomAgentInput["memoryMode"])}>
                 <option value="workspace_plus_teammate">工作区 + 同事记忆</option>
@@ -553,6 +615,7 @@ export function TeammateCreateWizard() {
             </div>
             <dl className="m-0 grid gap-3 md:grid-cols-2">
               <MetaBlock label="工作模式" value={selectedWorkMode} />
+              <MetaBlock label="运行 Provider" value={selectedProviderOption.label} />
               <MetaBlock label="记忆方式" value={renderMemoryMode(memoryMode)} />
               <MetaBlock label="审批方式" value={renderApprovalMode(approvalMode)} />
               <MetaBlock label="模型偏好" value={renderModelProfile(modelProfileId)} />
@@ -794,14 +857,20 @@ function resolveAvailableTeammateName(
 }
 
 function resolveCreateDisabledReason(input: {
+  hasValidProviderCredential: boolean;
+  isLoadingCredentials: boolean;
   isLoadingWorkspaces: boolean;
   isSaving: boolean;
   name: string;
+  providerLabel: string;
   roleDescription: string;
   workspaceId: string;
 }): string | null {
   if (input.isLoadingWorkspaces) {
     return "正在同步当前工作区。";
+  }
+  if (input.isLoadingCredentials) {
+    return "正在同步模型连接。";
   }
   if (!input.workspaceId) {
     return "正在同步当前工作区。";
@@ -812,10 +881,32 @@ function resolveCreateDisabledReason(input: {
   if (!input.roleDescription.trim()) {
     return "请填写角色职责说明。";
   }
+  if (!input.hasValidProviderCredential) {
+    return `请先在设置中添加可用的 ${input.providerLabel} 模型连接。`;
+  }
   if (input.isSaving) {
     return "正在保存，请稍候。";
   }
   return null;
+}
+
+function resolveProviderOption(provider: RuntimeProvider): ProviderOption {
+  return providerOptions.find((option) => option.provider === provider) ?? providerOptions[0]!;
+}
+
+function isValidCredentialForRuntimeProvider(
+  credential: CredentialMetadata,
+  runtimeProvider: RuntimeProvider
+): boolean {
+  if (credential.validationState !== "valid") {
+    return false;
+  }
+
+  if (runtimeProvider === "opencode") {
+    return credential.provider === "opencode" || credential.provider === "deepseek";
+  }
+
+  return credential.provider === runtimeProvider;
 }
 
 function toggleValue(values: string[], value: string): string[] {

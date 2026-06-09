@@ -4,8 +4,10 @@ import { AuthModule } from "../auth/auth.module.js";
 import { ArtifactsModule } from "../artifacts/artifacts.module.js";
 import { ChannelsModule } from "../channels/channels.module.js";
 import { ConversationsModule } from "../conversations/conversations.module.js";
+import { CodingWorkflowsModule } from "../coding-workflows/coding-workflows.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { StreamsModule } from "../streams/streams.module.js";
+import { VisualWorkflowsModule } from "../visual-workflows/visual-workflows.module.js";
 import { WorkspacesModule } from "../workspaces/workspaces.module.js";
 import { MessageDispatchService } from "./message-dispatch.service.js";
 import { MessageRegenerateService } from "./message-regenerate.service.js";
@@ -21,10 +23,12 @@ import { PinMessageService } from "./pin-message.service.js";
     ArtifactsModule,
     AuthModule,
     ChannelsModule,
+    CodingWorkflowsModule,
     ConversationsModule,
     DatabaseModule,
     MultiAgentHarnessModule,
     StreamsModule,
+    VisualWorkflowsModule,
     WorkspacesModule
   ],
   providers: [

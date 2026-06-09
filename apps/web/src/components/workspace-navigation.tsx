@@ -39,6 +39,12 @@ const workspaceNavGroups: WorkspaceNavGroup[] = [
         match: "prefix"
       },
       {
+        description: "可复用的可视化流程",
+        href: "/workflows",
+        label: "Workflow",
+        match: "prefix"
+      },
+      {
         description: "按时间组织协作",
         href: "/calendar",
         label: "日历",

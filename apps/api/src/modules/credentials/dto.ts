@@ -28,6 +28,7 @@ const credentialModeProviderSchema = z.enum([
   "codex",
   "deepseek",
   "hermes",
+  "opencode",
   "openclaw"
 ]);
 
@@ -104,7 +105,7 @@ export function toModelConnectionMetadata(
 ): ModelConnectionMetadata {
   return modelConnectionSchema.parse({
     id: credential.id,
-    kind: "deepseek_api",
+    kind: credential.provider === "opencode" ? "opencode_model" : "deepseek_api",
     label: credential.label,
     model: credential.providerAccountId,
     preset,

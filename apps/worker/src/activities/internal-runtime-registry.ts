@@ -33,7 +33,7 @@ export async function createInternalRuntimeExecution(input: {
 export function resolveRuntimeBackendProvider(runtimeBackend: RuntimeBackend) {
   switch (runtimeBackend) {
     case "enhanced-hermes":
-      return "deepseek" as const;
+      return "opencode" as const;
     case "hermes-compat":
       return "hermes" as const;
     case "openclaw-compat":

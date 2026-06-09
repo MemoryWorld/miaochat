@@ -2,6 +2,11 @@
 
 import type { Artifact } from "@agenthub/contracts";
 
+import {
+  buildArtifactFileUrl,
+  buildArtifactViewerUrl
+} from "../artifacts/artifact-links";
+
 type MessageFileViewProps = {
   artifact: Artifact;
   scanStatus?: "clean" | "rejected" | "pending";
@@ -24,18 +29,42 @@ export function MessageFileView({ artifact, scanStatus = "clean" }: MessageFileV
 
   const inlineEligible =
     scanStatus === "clean" && inlineMimeAllowList.has(artifact.mimeType);
+  const inlineHref = getInlineHref(artifact);
+  const downloadHref = getDownloadHref(artifact);
 
   return (
     <div data-testid="message-file-view" data-artifact-id={artifact.id}>
       <strong>{artifact.title}</strong>
       <span> · {artifact.mimeType}</span>
-      {inlineEligible && artifact.previewUrl ? (
-        <a href={artifact.previewUrl}>View inline</a>
+      {inlineEligible && inlineHref ? (
+        <a href={inlineHref}>View inline</a>
       ) : (
-        <a href={artifact.previewUrl ?? "#"} download={artifact.title}>
+        <a href={downloadHref} download={artifact.title}>
           Download
         </a>
       )}
     </div>
   );
+}
+
+function getInlineHref(artifact: Artifact): string | null {
+  if (artifact.storageKey) {
+    return isMarkdownArtifact(artifact)
+      ? buildArtifactViewerUrl(artifact.id, artifact.workspaceId)
+      : buildArtifactFileUrl(artifact.id, artifact.workspaceId, "inline");
+  }
+
+  return artifact.previewUrl ?? null;
+}
+
+function getDownloadHref(artifact: Artifact): string {
+  if (artifact.storageKey) {
+    return buildArtifactFileUrl(artifact.id, artifact.workspaceId, "attachment");
+  }
+
+  return artifact.previewUrl ?? "#";
+}
+
+function isMarkdownArtifact(artifact: Artifact): boolean {
+  return artifact.mimeType.toLowerCase().includes("markdown");
 }

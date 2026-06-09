@@ -14,6 +14,7 @@ const quotaProviderSchema = z.enum([
   "codex",
   "deepseek",
   "hermes",
+  "opencode",
   "openclaw"
 ]);
 
@@ -75,6 +76,10 @@ const defaultPolicies: Record<QuotaProvider, QuotaPolicy> = {
     periodMs: 30 * 24 * 60 * 60 * 1_000
   },
   hermes: {
+    limit: 1_000,
+    periodMs: 30 * 24 * 60 * 60 * 1_000
+  },
+  opencode: {
     limit: 1_000,
     periodMs: 30 * 24 * 60 * 60 * 1_000
   },

@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "android": {
+      "package": "com.miaochat.mobile"
+    },
+    "ios": {
+      "bundleIdentifier": "com.miaochat.mobile"
+    },
+    "name": "Miaochat",
+    "orientation": "portrait",
+    "scheme": "miaochat",
+    "slug": "miaochat",
+    "splash": {
+      "backgroundColor": "#f8fafc"
+    },
+    "userInterfaceStyle": "light"
+  }
+}

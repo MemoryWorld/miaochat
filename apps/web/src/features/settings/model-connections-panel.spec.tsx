@@ -34,7 +34,7 @@ describe("ModelConnectionsPanel", () => {
     expect(screen.getByText("请填写连接名称。")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("连接名称"), {
-      target: { value: "DeepSeek 工作区连接" }
+      target: { value: "DeepSeek（OpenCode）连接" }
     });
     fireEvent.change(screen.getByLabelText("API Key"), {
       target: { value: "sk-demo" }
@@ -62,30 +62,8 @@ describe("ModelConnectionsPanel", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse([], 200))
       .mockResolvedValueOnce(jsonResponse({ message: "模型连接可用。", valid: true }, 200))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          id: "conn_1",
-          kind: "deepseek_api",
-          label: "DeepSeek 工作区连接",
-          model: "deepseek-chat",
-          preset: "powerful",
-          status: "valid",
-          workspaceId: "workspace_1"
-        }, 201)
-      )
-      .mockResolvedValueOnce(
-        jsonResponse([
-          {
-            id: "conn_1",
-            kind: "deepseek_api",
-            label: "DeepSeek 工作区连接",
-            model: "deepseek-chat",
-            preset: "powerful",
-            status: "valid",
-            workspaceId: "workspace_1"
-          }
-        ], 200)
-      );
+      .mockResolvedValueOnce(jsonResponse(savedCredential(), 201))
+      .mockResolvedValueOnce(jsonResponse([savedCredential()], 200));
 
     render(<ModelConnectionsPanel workspaceId="workspace_1" />);
 
@@ -93,19 +71,42 @@ describe("ModelConnectionsPanel", () => {
     fireEvent.change(screen.getByLabelText("API Key"), {
       target: { value: "sk-demo" }
     });
-    fireEvent.change(screen.getByLabelText("默认偏好"), {
-      target: { value: "powerful" }
-    });
     fireEvent.click(screen.getByRole("button", { name: "验证连接" }));
 
     expect(await screen.findByText("模型连接可用。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "保存并启用" }));
 
     await waitFor(() => {
-      expect(screen.getAllByText("高性能").length).toBeGreaterThan(0);
+      expect(screen.getByText("DeepSeek（OpenCode）连接")).toBeInTheDocument();
+    });
+    expect(screen.getAllByText("DeepSeek").length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/credentials/validate",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST"
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/credentials",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST"
+      })
+    );
+    const saveCall = fetchMock.mock.calls[2];
+    const saveBody = JSON.parse(String(saveCall?.[1] && "body" in saveCall[1] ? saveCall[1].body : "{}"));
+    expect(saveBody).toMatchObject({
+      label: "DeepSeek（OpenCode）连接",
+      provider: "opencode",
+      providerAccountId: "deepseek/deepseek-chat",
+      rawSecret: "sk-demo",
+      workspaceId: "workspace_1"
     });
     expect(fetchMock).toHaveBeenLastCalledWith(
-      "/api/credentials/model-connections?workspaceId=workspace_1",
+      "/api/credentials?workspaceId=workspace_1",
       { credentials: "include" }
     );
   });
@@ -118,22 +119,14 @@ describe("ModelConnectionsPanel", () => {
       .mockResolvedValueOnce(
         jsonResponse([
           {
+            ...savedCredential(),
             id: "conn_old",
-            kind: "deepseek_api",
-            label: "DeepSeek 旧连接",
-            model: "deepseek-chat",
-            preset: "balanced",
-            status: "valid",
-            workspaceId: "workspace_1"
+            label: "DeepSeek 旧连接"
           },
           {
+            ...savedCredential(),
             id: "conn_active",
-            kind: "deepseek_api",
-            label: "DeepSeek 当前连接",
-            model: "deepseek-chat",
-            preset: "powerful",
-            status: "valid",
-            workspaceId: "workspace_1"
+            label: "DeepSeek 当前连接"
           }
         ], 200)
       )
@@ -141,13 +134,9 @@ describe("ModelConnectionsPanel", () => {
       .mockResolvedValueOnce(
         jsonResponse([
           {
+            ...savedCredential(),
             id: "conn_active",
-            kind: "deepseek_api",
-            label: "DeepSeek 当前连接",
-            model: "deepseek-chat",
-            preset: "powerful",
-            status: "valid",
-            workspaceId: "workspace_1"
+            label: "DeepSeek 当前连接"
           }
         ], 200)
       );
@@ -180,4 +169,20 @@ function jsonResponse(body: unknown, status: number): Response {
     },
     status
   });
+}
+
+function savedCredential(overrides: Record<string, unknown> = {}) {
+  const provider = typeof overrides.provider === "string" ? overrides.provider : "opencode";
+
+  return {
+    credentialSource: "user_provided",
+    id: "conn_1",
+    label: provider === "opencode" ? "DeepSeek（OpenCode）连接" : "DeepSeek 工作区连接",
+    ownerUserId: "user_demo",
+    provider,
+    providerAccountId: provider === "opencode" ? "deepseek/deepseek-chat" : "deepseek-chat",
+    validationState: "valid",
+    workspaceId: "workspace_1",
+    ...overrides
+  };
 }

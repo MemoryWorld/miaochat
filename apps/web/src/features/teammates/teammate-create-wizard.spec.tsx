@@ -49,6 +49,7 @@ describe("TeammateCreateWizard", () => {
           }
         ], 200)
       )
+      .mockResolvedValueOnce(jsonResponse([validCredential()], 200))
       .mockResolvedValueOnce(jsonResponse({ id: "agent_new" }, 201));
 
     render(<TeammateCreateWizard />);
@@ -83,6 +84,13 @@ describe("TeammateCreateWizard", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,
+        "/api/credentials?workspaceId=default-workspace",
+        expect.objectContaining({
+          credentials: "include"
+        })
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        3,
         "/api/custom-agents",
         expect.objectContaining({
           credentials: "include",
@@ -91,13 +99,13 @@ describe("TeammateCreateWizard", () => {
       );
     });
 
-    const postCall = fetchMock.mock.calls[1];
+    const postCall = fetchMock.mock.calls[2];
     expect(postCall).toBeDefined();
     const requestBody = JSON.parse(String(postCall?.[1] && "body" in postCall[1] ? postCall[1].body : "{}"));
 
     expect(requestBody).toMatchObject({
       name: "交付协同助手",
-      provider: "deepseek",
+      provider: "opencode",
       modelProfileId: "fast",
       workspaceId: "default-workspace"
     });
@@ -110,17 +118,19 @@ describe("TeammateCreateWizard", () => {
   });
 
   it("prefills fields from the custom template without exposing runtime choices", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse([
-        {
-          createdAt: "2026-05-29T00:00:00.000Z",
-          id: "default-workspace",
-          name: "默认工作区",
-          ownerUserId: "user_demo",
-          updatedAt: "2026-05-29T00:00:00.000Z"
-        }
-      ], 200)
-    );
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ], 200)
+      )
+      .mockResolvedValueOnce(jsonResponse([validCredential()], 200));
 
     render(<TeammateCreateWizard />);
 
@@ -129,6 +139,41 @@ describe("TeammateCreateWizard", () => {
 
     expect(screen.getByLabelText("AI 同事名称")).toHaveValue("自定义同事");
     expect(screen.queryByText("运行策略")).not.toBeInTheDocument();
+  });
+
+  it("allows OpenCode-backed teammates to reuse a legacy DeepSeek credential", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ], 200)
+      )
+      .mockResolvedValueOnce(
+        jsonResponse([
+          validCredential({
+            id: "cred_legacy_deepseek",
+            label: "DeepSeek 旧连接",
+            provider: "deepseek",
+            providerAccountId: "deepseek-chat"
+          })
+        ], 200)
+      );
+
+    render(<TeammateCreateWizard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "6. 确认" }));
+
+    expect(
+      screen.queryByText("请先在设置中添加可用的 国产模型 / OpenCode 模型连接。")
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("运行 Provider")).toBeInTheDocument();
+    expect(screen.getByText("国产模型 / OpenCode")).toBeInTheDocument();
   });
 
   it("creates and adds the teammate to the current channel when launched from a channel", async () => {
@@ -166,6 +211,7 @@ describe("TeammateCreateWizard", () => {
           }
         ], 200)
       )
+      .mockResolvedValueOnce(jsonResponse([validCredential()], 200))
       .mockResolvedValueOnce(
         jsonResponse({
           agent: {
@@ -196,7 +242,7 @@ describe("TeammateCreateWizard", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
-        3,
+        4,
         "/api/conversations/conv_phase_d/teammates",
         expect.objectContaining({
           credentials: "include",
@@ -205,7 +251,7 @@ describe("TeammateCreateWizard", () => {
       );
     });
 
-    const postCall = fetchMock.mock.calls[2];
+    const postCall = fetchMock.mock.calls[3];
     expect(postCall).toBeDefined();
     const requestBody = JSON.parse(String(postCall?.[1] && "body" in postCall[1] ? postCall[1].body : "{}"));
 
@@ -216,7 +262,7 @@ describe("TeammateCreateWizard", () => {
         modelProfileId: "balanced"
       }
     });
-    expect(requestBody.teammate.provider).toBeUndefined();
+    expect(requestBody.teammate.provider).toBe("opencode");
     expect(routerReplaceMock).toHaveBeenCalledWith("/channels/conv_phase_d?tab=chat");
   });
 
@@ -255,6 +301,7 @@ describe("TeammateCreateWizard", () => {
           }
         ], 200)
       )
+      .mockResolvedValueOnce(jsonResponse([validCredential()], 200))
       .mockResolvedValueOnce(jsonResponse({ agent: { id: "agent_channel_new" } }, 201));
 
     render(<TeammateCreateWizard />);
@@ -294,7 +341,7 @@ describe("TeammateCreateWizard", () => {
             ownerUserId: "user_demo",
             participants: [
               { agentId: "agent_existing_engineer", agentName: "软件工程师" },
-              { agentId: "agent_existing_reviewer", agentName: "代码评审" }
+              { agentId: "agent_existing_reviewer", agentName: "代码评审工程师" }
             ],
             pinnedMessageIds: [],
             title: "Phase D 编码频道",
@@ -302,7 +349,8 @@ describe("TeammateCreateWizard", () => {
             workspaceId: "default-workspace"
           }
         ], 200)
-      );
+      )
+      .mockResolvedValueOnce(jsonResponse([validCredential()], 200));
 
     render(<TeammateCreateWizard />);
 
@@ -324,4 +372,20 @@ function jsonResponse(body: unknown, status: number): Response {
     },
     status
   });
+}
+
+function validCredential(overrides: Record<string, unknown> = {}) {
+  const provider = typeof overrides.provider === "string" ? overrides.provider : "opencode";
+
+  return {
+    credentialSource: "user_provided",
+    id: "cred_opencode",
+    label: provider === "opencode" ? "DeepSeek（OpenCode）连接" : "DeepSeek 工作区连接",
+    ownerUserId: "user_demo",
+    provider,
+    providerAccountId: provider === "opencode" ? "deepseek/deepseek-chat" : "deepseek-chat",
+    validationState: "valid",
+    workspaceId: "default-workspace",
+    ...overrides
+  };
 }

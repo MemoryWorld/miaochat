@@ -46,6 +46,7 @@ describe("deploySourceArchiveActivity", () => {
       deployTargetId: "target_source_1",
       deploymentId: "deployment_source_1",
       hasSecret: false,
+      ownerUserId: "user_source_1",
       targetKind: "source-archive",
       targetName: "Source Download",
       workspaceId: "workspace_deploy_1"
@@ -72,6 +73,7 @@ describe("deploySourceArchiveActivity", () => {
       deployTargetId: "target_source_2",
       deploymentId: "deployment_source_2",
       hasSecret: false,
+      ownerUserId: "user_source_2",
       targetKind: "source-archive",
       targetName: "Source Download",
       workspaceId: "workspace_deploy_1"
