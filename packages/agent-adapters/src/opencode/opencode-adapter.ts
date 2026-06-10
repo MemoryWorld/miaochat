@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 
 import type {
   AgentAdapter,
@@ -71,7 +72,12 @@ export class OpenCodeAdapter implements AgentAdapter {
 
     try {
       const clientFactory = this.clientFactory ?? (await loadOpenCodeClientFactory());
-      runtime = await clientFactory();
+      // OpenCode server 默认固定监听 4096，多个 agent 并发执行时会端口冲突
+      //（"Failed to start server. Is port 4096 in use?"）。每次执行动态分配空闲端口。
+      runtime = await clientFactory({
+        hostname: "127.0.0.1",
+        port: await findFreePort()
+      });
       const authProviderId = resolveAuthProviderId(credential.providerAccountId);
       const model = resolveOpenCodeModel(
         resolveOpenCodeModelSource({
@@ -149,6 +155,27 @@ export class OpenCodeAdapter implements AgentAdapter {
       await workspaceSandbox.cleanup();
     }
   }
+}
+
+async function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+
+    probe.unref();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+
+      probe.close(() => {
+        if (address && typeof address === "object") {
+          resolve(address.port);
+          return;
+        }
+
+        reject(new Error("Failed to allocate a free port for the OpenCode server."));
+      });
+    });
+  });
 }
 
 async function loadOpenCodeClientFactory(): Promise<OpenCodeClientFactory> {

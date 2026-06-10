@@ -1850,6 +1850,7 @@ function buildExecutionInstruction(
         return [
           "请以软件工程师身份执行这份计划，只输出实现结果、关键改动、验证动作和剩余风险。",
           "这是网页创建任务，系统必须从你的回复中抽取真实 HTML artifact。",
+          "交付以回复中的 HTML 内容为准：不要只声称已把文件写入某个路径——评审与 QA 同事看不到你的本地沙箱文件。",
           formatWebpageArtifactOutputContract(),
           "如果没有提供完整 HTML artifact，系统会判定本阶段失败并要求返修。"
         ].join("\n");
@@ -1859,8 +1860,9 @@ function buildExecutionInstruction(
     case "code_reviewer":
       return [
         "请以代码评审工程师身份指出风险、回归点、缺失测试和是否建议通过。",
+        "每位同事在各自独立的临时沙箱中执行，彼此不共享文件系统：验收对象是前序消息中提供的 HTML/代码内容本身，禁止以你本地沙箱中是否存在某个文件作为验收依据，也不要因此判定阻塞。",
         isWebpageTask
-          ? "如果前序输出包含网页产物内容，必须基于真实 HTML/CSS 检查它是否贴合用户目标、是否可预览、是否响应式；没有真实网页 artifact 时必须 REQUEST_CHANGES。"
+          ? "如果前序输出包含网页产物内容，必须基于消息中的真实 HTML/CSS 检查它是否贴合用户目标、是否可预览、是否响应式；前序消息没有真实网页内容时才 REQUEST_CHANGES。"
           : null,
         "最后必须单独输出一行：结论：PASS / REQUEST_CHANGES / BLOCKED。",
         "如果不是 PASS，必须单独输出一行：阻塞项：列出必须返修的问题。"
@@ -1868,8 +1870,9 @@ function buildExecutionInstruction(
     case "qa_tester":
       return [
         "请以质量保障测试工程师身份给出验证路径、执行结果、未覆盖点和最终验收建议。",
+        "每位同事在各自独立的临时沙箱中执行，彼此不共享文件系统：验收对象是前序消息中提供的 HTML/代码内容本身，禁止以你本地沙箱中是否存在某个文件作为验收依据，也不要因此判定阻塞。",
         isWebpageTask
-          ? "如果前序输出包含网页产物内容，必须验证真实 HTML 是否贴合用户目标、能否预览、移动端是否可用；没有真实网页 artifact 时必须 REQUEST_CHANGES。"
+          ? "如果前序输出包含网页产物内容，必须基于消息中的真实 HTML 验证它是否贴合用户目标、能否预览、移动端是否可用；前序消息没有真实网页内容时才 REQUEST_CHANGES。"
           : null,
         "最后必须单独输出一行：结论：PASS / REQUEST_CHANGES / BLOCKED。",
         "如果不是 PASS，必须单独输出一行：阻塞项：列出必须返修的问题。"
