@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException
 } from "@nestjs/common";
 import { sql } from "drizzle-orm";
@@ -24,18 +25,22 @@ import {
   prepareArtifactUploadInputSchema,
   runtimeDiffArtifactDraftSchema,
   runtimeMarkdownArtifactDraftSchema,
+  runtimePptxArtifactDraftSchema,
   runtimeSlidesArtifactDraftSchema,
+  runtimeSlidesArtifactFileNameSuffix,
   runtimeWebpageArtifactDraftSchema,
   workspaceIdSchema,
   type Artifact,
   type ArtifactDownloadUrl,
   type ArtifactTextContent,
   type ArtifactUploadTarget,
-  type MessageAttachmentInput
+  type MessageAttachmentInput,
+  type RuntimePptxArtifactDraft
 } from "@agenthub/contracts";
 
 import { ChannelMembersService } from "../channels/channel-members.service.js";
 import { DatabaseService } from "../database/database.service.js";
+import { renderPptxBuffer, renderSlidesPreviewHtml } from "./pptx-renderer.js";
 import { StorageService } from "./storage.service.js";
 
 type MessageAccess = {
@@ -85,6 +90,12 @@ const createRuntimeSlidesArtifactInputSchema = z.object({
   workspaceId: workspaceIdSchema.optional()
 });
 
+const createRuntimePptxArtifactInputSchema = z.object({
+  draft: runtimePptxArtifactDraftSchema,
+  messageId: messageIdSchema,
+  workspaceId: workspaceIdSchema.optional()
+});
+
 const createTextAttachmentInputSchema = z.object({
   attachment: messageAttachmentInputSchema,
   messageId: messageIdSchema,
@@ -95,6 +106,8 @@ const artifactTextPreviewMaxBytes = 128 * 1024;
 
 @Injectable()
 export class ArtifactsService {
+  private readonly logger = new Logger(ArtifactsService.name);
+
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(ChannelMembersService)
@@ -592,10 +605,90 @@ export class ArtifactsService {
     return artifact;
   }
 
+  async createRuntimePptxArtifact(
+    input: unknown,
+    actorUserId: string
+  ): Promise<Artifact> {
+    const parsed = createRuntimePptxArtifactInputSchema.parse(input);
+    const workspaceId = parsed.workspaceId ?? "default-workspace";
+
+    await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "send",
+      workspaceId
+    });
+
+    const body = await renderPptxBuffer(parsed.draft);
+    const upload = await this.storageService.writeRuntimeBinaryArtifact({
+      body,
+      contentType: parsed.draft.mimeType,
+      fileName: parsed.draft.fileName,
+      messageId: parsed.messageId,
+      runtimeArtifactType: parsed.draft.type,
+      workspaceId
+    });
+
+    const artifact = await this.create({
+      id: upload.artifactId,
+      kind: "attachment",
+      messageId: parsed.messageId,
+      mimeType: parsed.draft.mimeType,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      title: parsed.draft.title,
+      workspaceId
+    }, actorUserId);
+    await this.appendInitialRevision({
+      artifact,
+      authorUserId: actorUserId,
+      content: body,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      summary: "Initial PPTX artifact."
+    });
+    await this.createSlidesPreviewForPptx({
+      actorUserId,
+      draft: parsed.draft,
+      messageId: parsed.messageId,
+      workspaceId
+    });
+
+    return artifact;
+  }
+
+  /** PPTX 的在线放映伴生产物：失败只告警，不影响 .pptx 主产物。 */
+  private async createSlidesPreviewForPptx(input: {
+    actorUserId: string;
+    draft: RuntimePptxArtifactDraft;
+    messageId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    try {
+      await this.createRuntimeSlidesArtifact({
+        draft: {
+          fileName: input.draft.fileName.replace(/\.pptx$/i, runtimeSlidesArtifactFileNameSuffix),
+          html: renderSlidesPreviewHtml(input.draft),
+          mimeType: "text/html",
+          title: input.draft.title,
+          type: "slides"
+        },
+        messageId: input.messageId,
+        workspaceId: input.workspaceId
+      }, input.actorUserId);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create slides preview for PPTX artifact on message ${input.messageId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
   private async appendInitialRevision(input: {
     artifact: Artifact;
     authorUserId: string;
-    content: string;
+    content: Buffer | string;
     previewUrl: string | null;
     storageKey: string | null;
     summary: string;
@@ -821,6 +914,10 @@ function extensionForMimeType(mimeType: string): string {
 
   if (normalized.includes("json")) {
     return ".json";
+  }
+
+  if (normalized.includes("presentationml")) {
+    return ".pptx";
   }
 
   if (normalized.includes("png")) {

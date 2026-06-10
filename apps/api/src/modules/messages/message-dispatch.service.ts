@@ -983,6 +983,14 @@ export class MessageDispatchService implements OnModuleDestroy {
       }, input.ownerUserId);
     }
 
+    if (input.artifact.type === "pptx") {
+      return this.artifactsService.createRuntimePptxArtifact({
+        draft: input.artifact,
+        messageId: input.messageId,
+        workspaceId: input.workspaceId
+      }, input.ownerUserId);
+    }
+
     return this.artifactsService.createRuntimeDiffArtifact({
       draft: input.artifact,
       messageId: input.messageId,
@@ -1058,7 +1066,9 @@ function runtimeArtifactStatusSummary(status: RuntimeArtifactStatus): string {
         ? "网页预览"
         : status.type === "slides"
           ? "幻灯片"
-          : "Markdown 文件";
+          : status.type === "pptx"
+            ? "PPT 文稿"
+            : "Markdown 文件";
 
   switch (status.status) {
     case "created":

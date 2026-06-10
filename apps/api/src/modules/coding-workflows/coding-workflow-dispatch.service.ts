@@ -464,12 +464,10 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       workflowState: input.workflowState,
       workspaceId: input.workspaceId
     });
-    let execution: {
+    const execution: {
       artifacts?: RuntimeArtifactDraft[];
       finalContent: string;
-    };
-
-    execution = await this.executeSingleAgent({
+    } = await this.executeSingleAgent({
       agentId: input.activeAgentId,
       agentName: input.activeAgentName,
       assistantMessageId: input.assistantMessageId,
@@ -1373,6 +1371,22 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       }, input.ownerUserId);
     }
 
+    if (input.artifact.type === "slides") {
+      return this.artifactsService.createRuntimeSlidesArtifact({
+        draft: input.artifact,
+        messageId: input.messageId,
+        workspaceId: input.workspaceId
+      }, input.ownerUserId);
+    }
+
+    if (input.artifact.type === "pptx") {
+      return this.artifactsService.createRuntimePptxArtifact({
+        draft: input.artifact,
+        messageId: input.messageId,
+        workspaceId: input.workspaceId
+      }, input.ownerUserId);
+    }
+
     return this.artifactsService.createRuntimeDiffArtifact({
       draft: input.artifact,
       messageId: input.messageId,
@@ -1982,6 +1996,15 @@ function formatRuntimeArtifactForPrompt(artifact: RuntimeArtifactDraft): string 
     ].join("\n");
   }
 
+  if (artifact.type === "pptx") {
+    return [
+      `- ${artifact.title}（PPT 文稿，${artifact.fileName}，共 ${artifact.slides.length} 页）`,
+      "```json",
+      truncatePromptArtifactContent(JSON.stringify(artifact.slides, null, 2), 8000),
+      "```"
+    ].join("\n");
+  }
+
   return [
     `- ${artifact.title}（Diff，${artifact.fileName}）`,
     "```diff",
@@ -2313,6 +2336,8 @@ function runtimeArtifactKindLabel(type: RuntimeArtifactStatus["type"]): string {
       return "网页预览";
     case "slides":
       return "幻灯片";
+    case "pptx":
+      return "PPT 文稿";
   }
 }
 

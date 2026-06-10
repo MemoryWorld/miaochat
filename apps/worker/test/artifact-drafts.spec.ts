@@ -6,6 +6,7 @@ import {
   extractRuntimeArtifactDrafts,
   runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactToolName,
+  runtimePptxArtifactToolName,
   runtimeSlidesArtifactToolName,
   runtimeWebpageArtifactToolName
 } from "../src/activities/artifact-drafts.js";
@@ -91,6 +92,74 @@ describe("runtime artifact draft extraction", () => {
         type: "slides"
       }
     ]);
+  });
+
+  it("extracts pptx artifact drafts with structured slide content", () => {
+    const envelope = multiAgentOutputEnvelopeSchema.parse({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:intro-deck",
+              input: {
+                fileName: "../Intro deck",
+                slides: [
+                  { subtitle: "多 Agent 协作平台", title: "AgentHub" },
+                  { bullets: ["IM 聊天范式", "群聊编排"], notes: "强调协作", title: "核心能力" }
+                ],
+                title: " 产品介绍 PPT "
+              },
+              inputSchemaVersion: "1",
+              toolName: runtimePptxArtifactToolName
+            }
+          ],
+          expectedSideEffects: ["Create a PPTX artifact."],
+          riskLevel: "low",
+          summary: "Create the requested pptx artifact.",
+          type: "tool_plan"
+        }
+      ],
+      visibleMessage: "PPT 已经生成。"
+    });
+
+    expect(extractRuntimeArtifactDrafts(envelope)).toEqual([
+      {
+        fileName: "Intro-deck.pptx",
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        slides: [
+          { bullets: [], subtitle: "多 Agent 协作平台", title: "AgentHub" },
+          { bullets: ["IM 聊天范式", "群聊编排"], notes: "强调协作", title: "核心能力" }
+        ],
+        title: "产品介绍 PPT",
+        type: "pptx"
+      }
+    ]);
+  });
+
+  it("ignores pptx drafts without any slide", () => {
+    const envelope = multiAgentOutputEnvelopeSchema.parse({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:empty-deck",
+              input: {
+                slides: [],
+                title: "Empty deck"
+              },
+              inputSchemaVersion: "1",
+              toolName: runtimePptxArtifactToolName
+            }
+          ],
+          riskLevel: "low",
+          summary: "Create an empty pptx artifact.",
+          type: "tool_plan"
+        }
+      ],
+      visibleMessage: "PPT 已经生成。"
+    });
+
+    expect(extractRuntimeArtifactDrafts(envelope)).toEqual([]);
   });
 
   it("extracts normalized webpage artifact drafts from low-risk tool plans", () => {

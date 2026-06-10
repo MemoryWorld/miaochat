@@ -582,6 +582,21 @@ function renderPreviewLink({
       );
     }
 
+    if (isPptxArtifact(artifact)) {
+      return (
+        <a
+          aria-label={`下载 ${artifact.title} PPT 文稿`}
+          data-artifact-preview-url
+          href={buildArtifactFileUrl(artifact.id, artifact.workspaceId, "attachment")}
+          rel="noreferrer"
+          style={actionLinkStyle}
+          target="_blank"
+        >
+          下载 PPT
+        </a>
+      );
+    }
+
     return (
       <a
         aria-label={`Open the ${artifact.title} preview in a new tab`}
@@ -679,6 +694,10 @@ function getBadgeLabel(artifact: Artifact, cardType: ArtifactCardType): string {
     return "Diff";
   }
 
+  if (isPptxArtifact(artifact)) {
+    return "PPT 文稿";
+  }
+
   if (cardType === "attachment") {
     return "Attachment";
   }
@@ -730,6 +749,13 @@ function isSlidesArtifact(artifact: Artifact): boolean {
   return (
     isHtmlArtifact(artifact) &&
     /\.slides\.html$/i.test(artifact.storageKey ?? artifact.previewUrl ?? "")
+  );
+}
+
+function isPptxArtifact(artifact: Artifact): boolean {
+  return (
+    artifact.mimeType.toLowerCase().includes("presentationml") ||
+    /\.pptx$/i.test(artifact.storageKey ?? artifact.previewUrl ?? "")
   );
 }
 

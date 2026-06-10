@@ -14,6 +14,13 @@ export const runtimeSlidesArtifactMaxHtmlChars = 256 * 1024;
 export const runtimeSlidesArtifactToolName = "artifact.slides.create" as const;
 /** 幻灯片产物以 .slides.html 收尾，预览/部署链路与网页一致，前端据此识别为幻灯片。 */
 export const runtimeSlidesArtifactFileNameSuffix = ".slides.html" as const;
+/** PPT 产物：模型输出结构化页面内容，服务端渲染为真实 .pptx 二进制。 */
+export const runtimePptxArtifactToolName = "artifact.pptx.create" as const;
+export const runtimePptxArtifactFileNameSuffix = ".pptx" as const;
+export const runtimePptxArtifactMimeType =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation" as const;
+export const runtimePptxArtifactMaxSlides = 40;
+export const runtimePptxArtifactMaxBulletsPerSlide = 12;
 
 export const artifactSchema = z.object({
   id: z.string().min(1),
@@ -115,6 +122,19 @@ export const artifactSlidesCreateToolInputSchema = z.object({
   title: z.string().trim().min(1).max(120)
 });
 
+export const pptxSlideContentSchema = z.object({
+  bullets: z.array(z.string().trim().min(1).max(400)).max(runtimePptxArtifactMaxBulletsPerSlide).default([]),
+  notes: z.string().trim().min(1).max(2000).optional(),
+  subtitle: z.string().trim().min(1).max(300).optional(),
+  title: z.string().trim().min(1).max(160)
+});
+
+export const artifactPptxCreateToolInputSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).optional(),
+  slides: z.array(pptxSlideContentSchema).min(1).max(runtimePptxArtifactMaxSlides),
+  title: z.string().trim().min(1).max(120)
+});
+
 export const artifactDiffCreateToolInputSchema = z.object({
   fileName: z.string().trim().min(1).max(160).optional(),
   patch: z.string()
@@ -180,11 +200,20 @@ export const runtimeSlidesArtifactDraftSchema = z.object({
   type: z.literal("slides")
 });
 
+export const runtimePptxArtifactDraftSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).regex(/\.pptx$/i),
+  mimeType: z.literal(runtimePptxArtifactMimeType).default(runtimePptxArtifactMimeType),
+  slides: z.array(pptxSlideContentSchema).min(1).max(runtimePptxArtifactMaxSlides),
+  title: z.string().trim().min(1).max(120),
+  type: z.literal("pptx")
+});
+
 export const runtimeArtifactDraftSchema = z.discriminatedUnion("type", [
   runtimeMarkdownArtifactDraftSchema,
   runtimeDiffArtifactDraftSchema,
   runtimeWebpageArtifactDraftSchema,
-  runtimeSlidesArtifactDraftSchema
+  runtimeSlidesArtifactDraftSchema,
+  runtimePptxArtifactDraftSchema
 ]);
 
 export const runtimeArtifactStatusSchema = z.object({
@@ -194,7 +223,7 @@ export const runtimeArtifactStatusSchema = z.object({
   previewUrl: z.string().url().optional(),
   status: z.enum(["creating", "created", "failed"]),
   title: z.string().trim().min(1).max(120),
-  type: z.enum(["diff", "markdown", "webpage", "slides"])
+  type: z.enum(["diff", "markdown", "webpage", "slides", "pptx"])
 });
 
 export type Artifact = z.infer<typeof artifactSchema>;
@@ -224,4 +253,9 @@ export type RuntimeWebpageArtifactDraft = z.infer<typeof runtimeWebpageArtifactD
 export type RuntimeSlidesArtifactDraft = z.infer<typeof runtimeSlidesArtifactDraftSchema>;
 export type ArtifactSlidesCreateToolInput = z.infer<
   typeof artifactSlidesCreateToolInputSchema
+>;
+export type PptxSlideContent = z.infer<typeof pptxSlideContentSchema>;
+export type RuntimePptxArtifactDraft = z.infer<typeof runtimePptxArtifactDraftSchema>;
+export type ArtifactPptxCreateToolInput = z.infer<
+  typeof artifactPptxCreateToolInputSchema
 >;
