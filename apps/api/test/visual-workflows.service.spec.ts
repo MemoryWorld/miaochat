@@ -1,34 +1,37 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { VisualWorkflowsService } from "../src/modules/visual-workflows/visual-workflows.service.js";
+import {
+  buildWorkflowDefinitionFromMessage,
+  VisualWorkflowsService
+} from "../src/modules/visual-workflows/visual-workflows.service.js";
 
 const createdAt = new Date("2026-06-08T00:00:00.000Z");
 const definition = {
   edges: [
-    { from: "input_movie", id: "edge_input_collect", label: "电影名", to: "html" },
+    { from: "input_topic", id: "edge_input_context", label: "主题", to: "html" },
     { from: "html", id: "edge_html_output", label: "HTML", to: "output_html" }
   ],
   inputSchema: [
     {
-      description: "用于资料收集和网页生成的电影名称。",
-      key: "movieName",
-      label: "电影名",
-      placeholder: "例如：变形金刚真人电影",
+      description: "用于生成网页的主题、对象或产品名称。",
+      key: "topic",
+      label: "主题",
+      placeholder: "星际穿越网页",
       required: true
     }
   ],
   nodes: [
     {
-      id: "input_movie",
-      inputSummary: "用户输入电影名。",
-      label: "输入节点：电影名",
-      outputSummary: "标准化后的电影名。",
+      id: "input_topic",
+      inputSummary: "用户输入页面主题或任务目标。",
+      label: "输入节点：主题",
+      outputSummary: "标准化后的页面主题和约束。",
       role: "用户输入",
       type: "input"
     },
     {
       id: "html",
-      inputSummary: "接收电影名。",
+      inputSummary: "接收页面主题。",
       label: "HTML 生成节点",
       outputSummary: "完整单文件 HTML。",
       role: "网页生成",
@@ -53,7 +56,7 @@ function buildWorkflowRow(overrides: Record<string, unknown> = {}) {
     conversation_id: "conv_visual",
     created_at: createdAt,
     definition,
-    description: "创建一个电影资料 workflow",
+    description: "创建一个网页生成 workflow",
     id: "visual_workflow",
     latest_run_completed_at: null,
     latest_run_created_at: null,
@@ -67,7 +70,7 @@ function buildWorkflowRow(overrides: Record<string, unknown> = {}) {
     owner_user_id: "user_owner",
     source_message_id: "msg_source",
     status: "preview",
-    title: "电影资料收集到网页生成 workflow",
+    title: "网页生成 workflow",
     updated_at: createdAt,
     workspace_id: "workspace_1",
     ...overrides
@@ -109,6 +112,23 @@ describe("VisualWorkflowsService", () => {
     vi.useRealTimers();
   });
 
+  it("creates workflow definitions from the requested topic instead of a fixed movie template", async () => {
+    const definition = buildWorkflowDefinitionFromMessage(
+      "创建一个日期计算器 workflow：输入年月日，计算到今天还有多少天，输出网页。"
+    );
+
+    expect(JSON.stringify(definition)).toContain("日期");
+    expect(JSON.stringify(definition)).toContain("计算");
+    expect(JSON.stringify(definition)).not.toContain("电影名");
+    expect(JSON.stringify(definition)).not.toContain("变形金刚");
+    expect(definition.inputSchema[0]).toEqual(
+      expect.objectContaining({
+        key: "date",
+        label: "日期"
+      })
+    );
+  });
+
   it("rejects execution when required workflow inputs are missing", async () => {
     const database = {
       execute: vi.fn().mockResolvedValueOnce({ rows: [buildWorkflowRow()] })
@@ -124,7 +144,7 @@ describe("VisualWorkflowsService", () => {
         },
         "user_owner"
       )
-    ).rejects.toThrow("电影名是必填项。");
+    ).rejects.toThrow("主题是必填项。");
 
     expect(artifactsService.createRuntimeWebpageArtifact).not.toHaveBeenCalled();
     expect(database.execute).toHaveBeenCalledTimes(1);
@@ -136,7 +156,7 @@ describe("VisualWorkflowsService", () => {
     const queuedWorkflowRow = buildWorkflowRow({
       latest_run_created_at: queuedAt,
       latest_run_id: "run_visual",
-      latest_run_input_values: { movieName: "星际穿越" },
+      latest_run_input_values: { topic: "星际穿越网页" },
       latest_run_node_states: definition.nodes.map((node) => ({
         completedAt: null,
         error: null,
@@ -162,7 +182,7 @@ describe("VisualWorkflowsService", () => {
     const workflow = await service.execute(
       "visual_workflow",
       {
-        inputValues: { movieName: "星际穿越" },
+        inputValues: { topic: "星际穿越网页" },
         workspaceId: "workspace_1"
       },
       "user_owner"
@@ -171,7 +191,7 @@ describe("VisualWorkflowsService", () => {
     expect(workflow.status).toBe("running");
     expect(workflow.latestRun).toEqual(
       expect.objectContaining({
-        inputValues: { movieName: "星际穿越" },
+        inputValues: { topic: "星际穿越网页" },
         outputArtifactId: null,
         status: "queued"
       })
@@ -191,7 +211,7 @@ describe("VisualWorkflowsService", () => {
       service.execute(
         "visual_workflow",
         {
-          inputValues: { movieName: "星际穿越" },
+        inputValues: { topic: "星际穿越网页" },
           workspaceId: "workspace_1"
         },
         "user_owner"

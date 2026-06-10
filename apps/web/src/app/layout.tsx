@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  description: "AI 协作工作空间，统一收件箱、任务、频道和 AI 同事。",
+  description: "面向网页制作和可视化 Workflow 的 AI 编码会话工作台。",
   title: "Miaochat | AI 协作工作空间"
 };
 

@@ -260,6 +260,34 @@ export class MessagesRepository {
     );
   }
 
+  async unpinMessage(
+    messageId: string,
+    workspaceId: string,
+    ownerUserId: string,
+    currentUserId: string,
+    executor?: DatabaseExecutor
+  ): Promise<MessageRow | null> {
+    const result = await this.resolveExecutor(executor).execute(sql`
+      UPDATE messages
+      SET is_pinned = false, updated_at = now()
+      WHERE id = ${messageId}
+        AND workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+    `);
+
+    if ((result.rowCount ?? 0) === 0) {
+      return null;
+    }
+
+    return this.findMessageById(
+      messageId,
+      workspaceId,
+      ownerUserId,
+      currentUserId,
+      executor
+    );
+  }
+
   async appendPinnedMessageId(
     conversationId: string,
     messageId: string,
@@ -277,6 +305,29 @@ export class MessagesRepository {
             THEN pinned_message_ids
           ELSE pinned_message_ids || jsonb_build_array(CAST(${messageId} AS text))
         END,
+        updated_at = now()
+      WHERE id = ${conversationId}
+        AND workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+      RETURNING pinned_message_ids
+    `);
+
+    return result.rows[0]?.pinned_message_ids ?? [];
+  }
+
+  async removePinnedMessageId(
+    conversationId: string,
+    messageId: string,
+    workspaceId: string,
+    ownerUserId: string,
+    executor?: DatabaseExecutor
+  ): Promise<string[]> {
+    const result = await this.resolveExecutor(executor).execute<{
+      pinned_message_ids: string[];
+    }>(sql`
+      UPDATE conversations
+      SET
+        pinned_message_ids = pinned_message_ids - CAST(${messageId} AS text),
         updated_at = now()
       WHERE id = ${conversationId}
         AND workspace_id = ${workspaceId}

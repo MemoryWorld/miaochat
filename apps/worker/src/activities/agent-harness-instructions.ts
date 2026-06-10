@@ -4,6 +4,7 @@ import {
   type HarnessPromptManifestSection,
   type HarnessRuntimeContext,
   type HarnessRuntimeMode,
+  runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactToolName,
   runtimeWebpageArtifactToolName,
   type StatePointer
@@ -262,7 +263,9 @@ function formatMultiAgentChannelContract(): string {
     '- Markdown 工具唯一允许的 input 形状是 {"title":"标题","fileName":"可选文件名.md","markdown":"Markdown 正文"}。',
     `- 如果用户要求创建网页、网站、页面、首屏或可预览 HTML，必须在 envelope 的 tool_plan intent 中提出低风险工具调用 ${runtimeWebpageArtifactToolName}。`,
     '- 网页工具唯一允许的 input 形状是 {"title":"标题","fileName":"文件名.html","html":"完整单文件 HTML"}；HTML 必须可直接预览，不能依赖 localhost 或未提供的外部本地资源。',
-    "- 不要提出 docx/pdf/xlsx、shell、repo patch、部署或审批工具。",
+    `- 如果用户要求代码审阅 Diff、patch、补丁或可下载 Diff，必须在 envelope 的 tool_plan intent 中提出低风险工具调用 ${runtimeDiffArtifactToolName}。`,
+    '- Diff 工具唯一允许的 input 形状是 {"title":"标题","fileName":"文件名.diff","patch":"完整 unified diff","truncated":false}。',
+    "- 不要提出 docx/pdf/xlsx、shell、部署或审批工具。",
     "- JSON 只属于回复末尾的隐藏 envelope/visibleMessage 契约；用户可见正文必须是自然语言，不要把 JSON、tool_plan、no_action 或 memory_candidate 写进可见 prose。",
     "- 如果需要交接，请在回复末尾附加一个可解析 envelope，形如：",
     "{",

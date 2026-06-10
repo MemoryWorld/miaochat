@@ -96,10 +96,37 @@ type CustomAgentRow = {
   provider: ProviderId;
 };
 
-type RuntimeAssignment = {
+export type RuntimeAssignment = {
   provider: ProviderId;
   runtimeBackend: RuntimeBackend;
 };
+
+export function resolveCodingRuntimeAssignmentFromProviders(
+  providers: readonly ProviderId[]
+): RuntimeAssignment | null {
+  if (providers.includes("opencode") || providers.includes("deepseek")) {
+    return {
+      provider: "opencode",
+      runtimeBackend: "enhanced-hermes"
+    };
+  }
+
+  if (providers.includes("hermes")) {
+    return {
+      provider: "hermes",
+      runtimeBackend: "hermes-compat"
+    };
+  }
+
+  if (providers.includes("openclaw")) {
+    return {
+      provider: "openclaw",
+      runtimeBackend: "openclaw-compat"
+    };
+  }
+
+  return null;
+}
 
 @Injectable()
 export class CodingWorkflowsService {
@@ -560,32 +587,10 @@ export class CodingWorkflowsService {
 
     const providers = result.rows.map((row) => row.provider);
 
-    if (providers.includes("opencode")) {
-      return {
-        provider: "opencode",
-        runtimeBackend: "enhanced-hermes"
-      };
-    }
+    const runtimeAssignment = resolveCodingRuntimeAssignmentFromProviders(providers);
 
-    if (providers.includes("deepseek")) {
-      return {
-        provider: "deepseek",
-        runtimeBackend: "enhanced-hermes"
-      };
-    }
-
-    if (providers.includes("hermes")) {
-      return {
-        provider: "hermes",
-        runtimeBackend: "hermes-compat"
-      };
-    }
-
-    if (providers.includes("openclaw")) {
-      return {
-        provider: "openclaw",
-        runtimeBackend: "openclaw-compat"
-      };
+    if (runtimeAssignment) {
+      return runtimeAssignment;
     }
 
     if (process.env.NODE_ENV === "test") {

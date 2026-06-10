@@ -43,6 +43,29 @@ async function clearAgents(client: Client): Promise<void> {
   await client.query("DELETE FROM custom_agents WHERE workspace_id = $1", [workspaceId]);
 }
 
+async function createConversationForRetentionTest(
+  app: NestFastifyApplication,
+  authCookie: string,
+  title: string
+): Promise<string> {
+  const response = await app.inject({
+    headers: {
+      cookie: authCookie
+    },
+    method: "POST",
+    payload: {
+      agentIds: [agentIds.hermes],
+      mode: "direct",
+      title,
+      workspaceId
+    },
+    url: "/conversations"
+  });
+
+  expect(response.statusCode).toBe(201);
+  return response.json().id as string;
+}
+
 describe("conversations and messages api", () => {
   let app: NestFastifyApplication;
   let client: Client;
@@ -223,6 +246,91 @@ describe("conversations and messages api", () => {
 
     expect(listResponse.statusCode).toBe(200);
     expect(listResponse.json()).toEqual([]);
+  });
+
+  it("removes archived conversations after the 30 day retention window before listing", async () => {
+    const activeConversationId = await createConversationForRetentionTest(
+      app,
+      authCookie,
+      "Active retention check"
+    );
+    const retainedArchivedConversationId = await createConversationForRetentionTest(
+      app,
+      authCookie,
+      "Archived retention check"
+    );
+    const expiredArchivedConversationId = await createConversationForRetentionTest(
+      app,
+      authCookie,
+      "Expired archived retention check"
+    );
+
+    await client.query(
+      "UPDATE conversations SET archived_at = now() - interval '29 days' WHERE id = $1",
+      [retainedArchivedConversationId]
+    );
+    await client.query(
+      "UPDATE conversations SET archived_at = now() - interval '31 days' WHERE id = $1",
+      [expiredArchivedConversationId]
+    );
+
+    const listResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "GET",
+      url: `/conversations?workspaceId=${workspaceId}&includeArchived=true`
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    const listedConversationIds = listResponse
+      .json()
+      .map((conversation: { id: string }) => conversation.id);
+    expect(listedConversationIds).toContain(activeConversationId);
+    expect(listedConversationIds).toContain(retainedArchivedConversationId);
+    expect(listedConversationIds).not.toContain(expiredArchivedConversationId);
+
+    const expiredRows = await client.query(
+      "SELECT id FROM conversations WHERE id = $1",
+      [expiredArchivedConversationId]
+    );
+    expect(expiredRows.rows).toHaveLength(0);
+  });
+
+  it("does not restore archived conversations after the 30 day retention window", async () => {
+    const conversationId = await createConversationForRetentionTest(
+      app,
+      authCookie,
+      "Expired restore check"
+    );
+
+    const archiveResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      url: `/conversations/${conversationId}/archive?workspaceId=${workspaceId}`
+    });
+    expect(archiveResponse.statusCode).toBe(200);
+
+    await client.query(
+      "UPDATE conversations SET archived_at = now() - interval '31 days' WHERE id = $1",
+      [conversationId]
+    );
+
+    const restoreResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      url: `/conversations/${conversationId}/restore?workspaceId=${workspaceId}`
+    });
+
+    expect(restoreResponse.statusCode).toBe(404);
+    const rows = await client.query("SELECT id FROM conversations WHERE id = $1", [
+      conversationId
+    ]);
+    expect(rows.rows).toHaveLength(0);
   });
 
   it("uses channel wording for generated direct and group titles", async () => {

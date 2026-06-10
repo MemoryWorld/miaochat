@@ -34,7 +34,14 @@ describe("AppShell", () => {
         screen.getByRole("navigation", {
           name: "Primary workspace navigation"
         })
-      ).getByRole("link", { name: /工作台/i })
+      ).getByRole("link", { name: /会话/i })
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", {
+          name: "Primary workspace navigation"
+        })
+      ).getByRole("link", { name: /Workflow/i })
     ).toBeInTheDocument();
     expect(
       within(
@@ -50,7 +57,7 @@ describe("AppShell", () => {
         })
       ).queryByRole("link", { name: /直接协作/i })
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "新建同事" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "新建同事" })).not.toBeInTheDocument();
     expect(screen.getByText("Sidebar")).toBeInTheDocument();
     expect(screen.getByText("Content")).toBeInTheDocument();
   });

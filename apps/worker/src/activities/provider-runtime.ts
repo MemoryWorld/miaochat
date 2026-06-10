@@ -33,12 +33,14 @@ export type PhaseARuntimeExecution = {
 };
 
 export async function createPhaseARuntimeExecution(input: {
+  credentialId?: string | null;
   executionMode: AgentExecutionMode;
   ownerUserId: string;
   provider: ProviderId;
   workspaceId: string;
 }): Promise<PhaseARuntimeExecution> {
-  const provider = assertPhaseARuntimeProvider(input.provider);
+  const requestedProvider = assertPhaseARuntimeProvider(input.provider);
+  const provider = resolveExecutableRuntimeProvider(requestedProvider);
 
   if (provider === "mock") {
     return {
@@ -51,6 +53,7 @@ export async function createPhaseARuntimeExecution(input: {
   }
 
   const credential = await selectLatestByokCredential({
+    credentialId: input.credentialId,
     ownerUserId: input.ownerUserId,
     provider,
     workspaceId: input.workspaceId
@@ -80,6 +83,10 @@ export async function createPhaseARuntimeExecution(input: {
   };
 }
 
+function resolveExecutableRuntimeProvider(provider: PhaseARuntimeProvider): PhaseARuntimeProvider {
+  return provider === "deepseek" ? "opencode" : provider;
+}
+
 export function assertPhaseARuntimeProvider(provider: ProviderId): PhaseARuntimeProvider {
   switch (provider) {
     case "mock":
@@ -94,12 +101,27 @@ export function assertPhaseARuntimeProvider(provider: ProviderId): PhaseARuntime
 }
 
 async function selectLatestByokCredential(input: {
+  credentialId?: string | null;
   ownerUserId: string;
   provider: Exclude<PhaseARuntimeProvider, "mock">;
   workspaceId: string;
 }): Promise<RuntimeCredential> {
   return withDatabase(async (client) => {
-    const result = await client.query<RuntimeCredentialRow>(
+    const preferredCredentialId =
+      input.credentialId && looksLikeCredentialId(input.credentialId)
+        ? input.credentialId
+        : null;
+    const preferredCredential = preferredCredentialId
+      ? await selectPreferredByokCredential(client, {
+          credentialId: preferredCredentialId,
+          ownerUserId: input.ownerUserId,
+          provider: input.provider,
+          workspaceId: input.workspaceId
+        })
+      : null;
+    const result = preferredCredential
+      ? { rows: [preferredCredential] }
+      : await client.query<RuntimeCredentialRow>(
       `
         SELECT
           encrypted_secret,
@@ -142,6 +164,40 @@ async function selectLatestByokCredential(input: {
   });
 }
 
+async function selectPreferredByokCredential(
+  client: Client,
+  input: {
+    credentialId: string;
+    ownerUserId: string;
+    provider: Exclude<PhaseARuntimeProvider, "mock">;
+    workspaceId: string;
+  }
+): Promise<RuntimeCredentialRow | null> {
+  const allowedProviders =
+    input.provider === "opencode" ? ["opencode", "deepseek"] : [input.provider];
+  const result = await client.query<RuntimeCredentialRow>(
+    `
+      SELECT
+        encrypted_secret,
+        id,
+        provider,
+        provider_account_id,
+        workspace_id
+      FROM provider_credentials
+      WHERE id = $1
+        AND owner_user_id = $2
+        AND workspace_id = $3
+        AND provider = ANY($4::text[])
+        AND credential_source = 'user_provided'
+        AND validation_state = 'valid'
+      LIMIT 1
+    `,
+    [input.credentialId, input.ownerUserId, input.workspaceId, allowedProviders]
+  );
+
+  return result.rows[0] ?? null;
+}
+
 async function selectLatestLegacyDeepSeekCredential(
   client: Client,
   input: {
@@ -178,6 +234,12 @@ function normalizeRuntimeProviderAccountId(row: RuntimeCredentialRow): string {
   }
 
   return `deepseek/${row.provider_account_id || "deepseek-chat"}`;
+}
+
+function looksLikeCredentialId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+    value.trim()
+  );
 }
 
 async function withDatabase<T>(callback: (client: Client) => Promise<T>): Promise<T> {

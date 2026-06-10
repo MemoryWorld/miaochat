@@ -379,7 +379,7 @@ describe("coding workflow execution integration", () => {
     });
   }, 60_000);
 
-  it("falls back to a persisted HTML artifact when the engineer claims tool use without an envelope", async () => {
+  it("fails without persisting a fallback HTML artifact when the engineer claims tool use without an envelope", async () => {
     deepseekRequests.length = 0;
     forceMissingWebpageArtifact = true;
     forceRepeatedRepairBlock = false;
@@ -416,17 +416,22 @@ describe("coding workflow execution integration", () => {
           workspaceId
         });
 
-        const events = await readEventsUntil(
+        await readEventsUntil(
           stream.reader,
           (event) =>
             event.kind === "conversation.status" &&
-            event.payload.label === "coding.completed"
+            event.payload.label === "coding.execution_failed"
         );
-        const workflow = await waitForWorkflow(baseUrl, created.workflow.conversationId, authCookie);
+        const workflow = await waitForWorkflow(
+          baseUrl,
+          created.workflow.conversationId,
+          authCookie,
+          "execution_failed"
+        );
         const messages = await waitForMessages(
           baseUrl,
           created.workflow.conversationId,
-          7,
+          4,
           authCookie
         );
         const channelArtifacts = await fetchJson<Artifact[]>(
@@ -437,75 +442,38 @@ describe("coding workflow execution integration", () => {
           `${baseUrl}/activity?workflowId=${workflow.id}&workspaceId=${workspaceId}`,
           authCookie
         );
-        const htmlArtifact = channelArtifacts.find((artifact) => artifact.mimeType === "text/html");
-        const completedStreamMessageIds = events
-          .filter(
-            (event): event is StreamEvent & { kind: "conversation.message.completed" } =>
-              event.kind === "conversation.message.completed"
-          )
-          .map((event) => event.payload.messageId);
-        const persistedMessageIds = new Set(messages.map((message) => message.id));
 
-        expect(workflow.state).toBe("completed");
+        expect(workflow.state).toBe("execution_failed");
         expect(workflow.taskSnapshot).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
               ownerRole: "software_engineer",
-              state: "done"
+              state: "todo"
             }),
             expect.objectContaining({
               ownerRole: "code_reviewer",
-              state: "done"
+              state: "todo"
             }),
             expect.objectContaining({
               ownerRole: "qa_tester",
-              state: "done"
+              state: "todo"
             }),
             expect.objectContaining({
               ownerRole: "tech_lead",
-              state: "done"
+              state: "todo"
             })
           ])
         );
-        expect(htmlArtifact).toEqual(
-          expect.objectContaining({
-            kind: "preview",
-            mimeType: "text/html",
-            storageKey: expect.any(String),
-            title: expect.stringContaining("变形金刚")
-          })
+        expect(channelArtifacts.filter((artifact) => artifact.mimeType === "text/html")).toEqual([]);
+        expect(messages.map((message) => message.content).join("\n")).toContain(
+          "缺少必需的 webpage 产物"
         );
-        expect(messages.map((message) => message.sourceAgentId)).toEqual(
-          expect.arrayContaining([
-            workflow.engineerAgentId,
-            workflow.reviewerAgentId,
-            workflow.qaAgentId,
-            workflow.planningTeammateId
-          ])
-        );
-        expect(completedStreamMessageIds.length).toBeGreaterThan(0);
-        expect(completedStreamMessageIds.every((messageId) => persistedMessageIds.has(messageId))).toBe(true);
         expect(activityRounds).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
               actingTeammateId: "software_engineer",
               phase: "implementation",
-              status: "succeeded"
-            }),
-            expect.objectContaining({
-              actingTeammateId: "code_reviewer",
-              phase: "review",
-              status: "succeeded"
-            }),
-            expect.objectContaining({
-              actingTeammateId: "qa_tester",
-              phase: "qa",
-              status: "succeeded"
-            }),
-            expect.objectContaining({
-              actingTeammateId: "tech_lead",
-              phase: "coordination",
-              status: "succeeded"
+              status: "failed"
             })
           ])
         );
@@ -516,7 +484,7 @@ describe("coding workflow execution integration", () => {
               round.phase === "implementation" &&
               round.status === "failed"
           )
-        ).toEqual([]);
+        ).toHaveLength(1);
         expect(
           activityRounds.filter(
             (round) =>
@@ -524,7 +492,7 @@ describe("coding workflow execution integration", () => {
               round.phase === "implementation" &&
               round.status === "succeeded"
           )
-        ).toHaveLength(1);
+        ).toEqual([]);
         expect(
           deepseekRequests
             .map(readPromptFromDeepSeekRequest)
@@ -534,7 +502,7 @@ describe("coding workflow execution integration", () => {
           deepseekRequests
             .map(readPromptFromDeepSeekRequest)
             .filter((prompt) => prompt.includes("请以质量保障测试工程师身份"))
-        ).toHaveLength(1);
+        ).toHaveLength(0);
         expect(messages.map((message) => message.content).join("\n")).not.toMatch(
           /artifact\.webpage\.create|隐藏的工作流|tool_plan|envelope/
         );

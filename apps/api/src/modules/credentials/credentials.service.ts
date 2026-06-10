@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   BadRequestException,
   Inject,
@@ -9,6 +11,7 @@ import { sql } from "drizzle-orm";
 import type {
   CreateProviderCredentialInput,
   ModelConnectionPreset,
+  ProviderId,
   ProviderCredential
 } from "@agenthub/contracts";
 import { CredentialService, type CredentialRepository } from "@agenthub/domain";
@@ -200,6 +203,7 @@ export class CredentialsService {
     }
 
     const credential = await this.domainService.create(parsed, ownerUserId);
+    await this.upsertAgentContactForCredential(credential);
     return toCredentialMetadata(credential);
   }
 
@@ -400,6 +404,59 @@ export class CredentialsService {
       );
     }
   }
+
+  private async upsertAgentContactForCredential(
+    credential: ProviderCredential
+  ): Promise<void> {
+    const contact = buildAgentContactForCredential(credential);
+
+    if (!contact) {
+      return;
+    }
+
+    await this.database.execute(sql`
+      INSERT INTO custom_agents (
+        id,
+        avatar_url,
+        capability_tags,
+        name,
+        owner_user_id,
+        provider,
+        model_profile_id,
+        memory_mode,
+        approval_mode,
+        output_style,
+        scope_description,
+        system_prompt,
+        tool_bindings,
+        workspace_id
+      )
+      VALUES (
+        ${randomUUID()},
+        null,
+        ${JSON.stringify(contact.capabilityTags)}::jsonb,
+        ${contact.name},
+        ${credential.ownerUserId},
+        ${contact.provider},
+        ${credential.id},
+        'workspace_plus_teammate',
+        'balanced',
+        '清晰、结构化、先给结论再给步骤。',
+        ${contact.scopeDescription},
+        ${contact.systemPrompt},
+        ${JSON.stringify([])}::jsonb,
+        ${credential.workspaceId}
+      )
+      ON CONFLICT (owner_user_id, workspace_id, name)
+      DO UPDATE SET
+        capability_tags = EXCLUDED.capability_tags,
+        provider = EXCLUDED.provider,
+        model_profile_id = EXCLUDED.model_profile_id,
+        scope_description = EXCLUDED.scope_description,
+        system_prompt = EXCLUDED.system_prompt,
+        updated_at = now()
+    `);
+  }
 }
 
 function resolveModelConnectionPreset(
@@ -410,4 +467,128 @@ function resolveModelConnectionPreset(
   }
 
   return "balanced";
+}
+
+function buildAgentContactForCredential(credential: ProviderCredential): {
+  capabilityTags: string[];
+  name: string;
+  provider: ProviderId;
+  scopeDescription: string;
+  systemPrompt: string;
+} | null {
+  if (credential.validationState !== "valid") {
+    return null;
+  }
+
+  const runtime = resolveRuntimeKindForCredential(credential);
+
+  if (!runtime) {
+    return null;
+  }
+
+  const name = resolveAgentContactName(credential);
+  const capabilityTags = [
+    "platform-runtime-agent",
+    `runtime:${runtime}`,
+    `model-connection:${credential.id}`,
+    "代码",
+    "网页",
+    "文件产出",
+    "通用聊天"
+  ];
+
+  if (runtime !== "opencode") {
+    capabilityTags.push("评审");
+  }
+
+  return {
+    capabilityTags,
+    name,
+    provider: runtime === "claude_code" ? "claude-code" : runtime,
+    scopeDescription: buildAgentContactScopeDescription(name, credential),
+    systemPrompt: buildAgentContactSystemPrompt(name, runtime)
+  };
+}
+
+function resolveRuntimeKindForCredential(
+  credential: ProviderCredential
+): "claude_code" | "codex" | "opencode" | null {
+  switch (credential.provider) {
+    case "codex":
+      return "codex";
+    case "claude-code":
+      return "claude_code";
+    case "deepseek":
+    case "opencode":
+      return "opencode";
+    case "hermes":
+    case "openclaw":
+      return null;
+  }
+}
+
+function resolveAgentContactName(credential: ProviderCredential): string {
+  if (credential.provider === "codex") {
+    return "Codex";
+  }
+
+  if (credential.provider === "claude-code") {
+    return "Claude Code";
+  }
+
+  const vendor = credential.providerAccountId.split("/")[0]?.trim().toLowerCase() ?? "";
+
+  switch (vendor) {
+    case "deepseek":
+      return "DeepSeek Agent";
+    case "qwen":
+    case "dashscope":
+      return "Qwen Agent";
+    case "moonshot":
+    case "kimi":
+      return "Kimi Agent";
+    case "zhipu":
+    case "glm":
+      return "GLM Agent";
+    case "minimax":
+      return "MiniMax Agent";
+    default:
+      return normalizeAgentContactName(credential.label);
+  }
+}
+
+function normalizeAgentContactName(label: string): string {
+  const cleaned = label
+    .replace(/（OpenCode）/g, "")
+    .replace(/\(OpenCode\)/gi, "")
+    .replace(/连接$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.length > 0 ? `${cleaned} Agent` : "OpenCode Agent";
+}
+
+function buildAgentContactScopeDescription(
+  name: string,
+  credential: ProviderCredential
+): string {
+  if (credential.provider === "codex") {
+    return "使用 OpenAI Codex 处理代码、网页和工程任务。";
+  }
+
+  if (credential.provider === "claude-code") {
+    return "使用 Claude Code 处理代码理解、编辑和交付任务。";
+  }
+
+  return `${name} 可处理聊天、代码和网页产物生成任务。`;
+}
+
+function buildAgentContactSystemPrompt(
+  name: string,
+  runtime: "claude_code" | "codex" | "opencode"
+): string {
+  const runtimeLabel =
+    runtime === "codex" ? "Codex" : runtime === "claude_code" ? "Claude Code" : "当前模型";
+
+  return `你是 Miaochat 中的 ${name}，通过 ${runtimeLabel} 处理用户的聊天、代码和网页产物任务。保持回答清晰，只有真实产物生成后才声称已生成文件。`;
 }

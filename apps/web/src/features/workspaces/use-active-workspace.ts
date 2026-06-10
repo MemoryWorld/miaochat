@@ -62,19 +62,45 @@ export function useActiveWorkspace(): UseActiveWorkspaceResult {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/workspaces`, {
-        credentials: "include"
-      });
+      const applyWorkspaceList = (payload: Workspace[]) => {
+        setWorkspaces(payload);
+        hasSuccessfulWorkspaceLoadRef.current = true;
+        setError(null);
+        setRequiresLogin(false);
 
-      if (!response.ok) {
-        const payload = await readJson(response);
-        const message = readApiErrorMessage(payload, "工作区加载失败。");
-        if (isAuthRequiredMessage(message)) {
+        // If the persisted active workspace is not in the list, fall back to the
+        // first available one so the rest of the shell stays usable.
+        setActiveWorkspaceId((current) => {
+          if (payload.some((workspace) => workspace.id === current)) {
+            return current;
+          }
+          const fallback = payload[0]?.id ?? FALLBACK_WORKSPACE_ID;
+          writeStoredWorkspaceId(fallback);
+          return fallback;
+        });
+      };
+
+      const result = await fetchWorkspaceList();
+
+      if (!result.ok) {
+        if (isAuthRequiredMessage(result.message)) {
           const sessionIsAuthenticated = await isSessionAuthenticated();
           const shouldClearCachedWorkspace =
             options.clearOnAuthFailure === true || !hasSuccessfulWorkspaceLoadRef.current;
 
-          if (sessionIsAuthenticated || !shouldClearCachedWorkspace) {
+          if (sessionIsAuthenticated) {
+            const retryResult = await fetchWorkspaceList();
+            if (retryResult.ok) {
+              applyWorkspaceList(retryResult.workspaces);
+              return;
+            }
+
+            setError("工作区刷新失败。");
+            setRequiresLogin(false);
+            return;
+          }
+
+          if (!shouldClearCachedWorkspace) {
             setError("工作区刷新失败。");
             setRequiresLogin(false);
             return;
@@ -83,41 +109,19 @@ export function useActiveWorkspace(): UseActiveWorkspaceResult {
           setWorkspaces([]);
           hasSuccessfulWorkspaceLoadRef.current = false;
           setRequiresLogin(true);
-          setError(message);
+          setError(result.message);
           return;
         }
 
         if (!hasSuccessfulWorkspaceLoadRef.current) {
           setWorkspaces([]);
         }
-        setError(message);
+        setError(result.message);
         setRequiresLogin(false);
         return;
       }
 
-      const raw = (await response.json()) as unknown;
-      if (!Array.isArray(raw)) {
-        setError("工作区加载失败。");
-        setRequiresLogin(false);
-        return;
-      }
-
-      const payload = raw as Workspace[];
-      setWorkspaces(payload);
-      hasSuccessfulWorkspaceLoadRef.current = true;
-      setError(null);
-      setRequiresLogin(false);
-
-      // If the persisted active workspace is not in the list, fall back to the
-      // first available one so the rest of the shell stays usable.
-      setActiveWorkspaceId((current) => {
-        if (payload.some((workspace) => workspace.id === current)) {
-          return current;
-        }
-        const fallback = payload[0]?.id ?? FALLBACK_WORKSPACE_ID;
-        writeStoredWorkspaceId(fallback);
-        return fallback;
-      });
+      applyWorkspaceList(result.workspaces);
     } catch {
       setError("工作区加载失败。");
       setRequiresLogin(false);
@@ -145,6 +149,44 @@ export function useActiveWorkspace(): UseActiveWorkspaceResult {
     refresh,
     selectWorkspace,
     workspaces
+  };
+}
+
+type WorkspaceListResult =
+  | {
+      ok: true;
+      workspaces: Workspace[];
+    }
+  | {
+      message: string;
+      ok: false;
+    };
+
+async function fetchWorkspaceList(): Promise<WorkspaceListResult> {
+  const response = await fetch(`${apiBaseUrl}/workspaces`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    const payload = await readJson(response);
+
+    return {
+      message: readApiErrorMessage(payload, "工作区加载失败。"),
+      ok: false
+    };
+  }
+
+  const payload = await readJson(response);
+  if (!Array.isArray(payload)) {
+    return {
+      message: "工作区加载失败。",
+      ok: false
+    };
+  }
+
+  return {
+    ok: true,
+    workspaces: payload as Workspace[]
   };
 }
 

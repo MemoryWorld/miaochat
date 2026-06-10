@@ -15,35 +15,41 @@ export function PinMessageAction({
   onPin,
   tone = "light"
 }: PinMessageActionProps) {
-  if (isPinned) {
-    return (
-      <span
-        style={{
-          ...baseChipStyle,
-          background: tone === "dark" ? "rgba(255, 255, 255, 0.16)" : "rgba(16, 24, 40, 0.08)",
-          color: tone === "dark" ? "#fff" : "#101828"
-        }}
-      >
-        Pinned
-      </span>
-    );
-  }
+  const isDisabled = disabled || isPending;
 
   return (
     <button
-      disabled={disabled || isPending}
+      disabled={isDisabled}
       onClick={() => {
         onPin?.();
       }}
       style={{
         ...baseChipStyle,
-        background: tone === "dark" ? "rgba(255, 255, 255, 0.12)" : "rgba(11, 110, 255, 0.08)",
-        color: tone === "dark" ? "#fff" : "#175cd3",
-        cursor: disabled || isPending ? "default" : "pointer"
+        background: isPinned
+          ? tone === "dark"
+            ? "rgba(255, 255, 255, 0.16)"
+            : "rgba(16, 24, 40, 0.08)"
+          : tone === "dark"
+            ? "rgba(255, 255, 255, 0.12)"
+            : "rgba(11, 110, 255, 0.08)",
+        color: isPinned
+          ? tone === "dark"
+            ? "#fff"
+            : "#101828"
+          : tone === "dark"
+            ? "#fff"
+            : "#175cd3",
+        cursor: isDisabled ? "default" : "pointer"
       }}
       type="button"
     >
-      {isPending ? "Pinning..." : "Pin message"}
+      {isPinned
+        ? isPending
+          ? "取消中..."
+          : "取消置顶"
+        : isPending
+          ? "Pinning..."
+          : "Pin message"}
     </button>
   );
 }

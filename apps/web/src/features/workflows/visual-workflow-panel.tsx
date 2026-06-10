@@ -9,6 +9,8 @@ import type {
   VisualWorkflowStatus
 } from "@agenthub/contracts";
 
+import { MarkdownContent } from "../chat/markdown-content";
+
 type VisualWorkflowPanelProps = {
   busyWorkflowId: string | null;
   onCancel: (workflow: VisualWorkflow) => Promise<void>;
@@ -90,9 +92,9 @@ function WorkflowCard({
           <h3 className="m-0 mt-3 text-lg font-semibold text-slate-950">
             {workflow.title}
           </h3>
-          <p className="mb-0 mt-2 max-w-4xl text-sm leading-7 text-slate-600">
-            {workflow.description}
-          </p>
+          <div className="mb-0 mt-2 max-w-4xl text-sm leading-7 text-slate-600">
+            <MarkdownContent content={workflow.description} />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link

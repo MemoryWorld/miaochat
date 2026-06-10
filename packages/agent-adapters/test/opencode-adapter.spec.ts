@@ -179,4 +179,30 @@ describe("OpenCodeAdapter", () => {
       })
     ).rejects.toThrow(/OpenCode API Key/);
   });
+
+  it("reports a missing OpenCode CLI as a missing runtime instead of a provider failure", async () => {
+    const adapter = new OpenCodeAdapter({
+      clientFactory: async () => {
+        throw Object.assign(new Error("spawn opencode ENOENT"), {
+          code: "ENOENT"
+        });
+      },
+      credentialResolver,
+      workspaceSandboxEnabled: false
+    });
+
+    await expect(
+      adapter.execute({
+        agentId: "agent_opencode",
+        conversationId: "conv_opencode",
+        credentialId: "cred_opencode",
+        message: "Build the page",
+        provider: "opencode",
+        workspaceId: "workspace_opencode"
+      })
+    ).rejects.toMatchObject({
+      code: "missing_runtime",
+      retryable: false
+    });
+  });
 });

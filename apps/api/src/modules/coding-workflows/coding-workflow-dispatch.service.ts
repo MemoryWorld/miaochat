@@ -23,6 +23,7 @@ import {
 import { Client, Connection } from "@temporalio/client";
 import { sql } from "drizzle-orm";
 
+import { formatRuntimeFailureReason } from "../agent-runtime/runtime-error-format.js";
 import { ArtifactsService } from "../artifacts/artifacts.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { StreamBrokerService } from "../streams/stream-broker.service.js";
@@ -78,7 +79,7 @@ const maxCodingWorkflowRepairCycles = 2;
 
 class MissingRequiredArtifactError extends Error {
   constructor(readonly artifactType: RuntimeArtifactDraft["type"]) {
-    super(`软件工程师没有生成必需的 ${artifactType} 产物。`);
+    super(`缺少必需的 ${artifactType} 产物，软件工程师没有生成系统可识别的真实产物。`);
   }
 }
 
@@ -157,8 +158,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       };
       const runExecutionStage = async (
         executionStage: WorkflowExecutionSnapshot["executionStages"][number],
-        prompt = buildExecutionPrompt(snapshot, executionStage, stageResults),
-        options: { allowRequiredArtifactFallback?: boolean } = {}
+        prompt = buildExecutionPrompt(snapshot, executionStage, stageResults)
       ) => {
         const result = await this.runStage({
           activeAgentId: executionStage.agentId,
@@ -178,12 +178,6 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
           requiredArtifactType:
             requiresWebpageArtifact && executionStage.role === "software_engineer"
               ? "webpage"
-              : undefined,
-          requiredArtifactFallback:
-            options.allowRequiredArtifactFallback &&
-            requiresWebpageArtifact &&
-            executionStage.role === "software_engineer"
-              ? buildFallbackWebpageArtifact(snapshot)
               : undefined,
           workflowId: snapshot.id,
           workflowState: mapExecutionRoleToWorkflowState(executionStage.role),
@@ -208,24 +202,8 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       const qaStage = snapshot.executionStages.find((stage) => stage.role === "qa_tester");
 
       if (engineerStage && (reviewerStage || qaStage)) {
-        try {
-          const engineerResult = await runExecutionStage(engineerStage, undefined, {
-            allowRequiredArtifactFallback: true
-          });
-          recordEngineerWebpageResult(engineerResult, false);
-        } catch (error) {
-          if (!(error instanceof MissingRequiredArtifactError)) {
-            throw error;
-          }
-
-          repairCyclesUsed += 1;
-          const engineerResult = await runExecutionStage(
-            engineerStage,
-            buildMissingArtifactRepairPrompt(snapshot, engineerStage, stageResults, error.artifactType),
-            { allowRequiredArtifactFallback: true }
-          );
-          recordEngineerWebpageResult(engineerResult, false);
-        }
+        const engineerResult = await runExecutionStage(engineerStage);
+        recordEngineerWebpageResult(engineerResult, false);
 
         for (let repairCycle = 0; repairCycle <= maxCodingWorkflowRepairCycles; repairCycle += 1) {
           const reviewerVerdict = reviewerStage
@@ -245,8 +223,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
             repairCyclesUsed += 1;
             const engineerResult = await runExecutionStage(
               engineerStage,
-              buildRepairPrompt(snapshot, engineerStage, stageResults, reviewerVerdict, repairCycle + 1),
-              { allowRequiredArtifactFallback: true }
+              buildRepairPrompt(snapshot, engineerStage, stageResults, reviewerVerdict, repairCycle + 1)
             );
             const repeatedRepair = recordEngineerWebpageResult(engineerResult, true);
             if (repeatedRepair) {
@@ -259,8 +236,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
               repairCyclesUsed += 1;
               const retryEngineerResult = await runExecutionStage(
                 engineerStage,
-                buildRepairPrompt(snapshot, engineerStage, stageResults, repeatedRepair, repairCycle + 2),
-                { allowRequiredArtifactFallback: true }
+                buildRepairPrompt(snapshot, engineerStage, stageResults, repeatedRepair, repairCycle + 2)
               );
               const repeatedRetryRepair = recordEngineerWebpageResult(retryEngineerResult, true);
               if (repeatedRetryRepair) {
@@ -292,8 +268,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
           repairCyclesUsed += 1;
           const engineerResult = await runExecutionStage(
             engineerStage,
-            buildRepairPrompt(snapshot, engineerStage, stageResults, qaVerdict, repairCycle + 1),
-            { allowRequiredArtifactFallback: true }
+            buildRepairPrompt(snapshot, engineerStage, stageResults, qaVerdict, repairCycle + 1)
           );
           const repeatedRepair = recordEngineerWebpageResult(engineerResult, true);
           if (repeatedRepair) {
@@ -326,9 +301,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
         }
       } else {
         for (const executionStage of snapshot.executionStages) {
-          const result = await runExecutionStage(executionStage, undefined, {
-            allowRequiredArtifactFallback: executionStage.role === "software_engineer"
-          });
+          const result = await runExecutionStage(executionStage);
           if (executionStage.role === "software_engineer") {
             recordEngineerWebpageResult(result, false);
           }
@@ -406,6 +379,8 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
         workspaceId: snapshot.workspaceId
       });
     } catch (error) {
+      const failureReason = formatRuntimeFailureReason(error);
+
       taskSnapshot = markRunningTasksFailed(taskSnapshot);
       await this.closeOpenActivityRounds({
         ownerUserId: snapshot.ownerUserId,
@@ -419,10 +394,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
         workflowId: snapshot.id
       });
       await this.insertSystemMessage({
-        content:
-          error instanceof Error
-            ? `编码工作流执行失败：${error.message}`
-            : "编码工作流执行失败。",
+        content: `编码工作流执行失败：${failureReason}`,
         conversationId: snapshot.conversationId,
         ownerUserId: snapshot.ownerUserId,
         workspaceId: snapshot.workspaceId
@@ -433,10 +405,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
         label: "coding.execution_failed",
         planningRole: snapshot.planningRole,
         state: "failed",
-        summary:
-          error instanceof Error
-            ? `编码工作流执行失败：${error.message}`
-            : "编码工作流执行失败。",
+        summary: `编码工作流执行失败：${failureReason}`,
         taskSnapshot,
         workflowId: snapshot.id,
         workflowState: "execution_failed",
@@ -467,7 +436,6 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
     workspaceId: string;
     writeFinalMarkdownReport?: boolean;
     requiredArtifactType?: RuntimeArtifactDraft["type"];
-    requiredArtifactFallback?: RuntimeArtifactDraft;
   }): Promise<CodingStageResult> {
     const taskSnapshot = startTask(input.currentTaskSnapshot, input.stageId);
 
@@ -495,8 +463,32 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       finalContent: string;
     };
 
-    try {
-      execution = await this.executeSingleAgent({
+    execution = await this.executeSingleAgent({
+      agentId: input.activeAgentId,
+      agentName: input.activeAgentName,
+      assistantMessageId: input.assistantMessageId,
+      context: await this.loadConversationContext(
+        input.conversationId,
+        input.workspaceId,
+        input.ownerUserId
+      ),
+      conversationId: input.conversationId,
+      message: input.prompt,
+      ownerUserId: input.ownerUserId,
+      runtimeBackend: input.runtimeBackend,
+      insertAssistantMessage: false,
+      publishStreamEvents: false,
+      transformFinalContent: input.transformFinalContent,
+      workspaceId: input.workspaceId
+    });
+    let finalContent = sanitizeCodingWorkflowVisibleContent(execution.finalContent);
+    let artifacts = execution.artifacts ?? [];
+
+    if (
+      input.requiredArtifactType &&
+      !hasRuntimeArtifactType(artifacts, input.requiredArtifactType)
+    ) {
+      const recoveryExecution = await this.executeSingleAgent({
         agentId: input.activeAgentId,
         agentName: input.activeAgentName,
         assistantMessageId: input.assistantMessageId,
@@ -506,67 +498,25 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
           input.ownerUserId
         ),
         conversationId: input.conversationId,
-        message: input.prompt,
-        ownerUserId: input.ownerUserId,
-        runtimeBackend: input.runtimeBackend,
         insertAssistantMessage: false,
+        message: buildRequiredArtifactRecoveryPrompt({
+          originalPrompt: input.prompt,
+          previousVisibleContent: finalContent,
+          requiredArtifactType: input.requiredArtifactType
+        }),
+        ownerUserId: input.ownerUserId,
         publishStreamEvents: false,
+        runtimeBackend: input.runtimeBackend,
         transformFinalContent: input.transformFinalContent,
         workspaceId: input.workspaceId
       });
-    } catch (error) {
-      const fallbackArtifact = input.requiredArtifactFallback;
-      if (!fallbackArtifact || fallbackArtifact.type !== input.requiredArtifactType) {
-        throw error;
-      }
-
-      execution = {
-        artifacts: [fallbackArtifact],
-        finalContent: buildFallbackArtifactVisibleMessage(
-          input.activeAgentName,
-          fallbackArtifact
-        )
-      };
+      finalContent = sanitizeCodingWorkflowVisibleContent(recoveryExecution.finalContent);
+      artifacts = recoveryExecution.artifacts ?? [];
     }
-    let finalContent = sanitizeCodingWorkflowVisibleContent(execution.finalContent);
-    let artifacts = execution.artifacts ?? [];
 
     if (
       input.requiredArtifactType &&
-      !artifacts.some((artifact) => artifact.type === input.requiredArtifactType)
-    ) {
-      const fallbackArtifact = input.requiredArtifactFallback;
-      if (fallbackArtifact?.type === input.requiredArtifactType) {
-        artifacts = [...artifacts, fallbackArtifact];
-        finalContent = buildFallbackArtifactVisibleMessage(
-          input.activeAgentName,
-          fallbackArtifact
-        );
-      } else {
-        await this.completeLatestActivityRound({
-          outputPreview: `缺少必需的 ${input.requiredArtifactType} 产物，不能进入下一阶段。`,
-          ownerUserId: input.ownerUserId,
-          stageTeammateId: input.stageTeammateId,
-          status: "failed",
-          workflowId: input.workflowId,
-          workspaceId: input.workspaceId
-        });
-        throw new MissingRequiredArtifactError(input.requiredArtifactType);
-      }
-    }
-
-    await this.insertAssistantMessage({
-      content: finalContent,
-      conversationId: input.conversationId,
-      id: input.assistantMessageId,
-      ownerUserId: input.ownerUserId,
-      sourceAgentId: input.activeAgentId,
-      workspaceId: input.workspaceId
-    });
-
-    if (
-      input.requiredArtifactType &&
-      !artifacts.some((artifact) => artifact.type === input.requiredArtifactType)
+      !hasRuntimeArtifactType(artifacts, input.requiredArtifactType)
     ) {
       await this.completeLatestActivityRound({
         outputPreview: `缺少必需的 ${input.requiredArtifactType} 产物，不能进入下一阶段。`,
@@ -578,6 +528,15 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       });
       throw new MissingRequiredArtifactError(input.requiredArtifactType);
     }
+
+    await this.insertAssistantMessage({
+      content: finalContent,
+      conversationId: input.conversationId,
+      id: input.assistantMessageId,
+      ownerUserId: input.ownerUserId,
+      sourceAgentId: input.activeAgentId,
+      workspaceId: input.workspaceId
+    });
 
     await this.persistRuntimeArtifacts({
       artifacts,
@@ -733,10 +692,7 @@ export class CodingWorkflowDispatchService implements OnModuleDestroy {
       workspaceId: workflow.workspace_id
     });
     await this.insertSystemMessage({
-      content:
-        error instanceof Error
-          ? `编码工作流启动失败：${error.message}`
-          : "编码工作流启动失败。",
+      content: `编码工作流启动失败：${formatRuntimeFailureReason(error)}`,
       conversationId: workflow.conversation_id,
       ownerUserId: workflow.owner_user_id,
       workspaceId: workflow.workspace_id
@@ -1710,24 +1666,6 @@ function buildRepairPrompt(
   ].join("\n\n");
 }
 
-function buildMissingArtifactRepairPrompt(
-  workflow: WorkflowExecutionSnapshot,
-  stage: WorkflowExecutionSnapshot["executionStages"][number],
-  previousResults: StagePromptResult[],
-  artifactType: RuntimeArtifactDraft["type"]
-): string {
-  return [
-    buildExecutionPrompt(workflow, stage, previousResults),
-    [
-      "上一轮输出没有生成系统可识别的真实产物，不能继续进入评审。",
-      `本轮必须在隐藏 envelope 的低风险 tool_plan 中调用 ${runtimeWebpageArtifactToolName}。`,
-      `必需产物类型：${artifactType}。`,
-      "可见正文只能简短说明实现内容；不要说“已生成可下载文件”，除非 tool_plan 中确实包含完整 HTML artifact。",
-      "HTML 必须是完整单文件页面，包含首屏、时间线、角色阵营、影片卡片和响应式布局。"
-    ].join("\n")
-  ].join("\n\n");
-}
-
 function buildBlockedQaConfirmationPrompt(
   workflow: WorkflowExecutionSnapshot,
   stage: WorkflowExecutionSnapshot["executionStages"][number],
@@ -1750,37 +1688,6 @@ function buildBlockedQaConfirmationPrompt(
       "必须单独输出一行：阻塞项：列出仍阻塞完整验收的问题。"
     ].join("\n")
   ].join("\n\n");
-}
-
-function buildFallbackWebpageArtifact(
-  workflow: WorkflowExecutionSnapshot
-): RuntimeArtifactDraft {
-  const title = inferFallbackWebpageTitle(workflow.goal);
-
-  return {
-    fileName: normalizeFallbackHtmlFileName(title),
-    html: buildFallbackWebpageHtml(workflow, title),
-    mimeType: "text/html",
-    title,
-    type: "webpage"
-  };
-}
-
-function buildFallbackArtifactVisibleMessage(
-  agentName: string,
-  artifact: RuntimeArtifactDraft
-): string {
-  if (artifact.type === "webpage") {
-    return [
-      `${agentName}：已完成网页交付物，并生成可预览的 HTML 文件。`,
-      "",
-      "- 已覆盖首屏、电影时间线、角色阵营、影片卡片、关键看点和响应式布局。",
-      "- 产物已写入当前频道文件区，右侧预览栏可以直接打开查看。",
-      "- 后续代码评审和 QA 将基于这个真实 HTML 产物继续检查。"
-    ].join("\n");
-  }
-
-  return `${agentName}：已完成本阶段交付物，并写入当前频道文件区。`;
 }
 
 function repeatedRepairVerdict(previousDigest: string): CodingStageVerdict {
@@ -1832,9 +1739,8 @@ function buildExecutionInstruction(
       if (isWebpageTask) {
         return [
           "请以软件工程师身份执行这份计划，只输出实现结果、关键改动、验证动作和剩余风险。",
-          `这是网页创建任务，必须在隐藏 envelope 的低风险 tool_plan 中调用 ${runtimeWebpageArtifactToolName}。`,
-          '工具 input 形状必须是 {"title":"标题","fileName":"文件名.html","html":"完整单文件 HTML"}。',
-          "HTML 必须可直接在 iframe 中预览，包含内联 CSS，必要时包含少量内联 JS，不依赖本地 localhost 资源。",
+          "这是网页创建任务，系统必须从你的回复中抽取真实 HTML artifact。",
+          formatWebpageArtifactOutputContract(),
           "如果没有提供完整 HTML artifact，系统会判定本阶段失败并要求返修。"
         ].join("\n");
       }
@@ -1844,7 +1750,7 @@ function buildExecutionInstruction(
       return [
         "请以代码评审工程师身份指出风险、回归点、缺失测试和是否建议通过。",
         isWebpageTask
-          ? "如果前序输出包含网页产物内容，必须基于真实 HTML/CSS 检查首屏、时间线、角色阵营、影片卡片和响应式布局；没有真实网页 artifact 时必须 REQUEST_CHANGES。"
+          ? "如果前序输出包含网页产物内容，必须基于真实 HTML/CSS 检查它是否贴合用户目标、是否可预览、是否响应式；没有真实网页 artifact 时必须 REQUEST_CHANGES。"
           : null,
         "最后必须单独输出一行：结论：PASS / REQUEST_CHANGES / BLOCKED。",
         "如果不是 PASS，必须单独输出一行：阻塞项：列出必须返修的问题。"
@@ -1853,7 +1759,7 @@ function buildExecutionInstruction(
       return [
         "请以质量保障测试工程师身份给出验证路径、执行结果、未覆盖点和最终验收建议。",
         isWebpageTask
-          ? "如果前序输出包含网页产物内容，必须验证真实 HTML 是否覆盖首屏、时间线、角色阵营、影片卡片和响应式布局；没有真实网页 artifact 时必须 REQUEST_CHANGES。"
+          ? "如果前序输出包含网页产物内容，必须验证真实 HTML 是否贴合用户目标、能否预览、移动端是否可用；没有真实网页 artifact 时必须 REQUEST_CHANGES。"
           : null,
         "最后必须单独输出一行：结论：PASS / REQUEST_CHANGES / BLOCKED。",
         "如果不是 PASS，必须单独输出一行：阻塞项：列出必须返修的问题。"
@@ -1861,6 +1767,69 @@ function buildExecutionInstruction(
     case "tech_lead":
       return "请以技术负责人身份继续推进执行，整理关键决策、协作分工、风险处理和当前交付状态。";
   }
+}
+
+function hasRuntimeArtifactType(
+  artifacts: RuntimeArtifactDraft[],
+  artifactType: RuntimeArtifactDraft["type"]
+): boolean {
+  return artifacts.some((artifact) => artifact.type === artifactType);
+}
+
+function buildRequiredArtifactRecoveryPrompt(input: {
+  originalPrompt: string;
+  previousVisibleContent: string;
+  requiredArtifactType: RuntimeArtifactDraft["type"];
+}): string {
+  if (input.requiredArtifactType !== "webpage") {
+    return [
+      input.originalPrompt,
+      `上一轮输出没有包含系统可解析的 ${input.requiredArtifactType} artifact。`,
+      "请重新输出符合系统 artifact 契约的结果。"
+    ].join("\n\n");
+  }
+
+  return [
+    "上一轮输出没有包含系统可解析的网页 artifact，不能进入评审或 QA。",
+    "请基于同一个用户目标重新输出，不要改写目标，不要生成无关主题，不要只声称已经生成文件。",
+    "用户目标与已批准计划：",
+    input.originalPrompt,
+    "上一轮可见输出：",
+    input.previousVisibleContent || "无可见输出。",
+    formatWebpageArtifactOutputContract()
+  ].join("\n\n");
+}
+
+function formatWebpageArtifactOutputContract(): string {
+  return [
+    "输出必须包含一个 fenced JSON envelope，系统会解析 JSON 并只向用户展示 visibleMessage 与生成的 artifact。",
+    "JSON 结构必须严格符合：",
+    "```json",
+    "{",
+    '  "visibleMessage": "用中文简要说明已生成的网页、关键行为和验证方式。",',
+    '  "intents": [',
+    "    {",
+    '      "type": "tool_plan",',
+    '      "riskLevel": "low",',
+    '      "summary": "Create the requested single-file HTML webpage artifact.",',
+    '      "calls": [',
+    "        {",
+    '          "toolName": "' + runtimeWebpageArtifactToolName + '",',
+    '          "inputSchemaVersion": "1",',
+    '          "idempotencyKey": "artifact:requested-webpage",',
+    '          "input": {',
+    '            "title": "网页标题",',
+    '            "fileName": "requested-webpage.html",',
+    '            "html": "<!doctype html><html>...完整单文件 HTML...</html>"',
+    "          }",
+    "        }",
+    "      ]",
+    "    }",
+    "  ]",
+    "}",
+    "```",
+    "HTML 必须是根据用户目标新生成的完整单文件 HTML，包含内联 CSS，必要时包含少量内联 JS，不依赖 localhost、本地文件或外部构建步骤。"
+  ].join("\n");
 }
 
 function formatStageResultForPrompt(result: StagePromptResult): string {
@@ -1917,7 +1886,7 @@ function truncatePromptArtifactContent(content: string, maxChars: number): strin
 }
 
 const internalWorkflowMarkerPattern =
-  /artifact\.(?:webpage|markdown)\.create|tool_plan|handoff_request|targetRoleKey|artifactStatus|envelope|隐藏的工作流|\[envelope 内容\]/i;
+  /artifact\.(?:webpage|markdown|diff)\.create|tool_plan|handoff_request|targetRoleKey|artifactStatus|envelope|隐藏的工作流|\[envelope 内容\]/i;
 
 function sanitizeCodingWorkflowVisibleContent(content: string): string {
   const cleaned = content
@@ -1928,103 +1897,6 @@ function sanitizeCodingWorkflowVisibleContent(content: string): string {
     .trim();
 
   return cleaned.length > 0 ? cleaned : "本阶段已完成处理，结果已回写到当前频道。";
-}
-
-function inferFallbackWebpageTitle(goal: string): string {
-  if (/变形金刚/.test(goal)) {
-    return "变形金刚真人电影网页";
-  }
-
-  const normalized = goal
-    .replace(/\s+/g, " ")
-    .replace(/[。！？!?].*$/u, "")
-    .trim();
-  const prefix = normalized.length > 0 ? normalized.slice(0, 48) : "网页交付物";
-  const title = /网页|网站|页面|HTML/i.test(prefix) ? prefix : `${prefix}网页`;
-
-  return title.slice(0, 120);
-}
-
-function normalizeFallbackHtmlFileName(title: string): string {
-  const asciiSlug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const baseName = asciiSlug || (title.includes("变形金刚")
-    ? "transformers-live-action-page"
-    : "generated-webpage");
-
-  return `${baseName.slice(0, 150)}.html`;
-}
-
-function buildFallbackWebpageHtml(
-  workflow: WorkflowExecutionSnapshot,
-  title: string
-): string {
-  const escapedTitle = escapeHtml(title);
-  const escapedGoal = escapeHtml(workflow.goal);
-  const escapedDeadline = workflow.deadline?.trim()
-    ? escapeHtml(workflow.deadline.trim())
-    : "演示级网页交付";
-
-  return [
-    "<!doctype html>",
-    '<html lang="zh-CN">',
-    "<head>",
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `<title>${escapedTitle}</title>`,
-    "<style>",
-    ":root{color-scheme:dark;--bg:#101820;--panel:#172333;--line:#31465c;--text:#f8fafc;--muted:#b9c7d6;--autobot:#39a7ff;--decepticon:#ff8a35;--accent:#ffd166}",
-    "*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,Arial,'Microsoft YaHei',sans-serif;background:radial-gradient(circle at top left,rgba(57,167,255,.22),transparent 30%),linear-gradient(135deg,#09111d 0%,#101820 44%,#241511 100%);color:var(--text)}",
-    "a{color:inherit}.shell{width:min(1120px,calc(100% - 32px));margin:0 auto}.hero{min-height:76vh;display:grid;align-items:center;padding:56px 0 36px}.eyebrow{display:inline-flex;width:max-content;border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:7px 12px;color:var(--accent);font-size:13px;font-weight:700;background:rgba(255,255,255,.06)}h1{font-size:clamp(38px,7vw,82px);line-height:.95;margin:18px 0 18px;letter-spacing:0}.lead{max-width:780px;color:var(--muted);font-size:clamp(17px,2vw,22px);line-height:1.7}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}.button{border:1px solid rgba(255,255,255,.24);border-radius:8px;padding:12px 16px;text-decoration:none;font-weight:800;background:rgba(255,255,255,.09)}.button.primary{background:linear-gradient(90deg,var(--autobot),var(--decepticon));border:0;color:#08111f}",
-    "section{padding:38px 0}.section-head{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:18px}h2{font-size:clamp(24px,3.4vw,38px);margin:0}.hint{margin:0;color:var(--muted);line-height:1.6}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.card{border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(23,35,51,.82);padding:18px;box-shadow:0 18px 42px rgba(0,0,0,.22)}.card h3{margin:0 0 8px;font-size:18px}.card p{margin:0;color:var(--muted);line-height:1.65}.timeline{display:grid;gap:12px}.timeline article{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:start}.year{font-size:28px;font-weight:900;color:var(--accent)}.factions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.faction{min-height:220px}.faction.autobot{border-color:rgba(57,167,255,.42)}.faction.decepticon{border-color:rgba(255,138,53,.42)}.badge{display:inline-flex;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800;background:rgba(255,255,255,.1);color:var(--accent);margin-bottom:10px}.films .card{display:grid;gap:10px}.poster{height:130px;border-radius:8px;background:linear-gradient(135deg,rgba(57,167,255,.45),rgba(255,138,53,.5));display:grid;place-items:center;font-size:40px;font-weight:900;color:#08111f}.checks{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.checks .card{border-left:4px solid var(--accent)}footer{padding:32px 0 44px;color:var(--muted);font-size:13px}",
-    "@media (max-width:720px){.shell{width:min(100% - 24px,1120px)}.hero{min-height:68vh;padding-top:32px}.section-head{display:grid}.timeline article{grid-template-columns:1fr}.factions{grid-template-columns:1fr}.actions .button{width:100%;text-align:center}.poster{height:100px}}",
-    "</style>",
-    "</head>",
-    "<body>",
-    '<main class="shell">',
-    '<section class="hero" id="top">',
-    '<span class="eyebrow">LIVE ACTION FILM EXPERIENCE</span>',
-    `<h1>${escapedTitle}</h1>`,
-    `<p class="lead">${escapedGoal}</p>`,
-    '<div class="actions"><a class="button primary" href="#timeline">查看电影时间线</a><a class="button" href="#factions">角色阵营</a><a class="button" href="#films">影片卡片</a></div>',
-    "</section>",
-    '<section id="timeline"><div class="section-head"><h2>电影时间线</h2><p class="hint">从初代接触到独立外传，按真人电影宇宙的观看记忆组织。</p></div><div class="timeline">',
-    '<article class="card"><div class="year">2007</div><div><h3>初代降临</h3><p>汽车人与霸天虎第一次把战争带入人类城市，建立真人电影系列的机械尺度和速度感。</p></div></article>',
-    '<article class="card"><div class="year">2009</div><div><h3>复仇升级</h3><p>古老领袖与能源线索扩展世界观，展示更大规模的追逐、沙漠战和组合金刚。</p></div></article>',
-    '<article class="card"><div class="year">2011</div><div><h3>月黑之时</h3><p>赛博坦历史与人类航天叙事交织，芝加哥大战成为系列动作场面的高密度节点。</p></div></article>',
-    '<article class="card"><div class="year">2014+</div><div><h3>新纪元与外传</h3><p>恐龙金刚、骑士传说、大黄蜂前传和超能勇士元素，让系列从爆炸大片转向更清晰的角色表达。</p></div></article>',
-    "</div></section>",
-    '<section id="factions"><div class="section-head"><h2>角色阵营</h2><p class="hint">用颜色和卡片区分盟友、威胁和核心角色动机。</p></div><div class="factions">',
-    '<article class="card faction autobot"><span class="badge">AUTOBOTS</span><h3>汽车人</h3><p>擎天柱、大黄蜂、铁皮、爵士等角色代表守护、牺牲和与人类并肩作战的价值。</p></article>',
-    '<article class="card faction decepticon"><span class="badge">DECEPTICONS</span><h3>霸天虎</h3><p>威震天、红蜘蛛、震荡波和禁闭等反派推动战争升级，强调征服、复仇和技术威胁。</p></article>',
-    "</div></section>",
-    '<section id="films" class="films"><div class="section-head"><h2>影片卡片</h2><p class="hint">适合继续扩展为海报、评分、导演和上映信息。</p></div><div class="grid">',
-    '<article class="card"><div class="poster">T1</div><h3>Transformers</h3><p>系列开端，建立少年视角、人类军方线和机器人大战的基本范式。</p></article>',
-    '<article class="card"><div class="poster">DOTM</div><h3>Dark of the Moon</h3><p>城市级大战与航天阴谋，是真人电影动作场面的代表。</p></article>',
-    '<article class="card"><div class="poster">BB</div><h3>Bumblebee</h3><p>更聚焦角色关系和复古质感，适合移动端卡片重点展示。</p></article>',
-    '<article class="card"><div class="poster">ROTB</div><h3>Rise of the Beasts</h3><p>引入超能勇士阵营，为时间线和阵营模块提供新分支。</p></article>',
-    "</div></section>",
-    '<section id="highlights"><div class="section-head"><h2>关键看点</h2><p class="hint">面向验收的响应式信息模块。</p></div><div class="grid checks">',
-    '<article class="card"><h3>沉浸式首屏</h3><p>首屏大标题、CTA 和阵营渐变强化第一眼识别。</p></article>',
-    '<article class="card"><h3>移动端优先</h3><p>小屏下时间线和阵营自动单列，按钮可触控。</p></article>',
-    '<article class="card"><h3>可继续扩展</h3><p>后续可接入真实海报、预告片、评分和筛选交互。</p></article>',
-    "</div></section>",
-    `<footer>交付状态：${escapedDeadline}。本 HTML 为系统兜底生成，用于保证协作链路继续进入评审和 QA。</footer>`,
-    "</main>",
-    "</body>",
-    "</html>"
-  ].join("");
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function isWebpageCreationWorkflow(workflow: WorkflowExecutionSnapshot): boolean {
@@ -2095,7 +1967,7 @@ function normalizeHtmlForRepairComparison(html: string): string {
     .trim();
 }
 
-function parseCodingStageVerdict(content: string): CodingStageVerdict {
+export function parseCodingStageVerdict(content: string): CodingStageVerdict {
   const normalized = content.trim();
   const explicitConclusion = normalized.match(
     /结论\s*[:：]\s*(PASS|REQUEST_CHANGES|BLOCKED|通过|不通过|请求修改)/i
@@ -2145,6 +2017,14 @@ function parseCodingStageVerdict(content: string): CodingStageVerdict {
 
 function stripNegatedRiskSignals(content: string): string {
   return content
+    .replace(
+      /(?:非阻塞|非阻断|不阻塞|低风险|低严重度|建议|可选优化|后续优化|nice\s*to\s*have)[^。\n；;]*?(?:阻塞项?|严重|请求修改|request changes?|blocked|blockers?|p0|p1)[^。\n；;]*/gi,
+      ""
+    )
+    .replace(
+      /(?:阻塞项?|严重|请求修改|request changes?|blocked|blockers?|p0|p1)[^。\n；;]*?(?:非阻塞|非阻断|不阻塞|低风险|低严重度|建议|可选优化|后续优化|nice\s*to\s*have)[^。\n；;]*/gi,
+      ""
+    )
     .replace(
       /(?:未发现|没有发现|没有|无|暂无|并无|未见|不存在|不含|无需|不需要)[^。\n；;]*?(?:高严重度|高优先级|严重|阻塞项?|必须返修|请求修改|request changes?|blocked|blockers?|p0|p1)[^。\n；;]*/gi,
       ""

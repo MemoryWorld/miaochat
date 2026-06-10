@@ -44,9 +44,9 @@ describe("TeammateDirectoryPage", () => {
 
     render(<TeammateDirectoryPage />);
 
-    expect(await screen.findByRole("link", { name: "新建同事" })).toBeInTheDocument();
-    expect(screen.getByText("创建同事")).toBeInTheDocument();
-    expect(screen.getByText(/创建完成后，后续管理和协作会回到频道里继续推进/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "创建同事" })).toBeInTheDocument();
+    expect(screen.getByText(/创建完成后，后续管理和协作会回到会话里继续推进/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "新建同事" })).not.toBeInTheDocument();
     expect(screen.queryByText("默认编码团队")).not.toBeInTheDocument();
     expect(screen.queryByText("自定义 AI 同事")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "查看成员设置" })).not.toBeInTheDocument();

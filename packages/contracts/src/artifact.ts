@@ -7,6 +7,7 @@ import { messageIdSchema } from "./message.js";
 export const runtimeMarkdownArtifactMaxMarkdownChars = 64 * 1024;
 export const runtimeMarkdownArtifactToolName = "artifact.markdown.create" as const;
 export const runtimeDiffArtifactMaxPatchChars = 128 * 1024;
+export const runtimeDiffArtifactToolName = "artifact.diff.create" as const;
 export const runtimeWebpageArtifactMaxHtmlChars = 256 * 1024;
 export const runtimeWebpageArtifactToolName = "artifact.webpage.create" as const;
 
@@ -99,6 +100,18 @@ export const artifactWebpageCreateToolInputSchema = z.object({
   title: z.string().trim().min(1).max(120)
 });
 
+export const artifactDiffCreateToolInputSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).optional(),
+  patch: z.string()
+    .min(1)
+    .max(runtimeDiffArtifactMaxPatchChars)
+    .refine((value) => value.trim().length > 0, {
+      message: "Diff patch cannot be blank."
+    }),
+  title: z.string().trim().min(1).max(120),
+  truncated: z.boolean().default(false)
+});
+
 export const runtimeMarkdownArtifactDraftSchema = z.object({
   fileName: z.string().trim().min(1).max(160).regex(/\.md$/i),
   markdown: z.string()
@@ -163,6 +176,9 @@ export type ArtifactTextContent = z.infer<typeof artifactTextContentSchema>;
 export type ArtifactUploadTarget = z.infer<typeof artifactUploadTargetSchema>;
 export type ArtifactMarkdownCreateToolInput = z.infer<
   typeof artifactMarkdownCreateToolInputSchema
+>;
+export type ArtifactDiffCreateToolInput = z.infer<
+  typeof artifactDiffCreateToolInputSchema
 >;
 export type ArtifactWebpageCreateToolInput = z.infer<
   typeof artifactWebpageCreateToolInputSchema

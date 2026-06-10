@@ -26,6 +26,10 @@ describe("ModelConnectionsPanel", () => {
     render(<ModelConnectionsPanel workspaceId="workspace_1" />);
 
     expect(await screen.findByText("当前工作区还没有模型连接。")).toBeInTheDocument();
+    expect(screen.getByText("选择来源，填写模型标识和 API Key，验证后保存。")).toBeInTheDocument();
+    expect(screen.queryByText("国产模型")).not.toBeInTheDocument();
+    expect(screen.queryByText(/默认使用 OpenCode 的/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("连接名称")).toHaveValue("DeepSeek 连接");
     expect(screen.getByText("请填写 API Key。")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("连接名称"), {
@@ -34,7 +38,7 @@ describe("ModelConnectionsPanel", () => {
     expect(screen.getByText("请填写连接名称。")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("连接名称"), {
-      target: { value: "DeepSeek（OpenCode）连接" }
+      target: { value: "DeepSeek 连接" }
     });
     fireEvent.change(screen.getByLabelText("API Key"), {
       target: { value: "sk-demo" }
@@ -77,9 +81,18 @@ describe("ModelConnectionsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存并启用" }));
 
     await waitFor(() => {
-      expect(screen.getByText("DeepSeek（OpenCode）连接")).toBeInTheDocument();
+      expect(screen.getByText("DeepSeek 连接")).toBeInTheDocument();
     });
-    expect(screen.getAllByText("DeepSeek").length).toBeGreaterThan(0);
+    expect(screen.queryByText("已保存连接")).not.toBeInTheDocument();
+    const savedConnectionCard = screen
+      .getByText("DeepSeek 连接")
+      .closest("article");
+    expect(savedConnectionCard).not.toBeNull();
+    expect(savedConnectionCard).not.toHaveTextContent("DeepSeek可用");
+    expect(savedConnectionCard).toHaveTextContent("模型：deepseek/deepseek-chat");
+    expect(savedConnectionCard).not.toHaveTextContent(
+      "通过 OpenCode 接入 DeepSeek，不再走旧 DeepSeek 直连接口。"
+    );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/credentials/validate",
@@ -99,7 +112,7 @@ describe("ModelConnectionsPanel", () => {
     const saveCall = fetchMock.mock.calls[2];
     const saveBody = JSON.parse(String(saveCall?.[1] && "body" in saveCall[1] ? saveCall[1].body : "{}"));
     expect(saveBody).toMatchObject({
-      label: "DeepSeek（OpenCode）连接",
+      label: "DeepSeek 连接",
       provider: "opencode",
       providerAccountId: "deepseek/deepseek-chat",
       rawSecret: "sk-demo",
@@ -109,6 +122,20 @@ describe("ModelConnectionsPanel", () => {
       "/api/credentials?workspaceId=workspace_1",
       { credentials: "include" }
     );
+  });
+
+  it("hides legacy OpenCode suffixes from saved domestic connection names", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([
+      savedCredential({
+        label: "DeepSeek（OpenCode）连接"
+      })
+    ], 200));
+
+    render(<ModelConnectionsPanel workspaceId="workspace_1" />);
+
+    expect(await screen.findByText("DeepSeek 连接")).toBeInTheDocument();
+    expect(screen.queryByText("DeepSeek（OpenCode）连接")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除 DeepSeek 连接" })).toBeInTheDocument();
   });
 
   it("lets users delete an existing model connection after confirmation", async () => {
@@ -177,7 +204,7 @@ function savedCredential(overrides: Record<string, unknown> = {}) {
   return {
     credentialSource: "user_provided",
     id: "conn_1",
-    label: provider === "opencode" ? "DeepSeek（OpenCode）连接" : "DeepSeek 工作区连接",
+    label: provider === "opencode" ? "DeepSeek 连接" : "DeepSeek 工作区连接",
     ownerUserId: "user_demo",
     provider,
     providerAccountId: provider === "opencode" ? "deepseek/deepseek-chat" : "deepseek-chat",

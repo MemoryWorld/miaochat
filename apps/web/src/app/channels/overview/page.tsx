@@ -1,5 +1,5 @@
-import { ChannelOverviewPage } from "../../../features/channels/channel-overview-page";
+import { redirect } from "next/navigation";
 
 export default function ChannelsOverviewPage() {
-  return <ChannelOverviewPage />;
+  redirect("/");
 }

@@ -135,5 +135,33 @@ describe("conversations integration", () => {
     );
 
     expect(row.rows[0]?.pinned_message_ids).toEqual([messageId]);
+
+    const unpinResponse = await app.inject({
+      headers: {
+        cookie: authCookie
+      },
+      method: "POST",
+      url: `/messages/${messageId}/unpin?workspaceId=${workspaceId}`
+    });
+
+    expect(unpinResponse.statusCode).toBe(200);
+    expect(unpinResponse.json().message.isPinned).toBe(false);
+    expect(unpinResponse.json().pinnedMessageIds).toEqual([]);
+
+    const unpinnedRow = await client.query<{
+      is_pinned: boolean;
+      pinned_message_ids: string[];
+    }>(
+      `
+        SELECT messages.is_pinned, conversations.pinned_message_ids
+        FROM messages
+        INNER JOIN conversations ON conversations.id = messages.conversation_id
+        WHERE messages.id = $1
+      `,
+      [messageId]
+    );
+
+    expect(unpinnedRow.rows[0]?.is_pinned).toBe(false);
+    expect(unpinnedRow.rows[0]?.pinned_message_ids).toEqual([]);
   });
 });

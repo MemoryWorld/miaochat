@@ -83,6 +83,11 @@ export class ConversationsService {
     const search = trimmedSearch.length > 0 ? `%${trimmedSearch.toLowerCase()}%` : null;
     const includeArchived = Boolean(options.includeArchived);
 
+    await this.conversationsRepository.deleteExpiredArchivedConversations(
+      parsedWorkspaceId,
+      ownerUserId
+    );
+
     const conversations = await this.conversationsRepository.listConversations(
       parsedWorkspaceId,
       ownerUserId,
@@ -229,6 +234,12 @@ export class ConversationsService {
     ownerUserId: string,
     conversationId: string
   ): Promise<Conversation> {
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
+    await this.conversationsRepository.deleteExpiredArchivedConversations(
+      parsedWorkspaceId,
+      ownerUserId
+    );
+
     return this.applyMutation(workspaceId, ownerUserId, conversationId, {
       archived: false
     });
@@ -274,7 +285,7 @@ export class ConversationsService {
     );
 
     if (!result) {
-      throw new Error(
+      throw new NotFoundException(
         `Conversation ${conversationId} was not found in workspace ${workspaceId}.`
       );
     }

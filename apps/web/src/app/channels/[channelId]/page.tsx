@@ -1,22 +1,13 @@
-import { ChannelShell } from "../../../features/channels/channel-shell";
+import { redirect } from "next/navigation";
 
 type ChannelPageProps = {
   params: Promise<{
     channelId: string;
   }>;
-  searchParams?: Promise<{
-    tab?: string;
-  }>;
 };
 
-export default async function ChannelPage({ params, searchParams }: ChannelPageProps) {
+export default async function ChannelPage({ params }: ChannelPageProps) {
   const resolvedParams = await params;
-  const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
-  return (
-    <ChannelShell
-      channelId={resolvedParams.channelId}
-      initialTab={resolvedSearchParams?.tab}
-    />
-  );
+  redirect(`/?conversationId=${encodeURIComponent(resolvedParams.channelId)}`);
 }

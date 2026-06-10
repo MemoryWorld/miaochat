@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { UnifiedDiffView } from "./unified-diff-view";
+
 type MarkdownContentProps = {
   content: string;
   tone?: "dark" | "light";
@@ -90,6 +92,12 @@ export function MarkdownContent({ content, tone = "light" }: MarkdownContentProp
       return <p style={{ margin: "0.45rem 0" }}>{children}</p>;
     },
     pre({ children }) {
+      const codeBlock = extractCodeBlock(children);
+
+      if (codeBlock && isDiffLanguage(codeBlock.language)) {
+        return <UnifiedDiffView patch={codeBlock.code} tone={tone} />;
+      }
+
       return (
         <pre
           style={{
@@ -236,6 +244,35 @@ function tableCellStyle(borderColor: string, color: string): CSSProperties {
     textAlign: "left",
     verticalAlign: "top"
   };
+}
+
+function extractCodeBlock(
+  children: React.ReactNode
+): { code: string; language: string } | null {
+  const [child] = React.Children.toArray(children);
+
+  if (!React.isValidElement(child)) {
+    return null;
+  }
+
+  const props = child.props as {
+    children?: React.ReactNode;
+    className?: string;
+  };
+  const language = /language-([\w-]+)/.exec(props.className ?? "")?.[1];
+
+  if (!language) {
+    return null;
+  }
+
+  return {
+    code: React.Children.toArray(props.children).join("").replace(/\n$/u, ""),
+    language
+  };
+}
+
+function isDiffLanguage(language: string): boolean {
+  return language === "diff" || language === "patch";
 }
 
 function hashString(value: string): string {

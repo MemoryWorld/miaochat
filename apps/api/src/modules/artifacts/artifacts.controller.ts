@@ -183,6 +183,26 @@ export class ArtifactsController {
     });
   }
 
+  @Post(":artifactId/revisions/:revisionIndex/restore")
+  async restoreRevision(
+    @Param("artifactId") artifactId: string,
+    @Param("revisionIndex") revisionIndex: string,
+    @Body() input: unknown,
+    @Query("workspaceId") workspaceId: string | undefined,
+    @Headers("cookie") cookieHeader: string | undefined
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+    await this.permissionGuard.assert(user.id, parsedWorkspaceId, "artifact.create");
+    return this.revisionsService.restore({
+      artifactId,
+      ownerUserId: user.id,
+      payload: input,
+      revisionIndex: Number.parseInt(revisionIndex, 10),
+      workspaceId: parsedWorkspaceId
+    });
+  }
+
   @Get(":artifactId/conflicts")
   async detectConflict(
     @Param("artifactId") artifactId: string,

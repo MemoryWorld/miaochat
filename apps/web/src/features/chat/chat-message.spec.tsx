@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Message } from "@agenthub/contracts";
@@ -52,6 +52,29 @@ describe("ChatMessage", () => {
     expect(screen.queryByRole("button", { name: /👍/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /✅/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /👀/ })).not.toBeInTheDocument();
+  });
+
+  it("lets users unpin a pinned message", () => {
+    const onPin = vi.fn();
+
+    render(
+      <ChatMessage
+        artifacts={[]}
+        isPinDisabled={false}
+        isPinPending={false}
+        message={makeMessage({
+          isPinned: true
+        })}
+        onPin={onPin}
+        onReply={vi.fn()}
+      />
+    );
+
+    const unpinButton = screen.getByRole("button", { name: "取消置顶" });
+    fireEvent.click(unpinButton);
+
+    expect(onPin).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
   });
 
   it("does not render internal collaboration control JSON from existing assistant messages", () => {
@@ -147,6 +170,35 @@ describe("ChatMessage", () => {
     expect(container.querySelector("pre code")).toHaveTextContent("const done = true;");
     expect(container.textContent).not.toContain("## 验收总结");
     expect(container.textContent).not.toContain("| 项目 | 状态 |");
+  });
+
+  it("renders fenced diff blocks with line-level review markup", () => {
+    const { container } = render(
+      <ChatMessage
+        artifacts={[]}
+        isPinDisabled={false}
+        isPinPending={false}
+        message={makeMessage({
+          content: [
+            "```diff",
+            "diff --git a/app.ts b/app.ts",
+            "--- a/app.ts",
+            "+++ b/app.ts",
+            "@@ -1 +1 @@",
+            "-old",
+            "+new",
+            "```"
+          ].join("\n")
+        })}
+        onPin={vi.fn()}
+        onReply={vi.fn()}
+      />
+    );
+
+    expect(container.querySelector("[data-unified-diff]")).toBeInTheDocument();
+    expect(container.querySelector('[data-diff-line-kind="removed"]')).toHaveTextContent("-old");
+    expect(container.querySelector('[data-diff-line-kind="added"]')).toHaveTextContent("+new");
+    expect(container.querySelector('[data-diff-line-kind="hunk"]')).toHaveTextContent("@@ -1 +1 @@");
   });
 
   it("renders runtime Markdown artifact statuses as plain UI text", () => {

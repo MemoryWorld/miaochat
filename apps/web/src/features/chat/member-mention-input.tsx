@@ -27,7 +27,7 @@ export function MemberMentionInput({
 
   return (
     <div className="grid gap-2">
-      <div className="text-xs font-semibold text-slate-500">提及频道成员</div>
+      <div className="text-xs font-semibold text-slate-500">提及 Agent 或成员</div>
       <div className="flex flex-wrap gap-2">
         {mentionableMembers.map((member) => {
           const isSelected = selectedMemberIds.includes(member.memberId);

@@ -27,4 +27,35 @@ describe("api health", () => {
       status: "ok"
     });
   });
+
+  it("reports runtime health separately from API liveness", async () => {
+    const originalPath = process.env.PATH;
+    process.env.PATH = "/tmp/miaochat-no-opencode";
+
+    try {
+      app = await createApp();
+      await app.init();
+      await app.getHttpAdapter().getInstance().ready();
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/health/runtime"
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        opencode: {
+          cli: "missing"
+        },
+        service: "api",
+        status: "degraded",
+        worker: {
+          status: "configured",
+          taskQueue: "agenthub-default"
+        }
+      });
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
 });

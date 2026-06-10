@@ -42,12 +42,6 @@ export function AppShell({
             <div className="h-5 w-px bg-slate-200" aria-hidden="true" />
             <Link
               className="text-sm font-semibold text-slate-700 no-underline transition hover:text-slate-950"
-              href="/settings?section=model-connections"
-            >
-              模型连接
-            </Link>
-            <Link
-              className="text-sm font-semibold text-slate-700 no-underline transition hover:text-slate-950"
               href="/settings?section=profile"
             >
               账户
@@ -65,14 +59,6 @@ export function AppShell({
           )}
         >
           <aside className="glass-panel rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.92))] p-4 shadow-[0_20px_60px_rgba(15,23,42,0.09)] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-            <div className="mb-4 flex justify-end">
-              <Link
-                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 no-underline transition hover:bg-slate-50"
-                href="/teammates/new"
-              >
-                新建同事
-              </Link>
-            </div>
             <WorkspaceNavigation />
             {workspaceSlot ? (
               <section className="mt-4 grid min-w-0 gap-2 rounded-[22px] border border-slate-200 bg-white/80 p-3">

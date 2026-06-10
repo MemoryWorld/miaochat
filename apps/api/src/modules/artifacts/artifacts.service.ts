@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 
 import {
@@ -385,7 +385,7 @@ export class ArtifactsService {
       workspaceId
     });
 
-    return this.create({
+    const artifact = await this.create({
       id: upload.artifactId,
       kind: "attachment",
       messageId: parsed.messageId,
@@ -395,6 +395,16 @@ export class ArtifactsService {
       title: parsed.draft.title,
       workspaceId
     }, actorUserId);
+    await this.appendInitialRevision({
+      artifact,
+      authorUserId: actorUserId,
+      content: parsed.draft.markdown,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      summary: "Initial markdown artifact."
+    });
+
+    return artifact;
   }
 
   async createRuntimeDiffArtifact(
@@ -417,7 +427,7 @@ export class ArtifactsService {
       workspaceId
     });
 
-    return this.create({
+    const artifact = await this.create({
       id: upload.artifactId,
       kind: "diff",
       messageId: parsed.messageId,
@@ -427,6 +437,16 @@ export class ArtifactsService {
       title: parsed.draft.title,
       workspaceId
     }, actorUserId);
+    await this.appendInitialRevision({
+      artifact,
+      authorUserId: actorUserId,
+      content: parsed.draft.patch,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      summary: "Initial diff artifact."
+    });
+
+    return artifact;
   }
 
   async createRuntimeWebpageArtifact(
@@ -449,7 +469,7 @@ export class ArtifactsService {
       workspaceId
     });
 
-    return this.create({
+    const artifact = await this.create({
       id: upload.artifactId,
       kind: "preview",
       messageId: parsed.messageId,
@@ -459,6 +479,59 @@ export class ArtifactsService {
       title: parsed.draft.title,
       workspaceId
     }, actorUserId);
+    await this.appendInitialRevision({
+      artifact,
+      authorUserId: actorUserId,
+      content: parsed.draft.html,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      summary: "Initial webpage artifact."
+    });
+
+    return artifact;
+  }
+
+  private async appendInitialRevision(input: {
+    artifact: Artifact;
+    authorUserId: string;
+    content: string;
+    previewUrl: string | null;
+    storageKey: string | null;
+    summary: string;
+  }): Promise<void> {
+    const contentDigest = createHash("sha256").update(input.content).digest("hex");
+
+    await this.database.execute(sql`
+      INSERT INTO artifact_revisions (
+        id,
+        artifact_id,
+        workspace_id,
+        revision_index,
+        parent_revision_id,
+        author_user_id,
+        content_digest,
+        preview_url,
+        storage_key,
+        summary
+      )
+      SELECT
+        ${randomUUID()},
+        ${input.artifact.id},
+        ${input.artifact.workspaceId},
+        0,
+        NULL,
+        ${input.authorUserId},
+        ${contentDigest},
+        ${input.previewUrl},
+        ${input.storageKey},
+        ${input.summary}
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM artifact_revisions
+        WHERE artifact_id = ${input.artifact.id}
+          AND workspace_id = ${input.artifact.workspaceId}
+      )
+    `);
   }
 
   private async loadArtifactForRead(input: {

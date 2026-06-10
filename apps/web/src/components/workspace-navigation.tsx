@@ -21,51 +21,28 @@ const workspaceNavGroups: WorkspaceNavGroup[] = [
   {
     items: [
       {
-        description: "总览与启动器",
+        description: "会话列表与编码工作台",
         href: "/",
-        label: "工作台",
+        label: "会话",
         match: "exact"
-      },
-      {
-        description: "等待你处理的事项",
-        href: "/inbox",
-        label: "收件箱",
-        match: "prefix"
-      },
-      {
-        description: "跨频道和跨同事的任务",
-        href: "/tasks",
-        label: "任务",
-        match: "prefix"
       },
       {
         description: "可复用的可视化流程",
         href: "/workflows",
         label: "Workflow",
         match: "prefix"
-      },
+      }
+    ],
+    label: "编码"
+  },
+  {
+    items: [
       {
-        description: "按时间组织协作",
-        href: "/calendar",
-        label: "日历",
+        description: "Claude Code、Codex、OpenCode 和自建模型",
+        href: "/settings?section=model-connections",
+        label: "模型连接",
         match: "prefix"
-      }
-    ],
-    label: "工作台"
-  },
-  {
-    items: [
-      {
-        description: "频道与共享上下文",
-        href: "/channels/overview",
-        label: "频道",
-        match: "channel"
-      }
-    ],
-    label: "协作"
-  },
-  {
-    items: [
+      },
       {
         description: "工作区与高级设置",
         href: "/settings",

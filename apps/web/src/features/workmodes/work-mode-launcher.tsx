@@ -145,15 +145,15 @@ export function WorkModeLauncher({
   }
 
   return (
-    <section className="mt-5 grid gap-4 rounded-[28px] border border-slate-200 bg-white/80 p-4 shadow-sm">
+    <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-sm">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-            工作模式
+          <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+            编码工作流
           </span>
-          <h2 className="mb-0 mt-3 text-xl font-semibold text-slate-950">先选择你要推进的工作</h2>
+          <h2 className="mb-0 mt-3 text-lg font-semibold text-slate-950">用推荐团队推进编码任务</h2>
           <p className="mb-0 mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-            当前先把“编码”做成一条完整闭环。系统会先给出一组推荐 AI 同事，技术负责人和软件工程师固定保留，其余成员可以按场景删减。
+            技术负责人先拆计划，确认后再交给工程师、评审和测试闭环执行。
           </p>
         </div>
         {!canStartCoding ? (
@@ -176,8 +176,8 @@ export function WorkModeLauncher({
         )}
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
-        <article className="grid gap-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,_#fff7ed,_#ffffff)] p-4">
+      <div className="grid gap-3">
+        <article className="grid gap-4 rounded-[20px] border border-slate-200 bg-[linear-gradient(180deg,_#f8fafc,_#ffffff)] p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="m-0 text-lg font-semibold text-slate-950">编码</h3>
@@ -185,9 +185,6 @@ export function WorkModeLauncher({
                 用一组推荐 AI 同事推进需求澄清、计划、实现、评审和测试，让整个开发过程留在同一条工作区时间线里。
               </p>
             </div>
-            <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-              当前主模式
-            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
             <span className="rounded-full bg-white px-3 py-1">
@@ -228,26 +225,6 @@ export function WorkModeLauncher({
                   ))}
                 </ul>
               </article>
-            ))}
-          </div>
-        </article>
-
-        <article className="grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
-          <div>
-            <h3 className="m-0 text-lg font-semibold text-slate-950">后续工作模式</h3>
-            <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              先把编码路径做到可用、可解释、可追踪，其他模式暂时只做占位，不在这轮实现。
-            </p>
-          </div>
-          <div className="grid gap-2">
-            {["文档", "运营", "研究", "客服"].map((mode) => (
-              <div
-                key={mode}
-                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700"
-              >
-                <span>{mode}</span>
-                <span className="text-xs text-slate-400">即将开放</span>
-              </div>
             ))}
           </div>
         </article>

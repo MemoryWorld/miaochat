@@ -380,7 +380,7 @@ function validCredential(overrides: Record<string, unknown> = {}) {
   return {
     credentialSource: "user_provided",
     id: "cred_opencode",
-    label: provider === "opencode" ? "DeepSeek（OpenCode）连接" : "DeepSeek 工作区连接",
+    label: provider === "opencode" ? "DeepSeek 连接" : "DeepSeek 工作区连接",
     ownerUserId: "user_demo",
     provider,
     providerAccountId: provider === "opencode" ? "deepseek/deepseek-chat" : "deepseek-chat",

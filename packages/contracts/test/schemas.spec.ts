@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   activityRoundSchema,
+  artifactDiffCreateToolInputSchema,
   artifactMarkdownCreateToolInputSchema,
   artifactWebpageCreateToolInputSchema,
   artifactUploadTargetSchema,
@@ -290,9 +291,14 @@ describe("@agenthub/contracts", () => {
   });
 
   it("accepts runtime diff artifact drafts and status updates", () => {
-    expect(runtimeDiffArtifactDraftSchema.parse({
+    const toolInput = artifactDiffCreateToolInputSchema.parse({
       fileName: "agent-runtime.diff",
       patch: "diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+      title: "Agent runtime diff"
+    });
+
+    expect(runtimeDiffArtifactDraftSchema.parse({
+      ...toolInput,
       title: "Agent runtime diff",
       type: "diff"
     })).toMatchObject({
@@ -320,6 +326,12 @@ describe("@agenthub/contracts", () => {
     });
 
     expect(parsed.payload.artifactStatus?.type).toBe("diff");
+    expect(
+      artifactDiffCreateToolInputSchema.safeParse({
+        patch: "   ",
+        title: "Blank"
+      }).success
+    ).toBe(false);
   });
 
   it("requires group conversations to include at least two agents", () => {

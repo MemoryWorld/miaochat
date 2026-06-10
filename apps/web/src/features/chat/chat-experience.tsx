@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useRef, useState } from "react";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import {
@@ -16,11 +17,11 @@ import {
   type Message,
   type ModelConnection,
   type OrchestratorStatusEventPayload,
+  type ProviderCredential,
   type VisualWorkflow
 } from "@agenthub/contracts";
 
-import { AppShell } from "../../components/app-shell";
-import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
 import { ArtifactCard } from "../artifacts/artifact-card";
@@ -32,7 +33,10 @@ import {
 import { AuthPanel } from "../auth/auth-panel";
 import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
-import { NewConversationDialog } from "../conversations/new-conversation-dialog";
+import {
+  NewConversationDialog,
+  type NewConversationAgentOption
+} from "../conversations/new-conversation-dialog";
 import {
   WorkModeLauncher,
   type CodingWorkflowDraft
@@ -53,20 +57,66 @@ import {
 } from "./live-assistant-message";
 import { useConversationStream } from "./use-conversation-stream";
 
-const timelineTabs = ["聊天", "文件", "置顶"] as const;
 const postSendRefreshDelaysMs = [1_200, 4_000, 8_000, 15_000, 30_000, 65_000, 90_000] as const;
 const realtimeStreamConnectingMessage = "正在连接实时流，稍后即可发送。";
+const archivedConversationRetentionNotice =
+  "归档会话将在 30 天后自动删除，请及时恢复需要保留的会话。";
 
-type TimelineTab = (typeof timelineTabs)[number];
 type TimelineFileEntry = {
   artifact: Artifact;
   message: Message;
+};
+
+type CredentialMetadata = Omit<ProviderCredential, "encryptedSecret">;
+
+type SupportedConversationProvider = "claude-code" | "codex" | "opencode";
+
+type ConversationAgentOption = NewConversationAgentOption & {
+  agentId?: string;
+  provider: SupportedConversationProvider;
 };
 
 type MessageDispatchResponse = Message & {
   launchedCodingWorkflow?: CodingWorkflowLaunchResponse;
   launchedWorkflow?: VisualWorkflow;
 };
+
+const platformRuntimeAgentTag = "platform-runtime-agent";
+const hiddenConversationAgentNames = new Set([
+  "方案规划同事",
+  "执行落地同事",
+  "需求梳理同事"
+]);
+const hiddenConversationAgentTags = new Set([
+  "builtin-coding-team",
+  "demo",
+  "phase-a"
+]);
+const platformProviderProfiles: Array<{
+  description: string;
+  label: string;
+  provider: SupportedConversationProvider;
+  systemPrompt: string;
+}> = [
+  {
+    description: "使用 OpenAI Codex 处理代码、网页和工程任务。",
+    label: "Codex",
+    provider: "codex",
+    systemPrompt: "你是 Miaochat 中的 Codex 平台 Agent，擅长代码、网页和工程任务。"
+  },
+  {
+    description: "使用 Claude Code 处理代码理解、编辑和交付任务。",
+    label: "Claude Code",
+    provider: "claude-code",
+    systemPrompt: "你是 Miaochat 中的 Claude Code 平台 Agent，擅长代码理解、编辑和交付任务。"
+  },
+  {
+    description: "使用 OpenCode 接入的模型处理通用实现任务。",
+    label: "OpenCode",
+    provider: "opencode",
+    systemPrompt: "你是 Miaochat 中的 OpenCode 平台 Agent，擅长通用实现和内容生成任务。"
+  }
+];
 
 export function ChatExperience() {
   const router = useRouter();
@@ -82,15 +132,19 @@ export function ChatExperience() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [customAgents, setCustomAgents] = useState<CustomAgent[]>([]);
   const [modelConnections, setModelConnections] = useState<ModelConnection[]>([]);
+  const [providerCredentials, setProviderCredentials] = useState<CredentialMetadata[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmingDeleteConversationId, setConfirmingDeleteConversationId] =
     useState<string | null>(null);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
+  const [conversationSearch, setConversationSearch] = useState("");
+  const [includeArchivedConversations, setIncludeArchivedConversations] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [hasLoadedCustomAgents, setHasLoadedCustomAgents] = useState(false);
   const [isLaunchingCodingWorkflow, setIsLaunchingCodingWorkflow] = useState(false);
   const [isLoadingCustomAgents, setIsLoadingCustomAgents] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [isPinningMessageId, setIsPinningMessageId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -112,11 +166,19 @@ export function ChatExperience() {
     useState<CodingWorkflowDecision | null>(null);
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [activeTimelineTab, setActiveTimelineTab] = useState<TimelineTab>("聊天");
   const [composerDraft, setComposerDraft] = useState<string | null>(null);
+  const [isCodingLauncherOpen, setIsCodingLauncherOpen] = useState(false);
+  const [requestedConversationId, setRequestedConversationId] = useState<
+    string | null | undefined
+  >(undefined);
   const postSendRefreshTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const processedStreamEventCountRef = useRef(0);
+  const customAgentsLoadPromiseRef = useRef<Promise<CustomAgent[]> | null>(null);
+  const providerCredentialsLoadPromiseRef = useRef<Promise<CredentialMetadata[]> | null>(null);
   const isWorkspaceReady = !isLoadingWorkspaces && Boolean(workspaceId) && !requiresLogin;
+  const isInitialWorkspaceLoading =
+    isLoadingWorkspaces && workspaces.length === 0 && !requiresLogin;
+  const shouldShowWorkspaceRecoveryOnly = requiresLogin || isInitialWorkspaceLoading;
 
   const stream = useConversationStream({
     conversationId: selectedConversationId,
@@ -127,13 +189,25 @@ export function ChatExperience() {
   );
 
   useEffect(() => {
-    if (!isWorkspaceReady) {
+    if (typeof window === "undefined") {
+      setRequestedConversationId(null);
+      return;
+    }
+
+    setRequestedConversationId(
+      new URLSearchParams(window.location.search).get("conversationId")
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!isWorkspaceReady || requestedConversationId === undefined) {
       return;
     }
 
     void loadConversations();
     void loadModelConnections();
-  }, [isWorkspaceReady, workspaceId]);
+    void loadProviderCredentials();
+  }, [includeArchivedConversations, isWorkspaceReady, requestedConversationId, workspaceId]);
 
   useEffect(() => {
     if (!workspaceId || !selectedConversationId) {
@@ -156,7 +230,6 @@ export function ChatExperience() {
     setLiveAssistantMessage(null);
     setDeployments([]);
     setComposerDraft(null);
-    setActiveTimelineTab("聊天");
     setCustomAgents([]);
     setCodingWorkflow(null);
     setVisualWorkflows([]);
@@ -164,17 +237,20 @@ export function ChatExperience() {
     setHasLoadedCustomAgents(false);
     setIsDecisioningWorkflow(null);
     setIsLoadingConversations(false);
+    setIsLoadingMessages(false);
     setIsLoadingWorkflow(false);
     setModelConnections([]);
+    setProviderCredentials([]);
+    customAgentsLoadPromiseRef.current = null;
+    providerCredentialsLoadPromiseRef.current = null;
     clearPostSendRefreshTimers();
     processedStreamEventCountRef.current = 0;
   }, [workspaceId]);
 
   useEffect(() => {
-    setActiveTimelineTab("聊天");
-
     if (!selectedConversationId) {
       setMessages([]);
+      setIsLoadingMessages(false);
       setArtifactsByMessageId({});
       setArtifactStatusesByMessageId({});
       setCodingWorkflow(null);
@@ -294,14 +370,29 @@ export function ChatExperience() {
   }, [selectedConversationId, stream.events]);
 
   const conversationList = Array.isArray(conversations) ? conversations : [];
-  const hasReadyModelConnection = modelConnections.some(
-    (connection) => connection.status === "valid"
+  const validConversationProviders = resolveValidConversationProviders(
+    providerCredentials,
+    modelConnections
+  );
+  const hasReadyModelConnection = validConversationProviders.size > 0;
+  const conversationAgentOptions = buildConversationAgentOptions(
+    customAgents,
+    validConversationProviders
   );
   const codingEligibleCustomAgents = customAgents.filter(
     (agent) => !isBuiltInCodingTeammate(agent)
   );
   const selectedConversation =
     conversationList.find((conversation) => conversation.id === selectedConversationId) ?? null;
+  const visibleConversations = sortConversationsForInbox(
+    conversationList.filter((conversation) => {
+      const matchesArchiveView = includeArchivedConversations
+        ? Boolean(conversation.archivedAt)
+        : !conversation.archivedAt;
+
+      return matchesArchiveView && matchesConversationSearch(conversation, conversationSearch);
+    })
+  );
   const timelineFileEntries = messages.flatMap((message) =>
     (artifactsByMessageId[message.id] ?? []).map((artifact) => ({
       artifact,
@@ -309,6 +400,9 @@ export function ChatExperience() {
     }))
   );
   const pinnedTimelineMessages = messages.filter((message) => message.isPinned);
+  const selectedHtmlArtifact = timelineFileEntries.find(({ artifact }) =>
+    isHtmlArtifact(artifact)
+  )?.artifact ?? null;
 
   useEffect(() => {
     if (
@@ -333,7 +427,11 @@ export function ChatExperience() {
     setIsLoadingConversations(true);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/conversations?workspaceId=${workspaceId}`, {
+      const params = new URLSearchParams({ workspaceId: workspaceId ?? "" });
+      if (includeArchivedConversations) {
+        params.set("includeArchived", "true");
+      }
+      const response = await fetch(`${apiBaseUrl}/conversations?${params.toString()}`, {
         credentials: "include"
       });
       const payload = await readJson(response);
@@ -355,6 +453,13 @@ export function ChatExperience() {
             return current;
           }
 
+          if (
+            requestedConversationId &&
+            nextConversations.some((conversation) => conversation.id === requestedConversationId)
+          ) {
+            return requestedConversationId;
+          }
+
           const restoredConversationId = resolveStoredConversationId(
             workspaceId,
             nextConversations
@@ -373,6 +478,8 @@ export function ChatExperience() {
   }
 
   async function loadMessages(conversationId: string): Promise<void> {
+    setIsLoadingMessages(true);
+
     try {
       const response = await fetch(
         `${apiBaseUrl}/messages?conversationId=${conversationId}&workspaceId=${workspaceId}`,
@@ -407,6 +514,8 @@ export function ChatExperience() {
       startTransition(() => {
         setErrorMessage("无法加载消息。");
       });
+    } finally {
+      setIsLoadingMessages(false);
     }
   }
 
@@ -521,10 +630,49 @@ export function ChatExperience() {
     }
   }
 
-  async function loadCustomAgents(): Promise<CustomAgent[]> {
-    setIsLoadingCustomAgents(true);
+  async function loadProviderCredentials(): Promise<CredentialMetadata[]> {
+    if (providerCredentialsLoadPromiseRef.current) {
+      return providerCredentialsLoadPromiseRef.current;
+    }
+
+    const loadPromise = (async () => {
+      const response = await fetch(`${apiBaseUrl}/credentials?workspaceId=${workspaceId}`, {
+        credentials: "include"
+      });
+
+      if (!response.ok) {
+        setProviderCredentials([]);
+        return [];
+      }
+
+      const payload = await readJson(response);
+      const nextCredentials = asArray<CredentialMetadata>(payload);
+
+      setProviderCredentials(nextCredentials);
+
+      return nextCredentials;
+    })();
+
+    providerCredentialsLoadPromiseRef.current = loadPromise;
 
     try {
+      return await loadPromise;
+    } catch {
+      setProviderCredentials([]);
+      return [];
+    } finally {
+      providerCredentialsLoadPromiseRef.current = null;
+    }
+  }
+
+  async function loadCustomAgents(): Promise<CustomAgent[]> {
+    if (customAgentsLoadPromiseRef.current) {
+      return customAgentsLoadPromiseRef.current;
+    }
+
+    setIsLoadingCustomAgents(true);
+
+    const loadPromise = (async () => {
       const response = await fetch(`${apiBaseUrl}/custom-agents?workspaceId=${workspaceId}`, {
         credentials: "include"
       });
@@ -536,21 +684,24 @@ export function ChatExperience() {
 
       const nextAgents = asArray<CustomAgent>(payload);
 
-      startTransition(() => {
-        setCustomAgents(nextAgents);
-        setHasLoadedCustomAgents(true);
-      });
+      setCustomAgents(nextAgents);
+      setHasLoadedCustomAgents(true);
 
       return nextAgents;
+    })();
+
+    customAgentsLoadPromiseRef.current = loadPromise;
+
+    try {
+      return await loadPromise;
     } catch (error) {
-      startTransition(() => {
-        setHasLoadedCustomAgents(true);
-      });
+      setHasLoadedCustomAgents(true);
       setErrorMessage(
         error instanceof Error ? error.message : "无法加载 AI 同事。"
       );
       throw error;
     } finally {
+      customAgentsLoadPromiseRef.current = null;
       setIsLoadingCustomAgents(false);
     }
   }
@@ -589,13 +740,101 @@ export function ChatExperience() {
     return payload;
   }
 
+  async function resolveConversationAgentIds(optionIds: string[]): Promise<string[]> {
+    const resolvedAgentIds: string[] = [];
+
+    for (const optionId of optionIds) {
+      const option = conversationAgentOptions.find((entry) => entry.id === optionId) ?? null;
+
+      if (!option) {
+        throw new Error("请选择可用的 Agent。");
+      }
+
+      if (option.agentId) {
+        resolvedAgentIds.push(option.agentId);
+        continue;
+      }
+
+      resolvedAgentIds.push(await ensurePlatformAgent(option.provider));
+    }
+
+    return [...new Set(resolvedAgentIds)];
+  }
+
+  async function ensurePlatformAgent(
+    provider: SupportedConversationProvider
+  ): Promise<string> {
+    const existingAgent = findDefaultPlatformAgent(customAgents, provider);
+
+    if (existingAgent) {
+      return existingAgent.id;
+    }
+
+    const profile = getPlatformProviderProfile(provider);
+    let createdAgent: CustomAgent;
+
+    try {
+      createdAgent = await createPlatformAgent(profile.label, profile);
+    } catch (error) {
+      if (!isConflictError(error)) {
+        throw error;
+      }
+
+      createdAgent = await createPlatformAgent(`${profile.label} Agent`, profile);
+    }
+
+    startTransition(() => {
+      setCustomAgents((current) => [createdAgent, ...current]);
+      setHasLoadedCustomAgents(true);
+    });
+
+    return createdAgent.id;
+  }
+
+  async function createPlatformAgent(
+    name: string,
+    profile: (typeof platformProviderProfiles)[number]
+  ): Promise<CustomAgent> {
+    const response = await fetch(`${apiBaseUrl}/custom-agents`, {
+      body: JSON.stringify({
+        approvalMode: "balanced",
+        avatarUrl: null,
+        capabilityTags: [platformRuntimeAgentTag],
+        memoryMode: "workspace_plus_teammate",
+        modelProfileId: null,
+        name,
+        outputStyle: "清晰、结构化、先给结论再给步骤。",
+        provider: profile.provider,
+        scopeDescription: `通过 ${profile.label} 处理当前对话中的任务。`,
+        systemPrompt: profile.systemPrompt,
+        toolBindings: [],
+        workspaceId
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      throw createHttpError(response.status, readErrorMessage(payload, "创建平台 Agent 失败。"));
+    }
+
+    return payload as CustomAgent;
+  }
+
   async function handleCreateConversation(): Promise<void> {
     setErrorMessage(null);
 
     try {
-      if (customAgents.length === 0) {
-        await loadCustomAgents();
-      }
+      await Promise.all([
+        hasLoadedCustomAgents ? Promise.resolve(customAgents) : loadCustomAgents(),
+        providerCredentials.length === 0
+          ? loadProviderCredentials()
+          : Promise.resolve(providerCredentials)
+      ]);
 
       startTransition(() => {
         setIsNewConversationOpen(true);
@@ -607,14 +846,20 @@ export function ChatExperience() {
     }
   }
 
-  async function handleCreateCustomConversation(agentId: string): Promise<void> {
+  async function handleCreateCustomConversation(input: {
+    agentOptionIds: string[];
+    mode: "direct" | "group";
+    title?: string;
+  }): Promise<void> {
     setErrorMessage(null);
     setIsCreating(true);
 
     try {
+      const agentIds = await resolveConversationAgentIds(input.agentOptionIds);
       await createConversation({
-        agentIds: [agentId],
-        mode: "direct"
+        agentIds,
+        mode: input.mode,
+        title: input.title
       });
 
       startTransition(() => {
@@ -649,7 +894,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "删除频道失败。"));
+        throw new Error(readErrorMessage(payload, "删除会话失败。"));
       }
 
       startTransition(() => {
@@ -679,10 +924,48 @@ export function ChatExperience() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "删除频道失败。"
+        error instanceof Error ? error.message : "删除会话失败。"
       );
     } finally {
       setDeletingConversationId(null);
+    }
+  }
+
+  async function handleConversationListAction(
+    conversation: Conversation,
+    path: "archive" | "pin" | "restore" | "unpin"
+  ): Promise<void> {
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/conversations/${encodeURIComponent(
+          conversation.id
+        )}/${path}?workspaceId=${encodeURIComponent(workspaceId)}`,
+        {
+          credentials: "include",
+          method: "POST"
+        }
+      );
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "更新会话失败。"));
+      }
+
+      const nextConversation = payload as Conversation;
+
+      startTransition(() => {
+        setConversations((current) =>
+          sortConversationsForInbox(
+            current.map((entry) =>
+              entry.id === nextConversation.id ? nextConversation : entry
+            )
+          )
+        );
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "更新会话失败。");
     }
   }
 
@@ -729,7 +1012,6 @@ export function ChatExperience() {
     setDeployments([]);
     setLiveAssistantMessage(null);
     setLiveOrchestratorStatus(null);
-    setActiveTimelineTab("聊天");
     processedStreamEventCountRef.current = 0;
   }
 
@@ -1138,19 +1420,23 @@ export function ChatExperience() {
     return diffResponse.text();
   }
 
-  async function handlePinMessage(messageId: string): Promise<void> {
+  async function handleTogglePinMessage(message: Message): Promise<void> {
     if (!selectedConversationId) {
       return;
     }
 
     const conversationId = selectedConversationId;
+    const nextAction = message.isPinned ? "unpin" : "pin";
+    const fallbackMessage = message.isPinned
+      ? "取消置顶消息失败。"
+      : "置顶选中消息失败。";
 
     setErrorMessage(null);
-    setIsPinningMessageId(messageId);
+    setIsPinningMessageId(message.id);
 
     try {
       const response = await fetch(
-        `${apiBaseUrl}/messages/${messageId}/pin?workspaceId=${workspaceId}`,
+        `${apiBaseUrl}/messages/${message.id}/${nextAction}?workspaceId=${workspaceId}`,
         {
           credentials: "include",
           method: "POST"
@@ -1159,7 +1445,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "置顶选中消息失败。"));
+        throw new Error(readErrorMessage(payload, fallbackMessage));
       }
 
       const parsed = payload as {
@@ -1186,43 +1472,11 @@ export function ChatExperience() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "置顶选中消息失败。"
+        error instanceof Error ? error.message : fallbackMessage
       );
     } finally {
       setIsPinningMessageId(null);
     }
-  }
-
-  function handleAuthenticated(): void {
-    startTransition(() => {
-      setErrorMessage(null);
-    });
-    void refreshWorkspaces();
-    void loadConversations();
-    void loadModelConnections();
-  }
-
-  function handleLoggedOut(): void {
-    startTransition(() => {
-      setArtifactsByMessageId({});
-      setCodingWorkflow(null);
-      setConfirmingDeleteConversationId(null);
-      setConversations([]);
-      setCustomAgents([]);
-      setDeletingConversationId(null);
-      setHasLoadedCustomAgents(false);
-      setDeployments([]);
-      setComposerDraft(null);
-      setErrorMessage(null);
-      setIsDecisioningWorkflow(null);
-      setIsLoadingConversations(false);
-      setLiveAssistantMessage(null);
-      setLiveOrchestratorStatus(null);
-      setMessages([]);
-      setModelConnections([]);
-      setSelectedConversationId(null);
-    });
-    void refreshWorkspaces({ clearOnAuthFailure: true });
   }
 
   function resolveMessageAuthorLabel(message: Message): string | undefined {
@@ -1254,62 +1508,350 @@ export function ChatExperience() {
   const conversationCountLabel =
     isLoadingConversations && conversationList.length === 0
       ? "同步中"
-      : `${conversationList.length} 条`;
+      : `${visibleConversations.length} 条`;
+  const selectedParticipantLabel =
+    selectedConversation?.participants.map((entry) => entry.agentName).join(", ") ||
+    "还没有绑定 Agent";
+  const shouldShowStreamStatus =
+    Boolean(selectedConversationId) &&
+    (stream.connectionState === "connecting" || stream.connectionState === "error");
 
   return (
-    <AppShell
-      workspaceSlot={
-        <WorkspaceSwitcher
-          activeWorkspaceId={workspaceId}
-          isLoading={isLoadingWorkspaces}
-          onSelect={selectWorkspace}
-          workspaces={workspaces}
-        />
-      }
-    >
-      <section className="grid gap-6">
-        <div className="mb-5 flex flex-col justify-between gap-4 border-b border-slate-200/80 pb-5 xl:flex-row xl:items-start">
-          <div>
-            <h2 className="m-0 text-2xl font-semibold text-slate-950">
-              {selectedConversation ? `# ${selectedConversation.title}` : "频道时间线"}
-            </h2>
-            <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              {selectedConversation
-                ? "继续在这个频道里推进任务。消息、状态变化和产物都会沿着同一条时间线持续写回。"
-                : hasReadyModelConnection
-                  ? "先选择一个已有频道，或通过“启动编码工作流”拉起默认 AI 团队。"
-                  : "先在设置中完成模型连接，再进入频道开始协作。"}
-            </p>
+    <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_48%,_#f8fafc_100%)] text-slate-950">
+      <header className="sticky top-0 z-20 border-b border-white/70 bg-white/80 px-4 py-3 shadow-[0_1px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link
+              className="rounded-full bg-slate-950 px-3 py-1.5 text-sm font-semibold text-white no-underline"
+              href="/"
+            >
+              Miaochat
+            </Link>
+            <nav aria-label="编码工作台导航" className="flex items-center gap-2 text-sm">
+              <Link className="rounded-full bg-slate-100 px-3 py-1.5 font-semibold text-slate-900 no-underline" href="/">
+                会话
+              </Link>
+              <Link className="rounded-full px-3 py-1.5 font-semibold text-slate-600 no-underline transition hover:bg-white hover:text-slate-950" href="/workflows">
+                Workflow
+              </Link>
+              <Link className="rounded-full px-3 py-1.5 font-semibold text-slate-600 no-underline transition hover:bg-white hover:text-slate-950" href="/settings?section=model-connections">
+                模型连接
+              </Link>
+            </nav>
           </div>
-          <div className="grid gap-2 text-right">
-            <div className="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500">
-              流：{formatStreamState(stream.connectionState)}
-            </div>
+          <div className="flex items-center gap-3">
+            <WorkspaceSwitcher
+              activeWorkspaceId={workspaceId}
+              isLoading={isLoadingWorkspaces}
+              onSelect={selectWorkspace}
+              workspaces={workspaces}
+            />
+            <Link className="text-sm font-semibold text-slate-600 no-underline transition hover:text-slate-950" href="/settings">
+              设置
+            </Link>
           </div>
         </div>
-        <section className="grid gap-5 rounded-[28px] border border-slate-200 bg-slate-50/80 p-5 shadow-sm">
-          <div className="grid gap-2">
-            <Badge tone="primary">协作入口</Badge>
-            <h3 className="m-0 text-xl font-semibold text-slate-950">
-              在同一个窗口里启动协作、选择频道并继续推进工作
-            </h3>
-            <p className="mb-0 text-sm leading-7 text-slate-600">
-              登录状态、工作模式启动器、新建协作和频道列表都放在这里，避免把首页拆成额外的中间栏。
-            </p>
-          </div>
-          <AuthPanel
-            onAuthenticated={handleAuthenticated}
-            onLoggedOut={handleLoggedOut}
-          />
+      </header>
+
+      <main className={`mx-auto grid min-h-[calc(100vh-4rem)] max-w-[1800px] gap-3 p-3 ${
+        shouldShowWorkspaceRecoveryOnly
+          ? "xl:grid-cols-[330px_minmax(0,1fr)]"
+          : "xl:grid-cols-[330px_minmax(0,1fr)_400px]"
+      }`}>
+        <aside className="grid min-h-[72vh] content-start gap-4 rounded-[24px] border border-white/80 bg-white/82 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:sticky xl:top-20 xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto">
           {requiresLogin ? (
             <article
-              className="rounded-[8px] border border-amber-200 bg-amber-50 p-4 text-sm leading-7 text-amber-900"
+              className="grid gap-3 rounded-[12px] border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-700"
               role="alert"
             >
-              {workspaceError ?? "请先登录后再继续操作。"}
+              <div>
+                <h1 className="m-0 text-lg font-semibold text-slate-950">会话</h1>
+                <p className="m-0 mt-1 text-sm leading-6 text-slate-600">
+                  {workspaceError ?? "请先登录后再继续操作。"}
+                </p>
+              </div>
+              <Link
+                className="inline-flex w-fit rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white no-underline transition hover:bg-slate-800"
+                href="/settings?section=profile"
+              >
+                前往设置登录
+              </Link>
             </article>
+          ) : isInitialWorkspaceLoading ? (
+            <>
+              <div>
+                <h1 className="m-0 text-lg font-semibold text-slate-950">会话</h1>
+                <p className="m-0 mt-1 text-xs font-medium text-slate-500">正在恢复工作区</p>
+              </div>
+              <ConversationListSkeleton />
+            </>
           ) : (
             <>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h1 className="m-0 text-lg font-semibold text-slate-950">会话</h1>
+                  <p className="m-0 mt-1 text-xs font-medium text-slate-500">{conversationCountLabel}</p>
+                </div>
+                {!hasReadyModelConnection ? (
+                  <Link
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 no-underline transition hover:bg-slate-50"
+                    href="/settings?section=model-connections"
+                  >
+                    添加模型
+                  </Link>
+                ) : null}
+              </div>
+
+              <NewConversationDialog
+                agentOptions={conversationAgentOptions}
+                busy={isCreating}
+                isLoading={isLoadingCustomAgents}
+                isOpen={isNewConversationOpen}
+                onCreate={handleCreateCustomConversation}
+                onOpen={handleCreateConversation}
+                onToggleOpen={setIsNewConversationOpen}
+              />
+
+              <label className="grid gap-2 text-sm font-semibold text-slate-700" htmlFor="conversation-search">
+                搜索
+                <input
+                  className="h-10 rounded-full border border-slate-200 bg-slate-50 px-4 text-sm font-normal outline-none transition focus:border-slate-400 focus:bg-white"
+                  id="conversation-search"
+                  onChange={(event) => setConversationSearch(event.target.value)}
+                  placeholder="搜索会话、Agent 或产物线索"
+                  type="search"
+                  value={conversationSearch}
+                />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  aria-label="查看最近会话"
+                  aria-pressed={!includeArchivedConversations}
+                  onClick={() => setIncludeArchivedConversations(false)}
+                  size="sm"
+                  variant={!includeArchivedConversations ? "default" : "outline"}
+                >
+                  最近
+                </Button>
+                <Button
+                  aria-label="查看归档会话"
+                  aria-pressed={includeArchivedConversations}
+                  onClick={() => setIncludeArchivedConversations(true)}
+                  size="sm"
+                  variant={includeArchivedConversations ? "default" : "outline"}
+                >
+                  归档
+                </Button>
+              </div>
+              {includeArchivedConversations ? (
+                <p className="m-0 rounded-[10px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-700">
+                  {archivedConversationRetentionNotice}
+                </p>
+              ) : null}
+
+              <div className="grid gap-2" data-testid="conversation-list">
+                {isLoadingConversations && conversationList.length === 0 ? (
+                  <ConversationListSkeleton />
+                ) : visibleConversations.length > 0 ? (
+                  visibleConversations.map((conversation) => (
+                    <ConversationListItem
+                      conversation={conversation}
+                      isDeleting={deletingConversationId === conversation.id}
+                      isSelected={conversation.id === selectedConversationId}
+                      key={conversation.id}
+                      onArchive={() => {
+                        void handleConversationListAction(
+                          conversation,
+                          conversation.archivedAt ? "restore" : "archive"
+                        );
+                      }}
+                      onDelete={() => setConfirmingDeleteConversationId(conversation.id)}
+                      onPin={() => {
+                        void handleConversationListAction(
+                          conversation,
+                          conversation.isPinned ? "unpin" : "pin"
+                        );
+                      }}
+                      onSelect={() => {
+                        setConfirmingDeleteConversationId(null);
+                        setSelectedConversationId(conversation.id);
+                      }}
+                    />
+                  ))
+                ) : (
+                  <p className="m-0 rounded-[8px] border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
+                    {hasReadyModelConnection
+                      ? "还没有会话。新建单聊或群聊后，就可以让 Agent 帮你制作网页或创建 Workflow。"
+                      : "当前工作区还没有可用模型连接。先完成模型连接，再开始对话。"}
+                  </p>
+                )}
+              </div>
+
+              {confirmingDeleteConversationId ? (
+                <DeleteConversationPrompt
+                  conversation={conversationList.find(
+                    (conversation) => conversation.id === confirmingDeleteConversationId
+                  ) ?? null}
+                  deletingConversationId={deletingConversationId}
+                  onCancel={() => setConfirmingDeleteConversationId(null)}
+                  onConfirm={handleDeleteConversation}
+                />
+              ) : null}
+            </>
+          )}
+        </aside>
+
+        <section className="grid min-h-[72vh] grid-rows-[auto_minmax(0,1fr)_auto] rounded-[24px] border border-white/80 bg-white/90 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+	          <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 px-5 py-4">
+	            <div className="min-w-0">
+	              <h2 className="m-0 truncate text-xl font-semibold text-slate-950">
+		                {requiresLogin
+		                  ? "登录后继续"
+		                  : isInitialWorkspaceLoading
+		                    ? "正在恢复会话"
+		                  : selectedConversation
+		                    ? selectedConversation.title
+		                    : "选择一个会话"}
+	              </h2>
+	              <p className="m-0 mt-1 truncate text-sm text-slate-500">
+		                {requiresLogin
+		                  ? "登录后即可恢复会话、网页预览和 Workflow。"
+		                  : isInitialWorkspaceLoading
+		                    ? "正在同步会话、网页预览和 Workflow。"
+		                  : selectedConversation
+		                  ? selectedParticipantLabel
+		                  : "单聊 Agent，或让多个 Agent 在群聊中协作。"}
+	              </p>
+	            </div>
+            {shouldShowStreamStatus ? (
+              <span
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  stream.connectionState === "error"
+                    ? "bg-red-50 text-red-700"
+                    : "bg-amber-50 text-amber-700"
+                }`}
+                role="status"
+              >
+                {formatStreamState(stream.connectionState)}
+              </span>
+            ) : null}
+          </header>
+
+	          <div className="min-h-0 overflow-y-auto px-5 py-4">
+	            {errorMessage ? (
+	              <p className="mt-0 rounded-[8px] border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+	                {errorMessage}
+	              </p>
+	            ) : null}
+		            {requiresLogin ? (
+		              <section className="mx-auto grid max-w-xl gap-4 py-8">
+		                <AuthPanel onAuthenticated={() => void refreshWorkspaces()} />
+		              </section>
+		            ) : isInitialWorkspaceLoading ? (
+		              <section className="mx-auto grid max-w-xl gap-4 py-8">
+		                <SoftLoadingState label="正在恢复工作区" />
+		              </section>
+		            ) : selectedConversationId ? (
+		              <ChatThread
+	                artifactsByMessageId={artifactsByMessageId}
+                artifactStatusesByMessageId={artifactStatusesByMessageId}
+                connectionState={stream.connectionState}
+                deployments={deployments}
+                isLoading={isLoadingWorkspaces || isLoadingMessages}
+                isPinningMessageId={isPinningMessageId}
+                liveAssistantMessage={liveAssistantMessage}
+                liveStatus={liveOrchestratorStatus}
+                messages={messages}
+                onApplyDiffMessage={handleApplyDiffMessage}
+                onQuoteMessage={handleQuoteMessage}
+                onTogglePinMessage={handleTogglePinMessage}
+                resolveAuthorLabel={resolveMessageAuthorLabel}
+                suppressEmptyState={requiresLogin || !selectedConversationId}
+              />
+            ) : (
+              <ConversationWelcome
+                canStart={hasReadyModelConnection}
+                onCreateConversation={handleCreateConversation}
+                onDraft={(draft) => setComposerDraft(draft)}
+              />
+            )}
+	          </div>
+
+		          {!shouldShowWorkspaceRecoveryOnly ? (
+		            <div className="border-t border-slate-200/80 px-5 py-4">
+		              <ChatComposer
+	                disabled={!selectedConversationId || isSending}
+	                disabledReason={
+	                  isComposerWaitingForStream ? realtimeStreamConnectingMessage : null
+	                }
+	                draftContent={composerDraft}
+	                onDraftApplied={() => setComposerDraft(null)}
+	                onSend={handleSend}
+	                participants={selectedConversation?.participants ?? []}
+	                submitDisabled={isComposerWaitingForStream}
+	              />
+	            </div>
+	          ) : null}
+	        </section>
+
+		        {!shouldShowWorkspaceRecoveryOnly ? (
+		        <aside className="grid content-start gap-4 rounded-[24px] border border-white/80 bg-white/82 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:sticky xl:top-20 xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto">
+          <section className="grid gap-3 rounded-[16px] border border-slate-200 bg-slate-50/80 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-base font-semibold text-slate-950">网页预览</h2>
+                <p className="m-0 mt-1 text-sm leading-6 text-slate-500">
+                  HTML 产物生成后会自动显示在这里。
+                </p>
+              </div>
+              <Button
+                onClick={() =>
+                  setComposerDraft("请根据当前需求制作一个响应式单文件 HTML 网页，并生成可下载产物。")
+                }
+                size="sm"
+                variant="outline"
+              >
+                制作网页
+              </Button>
+            </div>
+            {selectedHtmlArtifact ? (
+              <HtmlArtifactPreview artifact={selectedHtmlArtifact} />
+            ) : isLoadingMessages || isLoadingWorkflow || (isLoadingConversations && conversationList.length === 0) ? (
+              <SoftLoadingState label="正在同步网页产物" />
+            ) : (
+              <p className="m-0 rounded-[8px] border border-dashed border-slate-200 bg-white/70 p-4 text-sm leading-7 text-slate-500">
+                还没有可预览的 HTML 产物。
+              </p>
+            )}
+          </section>
+
+          <section className="grid gap-3 rounded-[16px] border border-slate-200 bg-white/90 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-base font-semibold text-slate-950">工作流</h2>
+                <p className="m-0 mt-1 text-sm text-slate-500">创建网页或可复用 Workflow。</p>
+              </div>
+              <Button
+                onClick={() =>
+                  setComposerDraft(
+                    "请创建一个可视化 workflow：输入主题，生成网页大纲，生成 HTML，进行 QA 检查，最后输出可下载网页。"
+                  )
+                }
+                size="sm"
+                variant="outline"
+              >
+                创建 Workflow
+              </Button>
+            </div>
+            <Button
+              aria-expanded={isCodingLauncherOpen}
+              onClick={() => setIsCodingLauncherOpen((current) => !current)}
+              variant="secondary"
+            >
+              {isCodingLauncherOpen ? "收起编码团队" : "打开编码团队"}
+            </Button>
+            {isCodingLauncherOpen ? (
               <WorkModeLauncher
                 canStartCoding={hasReadyModelConnection}
                 customAgents={codingEligibleCustomAgents}
@@ -1317,149 +1859,6 @@ export function ChatExperience() {
                 isLoadingCustomAgents={isLoadingCustomAgents}
                 onLaunchCoding={handleLaunchCodingWorkflow}
               />
-              <div className="grid gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="m-0 text-lg font-semibold text-slate-950">频道列表</h3>
-                    <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-                      选择一个已有频道，或新建一条协作继续推进任务、文件和审批。
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {conversationCountLabel}
-                  </span>
-                </div>
-                {hasReadyModelConnection ? (
-                  <NewConversationDialog
-                    agents={customAgents}
-                    busy={isCreating}
-                    isLoading={isLoadingCustomAgents}
-                    isOpen={isNewConversationOpen}
-                    onCreate={handleCreateCustomConversation}
-                    onOpen={handleCreateConversation}
-                    onToggleOpen={setIsNewConversationOpen}
-                  />
-                ) : (
-                  <a
-                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-900 no-underline transition hover:bg-white"
-                    href="/settings?section=model-connections"
-                  >
-                    添加模型连接
-                  </a>
-                )}
-                <div className="grid gap-2.5">
-                  {conversationList.map((conversation) => (
-                <article
-                  key={conversation.id}
-                  className={`grid gap-3 rounded-3xl border bg-white/90 px-4 py-3 transition hover:bg-white ${
-                    conversation.id === selectedConversationId
-                      ? "border-sky-200 ring-2 ring-sky-100"
-                      : "border-slate-200"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <button
-                      className="grid min-w-0 flex-1 gap-1 text-left"
-                      disabled={deletingConversationId === conversation.id}
-                      onClick={() => {
-                        setConfirmingDeleteConversationId(null);
-                        setSelectedConversationId(conversation.id);
-                      }}
-                      type="button"
-                    >
-                      <strong className="truncate text-slate-950">
-                        # {conversation.title}
-                      </strong>
-                      <span className="truncate text-xs text-slate-500">
-                        {conversation.participants.map((entry) => entry.agentName).join(", ") ||
-                          "暂无 AI 同事"}
-                      </span>
-                    </button>
-                    <button
-                      aria-label={`删除 ${conversation.title}`}
-                      className="shrink-0 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={deletingConversationId === conversation.id}
-                      onClick={() => {
-                        setConfirmingDeleteConversationId(conversation.id);
-                      }}
-                      type="button"
-                    >
-                      删除
-                    </button>
-                  </div>
-                  {confirmingDeleteConversationId === conversation.id ? (
-                    <div className="grid gap-2 rounded-2xl border border-red-100 bg-red-50/80 p-3 text-xs text-red-800">
-                      <p className="m-0 leading-5">
-                        再次确认后会删除这个频道及其消息记录。
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          aria-label={`确认删除 ${conversation.title}`}
-                          className="rounded-full bg-red-700 px-3 py-1.5 font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={deletingConversationId === conversation.id}
-                          onClick={() => {
-                            void handleDeleteConversation(conversation);
-                          }}
-                          type="button"
-                        >
-                          {deletingConversationId === conversation.id ? "删除中..." : "确认删除"}
-                        </button>
-                        <button
-                          aria-label={`取消删除 ${conversation.title}`}
-                          className="rounded-full border border-red-200 bg-white px-3 py-1.5 font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={deletingConversationId === conversation.id}
-                          onClick={() => {
-                            setConfirmingDeleteConversationId(null);
-                          }}
-                          type="button"
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-              {conversationList.length === 0 && !isLoadingConversations && !errorMessage ? (
-                <p className="mb-0 text-sm leading-7 text-slate-600">
-                  {hasReadyModelConnection
-                    ? "当前还没有频道。先新建一条与 AI 同事的协作，再把任务、文件和置顶内容逐步沉淀进来。"
-                    : "当前工作区还没有可用模型连接。先去设置完成连接，再开始新的频道协作。"}
-                </p>
-              ) : null}
-            </div>
-          </div>
-            </>
-          )}
-        </section>
-        <div className="mb-5 flex flex-wrap gap-2">
-          {timelineTabs.map((tab) => {
-            const isActive = activeTimelineTab === tab;
-
-            return (
-              <button
-                key={tab}
-                aria-pressed={isActive}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  isActive
-                    ? "bg-slate-950 text-white"
-                    : "border border-slate-200 bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900"
-                }`}
-                onClick={() => setActiveTimelineTab(tab)}
-                type="button"
-              >
-                {tab}
-              </button>
-            );
-          })}
-        </div>
-        {errorMessage ? (
-          <p className="mt-0 text-sm font-medium text-red-700">{errorMessage}</p>
-        ) : null}
-        {activeTimelineTab === "聊天" ? (
-          <>
-            {selectedConversationId && isLoadingWorkflow ? (
-              <p className="mt-0 text-sm text-slate-500">正在加载当前频道的工作流状态...</p>
             ) : null}
             {codingWorkflow ? (
               <CodingWorkflowPanel
@@ -1478,60 +1877,295 @@ export function ChatExperience() {
                 workflows={visualWorkflows}
               />
             ) : null}
-            <ChatThread
-              artifactsByMessageId={artifactsByMessageId}
-              artifactStatusesByMessageId={artifactStatusesByMessageId}
-              connectionState={stream.connectionState}
-              deployments={deployments}
-              isLoading={isLoadingWorkspaces || isLoadingWorkflow}
-              isPinningMessageId={isPinningMessageId}
-              liveAssistantMessage={liveAssistantMessage}
-              liveStatus={liveOrchestratorStatus}
-              messages={messages}
-              onApplyDiffMessage={handleApplyDiffMessage}
-              onPinMessage={handlePinMessage}
-              onQuoteMessage={handleQuoteMessage}
-              resolveAuthorLabel={resolveMessageAuthorLabel}
-              suppressEmptyState={requiresLogin || !selectedConversationId}
-            />
-            <ChatComposer
-              disabled={!selectedConversationId || isSending}
-              disabledReason={
-                isComposerWaitingForStream ? realtimeStreamConnectingMessage : null
-              }
-              draftContent={composerDraft}
-              onDraftApplied={() => setComposerDraft(null)}
-              onSend={handleSend}
-              participants={selectedConversation?.participants ?? []}
-              submitDisabled={isComposerWaitingForStream}
-            />
-          </>
-        ) : activeTimelineTab === "文件" ? (
-          <TimelineFiles entries={timelineFileEntries} />
-        ) : (
+          </section>
+
+          <TimelineFiles entries={timelineFileEntries} isLoading={isLoadingMessages} />
           <PinnedTimeline
             messages={pinnedTimelineMessages}
             resolveAuthorLabel={resolveMessageAuthorLabel}
           />
-        )}
-      </section>
-    </AppShell>
+	        </aside>
+	        ) : null}
+	      </main>
+	    </div>
+	  );
+}
+
+function ConversationListItem({
+  conversation,
+  isDeleting,
+  isSelected,
+  onArchive,
+  onDelete,
+  onPin,
+  onSelect
+}: {
+  conversation: Conversation;
+  isDeleting: boolean;
+  isSelected: boolean;
+  onArchive: () => void;
+  onDelete: () => void;
+  onPin: () => void;
+  onSelect: () => void;
+}) {
+  const participantLabel =
+    conversation.participants.map((entry) => entry.agentName).join(", ") ||
+    "未绑定 Agent";
+
+  return (
+    <article
+      className={`grid gap-2 rounded-[16px] border px-3 py-3 transition ${
+        isSelected
+          ? "border-slate-950 bg-slate-950 text-white shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
+          : "border-slate-200 bg-white/85 text-slate-950 hover:bg-white"
+      }`}
+      data-archived={conversation.archivedAt ? "true" : "false"}
+      data-conversation-id={conversation.id}
+      data-pinned={conversation.isPinned ? "true" : "false"}
+    >
+      <button
+        className="grid min-w-0 gap-1 text-left"
+        disabled={isDeleting}
+        onClick={onSelect}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {conversation.isPinned ? (
+            <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold">
+              置顶
+            </span>
+          ) : null}
+          <strong className="truncate text-sm">{conversation.title}</strong>
+        </span>
+        <span className={`truncate text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+          {conversation.mode === "direct" ? "单聊" : "群聊"} · {participantLabel}
+        </span>
+      </button>
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+            isSelected
+              ? "bg-white/12 text-white hover:bg-white/18"
+              : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
+          }`}
+          onClick={onPin}
+          type="button"
+        >
+          {conversation.isPinned ? "取消置顶" : "置顶"}
+        </button>
+        <button
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+            isSelected
+              ? "bg-white/12 text-white hover:bg-white/18"
+              : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
+          }`}
+          onClick={onArchive}
+          type="button"
+        >
+          {conversation.archivedAt ? "恢复" : "归档"}
+        </button>
+        <button
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+            isSelected
+              ? "bg-red-400/20 text-red-100 hover:bg-red-400/30"
+              : "border border-red-100 bg-red-50 text-red-600 hover:bg-red-100"
+          }`}
+          disabled={isDeleting}
+          onClick={onDelete}
+          type="button"
+        >
+          删除
+        </button>
+      </div>
+    </article>
   );
 }
 
-function TimelineFiles({ entries }: { entries: TimelineFileEntry[] }) {
+function DeleteConversationPrompt({
+  conversation,
+  deletingConversationId,
+  onCancel,
+  onConfirm
+}: {
+  conversation: Conversation | null;
+  deletingConversationId: string | null;
+  onCancel: () => void;
+  onConfirm: (conversation: Conversation) => Promise<void>;
+}) {
+  if (!conversation) {
+    return null;
+  }
+
   return (
-    <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-white/85 p-5">
+    <section className="grid gap-2 rounded-[12px] border border-red-100 bg-red-50 p-3 text-xs text-red-800">
+      <p className="m-0 leading-5">再次确认后会删除这个会话及其消息记录。</p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          disabled={deletingConversationId === conversation.id}
+          onClick={() => {
+            void onConfirm(conversation);
+          }}
+          size="sm"
+        >
+          {deletingConversationId === conversation.id ? "删除中..." : "确认删除"}
+        </Button>
+        <Button
+          disabled={deletingConversationId === conversation.id}
+          onClick={onCancel}
+          size="sm"
+          variant="outline"
+        >
+          取消
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function ConversationWelcome({
+  canStart,
+  onCreateConversation,
+  onDraft
+}: {
+  canStart: boolean;
+  onCreateConversation: () => Promise<void> | void;
+  onDraft: (draft: string) => void;
+}) {
+  return (
+    <section className="grid min-h-[46vh] place-items-center">
+      <div className="grid max-w-xl gap-4 text-center">
+        <div>
+          <h2 className="m-0 text-2xl font-semibold text-slate-950">选择或新建一个对话</h2>
+          <p className="m-0 mt-3 text-sm leading-7 text-slate-600">
+            单聊适合明确任务，群聊适合让多个 Agent 分工。聊天历史和置顶消息会作为上下文传递。
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button disabled={!canStart} onClick={() => void onCreateConversation()}>
+            新建对话
+          </Button>
+          <Button
+            onClick={() =>
+              onDraft("请创建一个响应式单文件 HTML 网页，并在完成后生成可下载产物。")
+            }
+            variant="outline"
+          >
+            制作网页
+          </Button>
+          <Button
+            onClick={() =>
+              onDraft("请创建一个可视化 workflow，先预览节点和输入输出，等待我执行。")
+            }
+            variant="outline"
+          >
+            创建 Workflow
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HtmlArtifactPreview({ artifact }: { artifact: Artifact }) {
+  const [html, setHtml] = useState("");
+  const [status, setStatus] = useState<"error" | "loading" | "ready">("loading");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setStatus("loading");
+    setHtml("");
+
+    fetch(buildArtifactContentUrl(artifact.id, artifact.workspaceId), {
+      credentials: "include",
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("HTML 预览加载失败。");
+        }
+        const payload = await response.json() as { content?: unknown };
+        return typeof payload.content === "string" ? payload.content : "";
+      })
+      .then((content) => {
+        setHtml(content);
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setStatus("error");
+        }
+      });
+
+    return () => controller.abort();
+  }, [artifact.id, artifact.workspaceId]);
+
+  if (status === "loading") {
+    return <SoftLoadingState label="正在打开网页预览" />;
+  }
+
+  if (status === "error" || !html) {
+    return (
+      <p className="m-0 rounded-[8px] border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+        HTML 预览暂时无法打开。可以在文件区展开或下载产物。
+      </p>
+    );
+  }
+
+  return (
+    <iframe
+      className="h-[360px] w-full rounded-[12px] border border-slate-200 bg-white"
+      sandbox="allow-scripts"
+      srcDoc={html}
+      title={`${artifact.title} 预览`}
+    />
+  );
+}
+
+function ConversationListSkeleton() {
+  return (
+    <div className="grid gap-2" aria-label="正在加载会话">
+      {[0, 1, 2].map((index) => (
+        <div
+          className="h-20 rounded-[16px] bg-[linear-gradient(100deg,_rgba(241,245,249,0.65)_0%,_rgba(255,255,255,0.95)_45%,_rgba(226,232,240,0.72)_100%)] animate-pulse"
+          key={index}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SoftLoadingState({ label }: { label: string }) {
+  return (
+    <div className="grid gap-3 rounded-[12px] border border-slate-200 bg-white/72 p-4" role="status">
+      <div className="h-3 w-32 rounded-full bg-[linear-gradient(100deg,_#e2e8f0,_#ffffff,_#cbd5e1)] animate-pulse" />
+      <div className="h-24 rounded-[10px] bg-[linear-gradient(100deg,_rgba(226,232,240,0.75),_rgba(255,255,255,0.92),_rgba(203,213,225,0.65))] animate-pulse" />
+      <p className="m-0 text-sm font-medium text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+function TimelineFiles({
+  entries,
+  isLoading
+}: {
+  entries: TimelineFileEntry[];
+  isLoading: boolean;
+}) {
+  return (
+    <section className="grid gap-4 rounded-[16px] border border-slate-200 bg-white/90 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="m-0 text-lg font-semibold text-slate-950">频道文件</h2>
+          <h2 className="m-0 text-base font-semibold text-slate-950">会话文件</h2>
           <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-            {entries.length > 0
-              ? `当前频道已有 ${entries.length} 个文件产物。`
-              : "当前频道还没有文件产物。"}
+            {isLoading
+              ? "正在同步文件产物。"
+              : entries.length > 0
+                ? `当前会话已有 ${entries.length} 个文件产物。`
+                : "当前会话还没有文件产物。"}
           </p>
         </div>
       </div>
+      {isLoading && entries.length === 0 ? <SoftLoadingState label="正在同步文件" /> : null}
       {entries.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {entries.map(({ artifact, message }) => (
@@ -1555,14 +2189,14 @@ function PinnedTimeline({
   resolveAuthorLabel: (message: Message) => string | undefined;
 }) {
   return (
-    <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-white/85 p-5">
+    <section className="grid gap-4 rounded-[16px] border border-slate-200 bg-white/90 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="m-0 text-lg font-semibold text-slate-950">置顶消息</h2>
+          <h2 className="m-0 text-base font-semibold text-slate-950">长期上下文</h2>
           <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
             {messages.length > 0
-              ? `当前频道已有 ${messages.length} 条置顶消息。`
-              : "当前频道还没有置顶消息。"}
+              ? `当前会话已有 ${messages.length} 条置顶消息，会随上下文传递给 Agent。`
+              : "还没有置顶消息。可以在消息操作中 pin 关键要求。"}
           </p>
         </div>
       </div>
@@ -1604,6 +2238,167 @@ function formatStreamState(
     case "idle":
       return "空闲";
   }
+}
+
+function resolveValidConversationProviders(
+  credentials: CredentialMetadata[],
+  modelConnections: ModelConnection[]
+): Set<SupportedConversationProvider> {
+  const providers = new Set<SupportedConversationProvider>();
+
+  for (const credential of credentials) {
+    if (
+      credential.validationState === "valid" &&
+      isSupportedConversationProvider(credential.provider)
+    ) {
+      providers.add(credential.provider);
+    }
+  }
+
+  if (
+    modelConnections.some(
+      (connection) => connection.kind === "opencode_model" && connection.status === "valid"
+    )
+  ) {
+    providers.add("opencode");
+  }
+
+  return providers;
+}
+
+function buildConversationAgentOptions(
+  agents: CustomAgent[],
+  validProviders: Set<SupportedConversationProvider>
+): ConversationAgentOption[] {
+  const platformOptions = buildPlatformConversationAgentOptions(agents, validProviders);
+  const customOptions = agents
+    .filter(isDisplayableCustomConversationAgent)
+    .map((agent) => {
+      const provider = agent.provider as SupportedConversationProvider;
+      const connected = validProviders.has(provider);
+
+      return {
+        agentId: agent.id,
+        category: "custom",
+        description: "平台自建 Agent",
+        disabledReason: connected ? undefined : "未连接，去模型连接",
+        id: `agent:${agent.id}`,
+        label: agent.name,
+        provider
+      } satisfies ConversationAgentOption;
+    });
+
+  return [...platformOptions, ...customOptions];
+}
+
+function buildPlatformConversationAgentOptions(
+  agents: CustomAgent[],
+  validProviders: Set<SupportedConversationProvider>
+): ConversationAgentOption[] {
+  const options: ConversationAgentOption[] = [];
+
+  for (const profile of platformProviderProfiles) {
+    const connected = validProviders.has(profile.provider);
+    const platformAgents = agents.filter(
+      (agent) =>
+        agent.provider === profile.provider &&
+        agent.capabilityTags.includes(platformRuntimeAgentTag) &&
+        !isBuiltInCodingTeammate(agent)
+    );
+
+    if (profile.provider === "opencode" && platformAgents.length > 0) {
+      options.push(
+        ...platformAgents.map((agent) => ({
+          agentId: agent.id,
+          category: "platform" as const,
+          description: agent.scopeDescription ?? "可处理聊天、代码和网页产物任务。",
+          disabledReason: connected ? undefined : "连接不可用，请检查模型连接",
+          id: `agent:${agent.id}`,
+          label: agent.name,
+          provider: profile.provider
+        }))
+      );
+      continue;
+    }
+
+    const defaultAgent = platformAgents[0] ?? null;
+    options.push({
+      agentId: defaultAgent?.id,
+      category: "platform",
+      description: defaultAgent?.scopeDescription ?? profile.description,
+      disabledReason: connected ? undefined : "未连接，去模型连接",
+      id: `platform:${profile.provider}`,
+      label: defaultAgent?.name ?? profile.label,
+      provider: profile.provider
+    });
+  }
+
+  return options;
+}
+
+function findDefaultPlatformAgent(
+  agents: CustomAgent[],
+  provider: SupportedConversationProvider
+): CustomAgent | null {
+  const profile = getPlatformProviderProfile(provider);
+
+  return (
+    agents.find(
+      (agent) =>
+        agent.provider === provider &&
+        agent.capabilityTags.includes(platformRuntimeAgentTag)
+    ) ??
+    agents.find((agent) => agent.provider === provider && agent.name === profile.label) ??
+    null
+  );
+}
+
+function getPlatformProviderProfile(provider: SupportedConversationProvider) {
+  return (
+    platformProviderProfiles.find((profile) => profile.provider === provider) ??
+    platformProviderProfiles[0]!
+  );
+}
+
+function isDisplayableCustomConversationAgent(agent: CustomAgent): boolean {
+  if (!isSupportedConversationProvider(agent.provider)) {
+    return false;
+  }
+
+  if (hiddenConversationAgentNames.has(agent.name)) {
+    return false;
+  }
+
+  if (agent.capabilityTags.includes(platformRuntimeAgentTag)) {
+    return false;
+  }
+
+  if (platformProviderProfiles.some((profile) => profile.label === agent.name)) {
+    return false;
+  }
+
+  return !agent.capabilityTags.some((tag) => hiddenConversationAgentTags.has(tag));
+}
+
+function isSupportedConversationProvider(
+  provider: ProviderCredential["provider"] | CustomAgent["provider"]
+): provider is SupportedConversationProvider {
+  return provider === "claude-code" || provider === "codex" || provider === "opencode";
+}
+
+function createHttpError(status: number, message: string): Error & { status: number } {
+  const error = new Error(message) as Error & { status: number };
+  error.status = status;
+  return error;
+}
+
+function isConflictError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "status" in error &&
+      (error as { status?: unknown }).status === 409
+  );
 }
 
 function asArray<T>(payload: unknown): T[] {
@@ -1719,6 +2514,47 @@ function formatTimelineDate(value: Date | string): string {
     minute: "2-digit",
     month: "2-digit"
   }).format(new Date(value));
+}
+
+function sortConversationsForInbox(conversations: Conversation[]): Conversation[] {
+  return [...conversations].sort((left, right) => {
+    if (left.isPinned !== right.isPinned) {
+      return left.isPinned ? -1 : 1;
+    }
+
+    if (Boolean(left.archivedAt) !== Boolean(right.archivedAt)) {
+      return left.archivedAt ? 1 : -1;
+    }
+
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+  });
+}
+
+function matchesConversationSearch(
+  conversation: Conversation,
+  search: string
+): boolean {
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  const searchableText = [
+    conversation.title,
+    conversation.mode,
+    ...conversation.participants.map((participant) => participant.agentName)
+  ]
+    .join(" ")
+    .toLocaleLowerCase();
+
+  return searchableText.includes(normalizedSearch);
+}
+
+function isHtmlArtifact(artifact: Artifact): boolean {
+  const mimeType = artifact.mimeType.toLocaleLowerCase();
+
+  return mimeType.includes("html") || /\.html?$/i.test(artifact.title);
 }
 
 function toIsoDateTime(value: Date | string): string {

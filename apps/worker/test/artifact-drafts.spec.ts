@@ -4,6 +4,7 @@ import { multiAgentOutputEnvelopeSchema } from "@agenthub/contracts";
 
 import {
   extractRuntimeArtifactDrafts,
+  runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactToolName,
   runtimeWebpageArtifactToolName
 } from "../src/activities/artifact-drafts.js";
@@ -86,6 +87,43 @@ describe("runtime artifact draft extraction", () => {
         mimeType: "text/html",
         title: "Transformers movie page",
         type: "webpage"
+      }
+    ]);
+  });
+
+  it("extracts normalized Diff artifact drafts from low-risk tool plans", () => {
+    const envelope = multiAgentOutputEnvelopeSchema.parse({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:review-diff",
+              input: {
+                fileName: "../Review patch",
+                patch: "diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+                title: " Review patch "
+              },
+              inputSchemaVersion: "1",
+              toolName: runtimeDiffArtifactToolName
+            }
+          ],
+          expectedSideEffects: ["Create a downloadable Diff artifact."],
+          riskLevel: "low",
+          summary: "Create the requested diff artifact.",
+          type: "tool_plan"
+        }
+      ],
+      visibleMessage: "代码审阅 diff 已准备好。"
+    });
+
+    expect(extractRuntimeArtifactDrafts(envelope)).toEqual([
+      {
+        fileName: "Review-patch.diff",
+        mimeType: "text/x-diff",
+        patch: "diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+        title: "Review patch",
+        truncated: false,
+        type: "diff"
       }
     ]);
   });

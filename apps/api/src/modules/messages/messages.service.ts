@@ -292,6 +292,65 @@ export class MessagesService {
     });
   }
 
+  async unpin(
+    messageId: string,
+    workspaceId: string,
+    ownerUserId: string
+  ): Promise<PinMessageResponse> {
+    const parsedMessageId = messageIdSchema.parse(messageId);
+    const parsedWorkspaceId = workspaceIdSchema.parse(workspaceId);
+    const target = await this.messagesRepository.findMessageTarget(
+      parsedMessageId,
+      parsedWorkspaceId
+    );
+
+    if (!target) {
+      throw new NotFoundException(
+        `Message ${parsedMessageId} was not found in workspace ${parsedWorkspaceId}`
+      );
+    }
+
+    const access = await this.resolveReadAccessOrNotFound({
+      actorUserId: ownerUserId,
+      channelId: target.conversation_id,
+      workspaceId: parsedWorkspaceId
+    });
+
+    if (access.permission === "read") {
+      throw new ForbiddenException("你在这个频道里只有只读权限，不能取消固定消息。");
+    }
+
+    return this.database.transaction(async (tx) => {
+      const messageRow = await this.messagesRepository.unpinMessage(
+        parsedMessageId,
+        parsedWorkspaceId,
+        target.owner_user_id,
+        ownerUserId,
+        tx
+      );
+
+      if (!messageRow) {
+        throw new NotFoundException(
+          `Message ${parsedMessageId} was not found in workspace ${parsedWorkspaceId}`
+        );
+      }
+
+      const message = mapMessageRow(messageRow, ownerUserId);
+      const pinnedMessageIds = await this.messagesRepository.removePinnedMessageId(
+        message.conversationId,
+        message.id,
+        parsedWorkspaceId,
+        target.owner_user_id,
+        tx
+      );
+
+      return {
+        message,
+        pinnedMessageIds
+      };
+    });
+  }
+
   async getThread(
     messageId: string,
     workspaceId: string,

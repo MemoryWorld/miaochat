@@ -1,8 +1,56 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { BadRequestException } from "@nestjs/common";
+
 import { MessageDispatchService } from "../src/modules/messages/message-dispatch.service.js";
 
 describe("MessageDispatchService", () => {
+  it("defaults messages/send payloads without role to user-authored messages", async () => {
+    const { messagesService, service } = createNoAgentDispatchService();
+
+    const response = await service.send(
+      {
+        content: "请总结今天的项目进展。",
+        conversationId: "conv_direct",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+
+    expect(messagesService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "请总结今天的项目进展。",
+        conversationId: "conv_direct",
+        role: "user",
+        workspaceId: "workspace_1"
+      }),
+      "user_owner",
+      expect.objectContaining({
+        ownerUserId: "user_owner"
+      })
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        content: "请总结今天的项目进展。",
+        role: "user"
+      })
+    );
+  });
+
+  it("rejects invalid messages/send payloads with a structured bad request instead of leaking Zod errors", async () => {
+    const { service } = createNoAgentDispatchService();
+
+    await expect(
+      service.send(
+        {
+          conversationId: "conv_direct",
+          workspaceId: "workspace_1"
+        },
+        "user_owner"
+      )
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it("routes natural-language workflow creation requests to an independent visual workflow preview", async () => {
     const executeWorkflow = vi.fn();
     const launchedWorkflow = {
@@ -170,6 +218,275 @@ describe("MessageDispatchService", () => {
     );
     expect(executeWorkflow).not.toHaveBeenCalled();
     expect(recordAgentRunsStarted).not.toHaveBeenCalled();
+  });
+
+  it("routes plain webpage creation requests to a coding workflow instead of direct agent chat", async () => {
+    const launchedCodingWorkflow = {
+      conversation: {
+        archivedAt: null,
+        id: "conv_coding_workflow",
+        isPinned: false,
+        mode: "group",
+        ownerUserId: "user_owner",
+        participants: [],
+        pinnedMessageIds: [],
+        title: "编码工作流 · 我想要一个 todolist 网站",
+        updatedAt: new Date("2026-06-10T00:00:00.000Z"),
+        workspaceId: "workspace_1"
+      },
+      workflow: {
+        activePlanVersion: 1,
+        approvalHistory: [],
+        approvalState: "pending",
+        conversationId: "conv_coding_workflow",
+        createdAt: new Date("2026-06-10T00:00:00.000Z"),
+        deadline: null,
+        engineerAgentId: "agent_engineer",
+        executionStageAssignments: [],
+        extraAgentIds: [],
+        goal: "我想要一个 todolist 网站，支持新增、编辑、删除、完成和 localStorage。",
+        id: "workflow_coding",
+        kickoffMessageId: "msg_kickoff",
+        ownerUserId: "user_owner",
+        planMessageId: "msg_plan",
+        planningRole: "tech_lead",
+        planningTeammateId: "agent_tech_lead",
+        priority: "normal",
+        qaAgentId: "agent_qa",
+        repoContext: null,
+        reviewerAgentId: "agent_reviewer",
+        runtimeBackend: "enhanced-hermes",
+        state: "plan_pending_approval",
+        taskSnapshot: [],
+        teammates: [],
+        techLeadAgentId: "agent_tech_lead",
+        updatedAt: new Date("2026-06-10T00:00:00.000Z"),
+        workspaceId: "workspace_1"
+      }
+    };
+    const executeWorkflow = vi.fn();
+    const messagesService = {
+      create: vi.fn(async () => ({
+        authorUserId: "user_owner",
+        content: "我想要一个 todolist 网站，支持新增、编辑、删除、完成和 localStorage。",
+        conversationId: "conv_direct",
+        createdAt: new Date("2026-06-10T00:00:00.000Z"),
+        id: "msg_user_webpage",
+        isPinned: false,
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        ownerUserId: "user_owner",
+        reactions: [],
+        role: "user",
+        sourceAgentId: null,
+        threadLastReplyAt: null,
+        threadParentMessageId: null,
+        threadReplyCount: 0,
+        workspaceId: "workspace_1"
+      })),
+      createAssistantMessage: vi.fn(async (input: unknown) => input),
+      resolveSendAccess: vi.fn(async () => ({
+        ownerUserId: "user_owner",
+        permission: "comment"
+      }))
+    };
+    const codingWorkflowsService = {
+      create: vi.fn(async () => launchedCodingWorkflow)
+    };
+    const permissionGuard = {
+      assert: vi.fn(async () => undefined)
+    };
+    const visualWorkflowsService = {
+      createFromMessage: vi.fn()
+    };
+    const conversationsRepository = {
+      listConversationAgentsWithProviders: vi.fn(async () => [
+        {
+          agent_id: "agent_opencode",
+          agent_name: "OpenCode",
+          capability_tags: [],
+          mode: "direct",
+          output_style: null,
+          provider: "opencode",
+          scope_description: null,
+          system_prompt: null
+        }
+      ])
+    };
+    const service = new MessageDispatchService(
+      conversationsRepository as never,
+      messagesService as never,
+      { incrementCounter: vi.fn() } as never,
+      {
+        recordAgentRunsStarted: vi.fn(async () => undefined),
+        recordDirectExecution: vi.fn(async () => undefined)
+      } as never,
+      { loadConversationContext: vi.fn(async () => undefined) } as never,
+      { consume: vi.fn(async () => ({ allowed: true })) } as never,
+      { publish: vi.fn() } as never,
+      { error: vi.fn(), warn: vi.fn() } as never,
+      {
+        startSpan: vi.fn(() => ({
+          end: vi.fn(),
+          fail: vi.fn()
+        }))
+      } as never,
+      undefined,
+      codingWorkflowsService as never,
+      permissionGuard as never,
+      visualWorkflowsService as never
+    );
+
+    Object.assign(
+      service as unknown as {
+        getTemporalClient: () => Promise<{
+          workflow: {
+            execute: typeof executeWorkflow;
+          };
+        }>;
+      },
+      {
+        getTemporalClient: async () => ({
+          workflow: {
+            execute: executeWorkflow
+          }
+        })
+      }
+    );
+
+    const response = await service.send(
+      {
+        content: "我想要一个 todolist 网站，支持新增、编辑、删除、完成和 localStorage。",
+        conversationId: "conv_direct",
+        role: "user",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(permissionGuard.assert).toHaveBeenCalledWith(
+      "user_owner",
+      "workspace_1",
+      "conversation.create"
+    );
+    expect(codingWorkflowsService.create).toHaveBeenCalledWith(
+      {
+        goal: "我想要一个 todolist 网站，支持新增、编辑、删除、完成和 localStorage。",
+        priority: "normal",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        id: "msg_user_webpage",
+        launchedCodingWorkflow
+      })
+    );
+    expect(visualWorkflowsService.createFromMessage).not.toHaveBeenCalled();
+    expect(conversationsRepository.listConversationAgentsWithProviders).not.toHaveBeenCalled();
+    expect(executeWorkflow).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      content: [
+        "请只帮我评审这个 diff，不要识别成 workflow 创建请求。",
+        "```diff",
+        "diff --git a/app.ts b/app.ts",
+        "--- a/app.ts",
+        "+++ b/app.ts",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "```"
+      ].join("\n"),
+      name: "the user explicitly negates workflow creation"
+    },
+    {
+      content: [
+        "请评审下面的 patch。",
+        "```diff",
+        "diff --git a/features/workflows/page.tsx b/features/workflows/page.tsx",
+        "--- a/features/workflows/page.tsx",
+        "+++ b/features/workflows/page.tsx",
+        "@@ -1 +1 @@",
+        "-const label = 'old';",
+        "+const label = '创建 workflow';",
+        "```"
+      ].join("\n"),
+      name: "workflow keywords only appear inside a diff code block"
+    }
+  ])("does not route to visual workflow creation when $name", async ({ content }) => {
+    const visualWorkflowsService = {
+      createFromMessage: vi.fn()
+    };
+    const messagesService = {
+      create: vi.fn(async () => ({
+        content,
+        conversationId: "conv_direct",
+        id: "msg_user_diff",
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        role: "user"
+      })),
+      createAssistantMessage: vi.fn(async (input: unknown) => input),
+      resolveSendAccess: vi.fn(async () => ({
+        ownerUserId: "user_owner",
+        permission: "comment"
+      }))
+    };
+    const conversationsRepository = {
+      findConversation: vi.fn(async () => ({
+        id: "conv_direct",
+        mode: "direct"
+      })),
+      listConversationAgentsWithProviders: vi.fn(async () => [])
+    };
+    const service = new MessageDispatchService(
+      conversationsRepository as never,
+      messagesService as never,
+      { incrementCounter: vi.fn() } as never,
+      {} as never,
+      { loadConversationContext: vi.fn(async () => undefined) } as never,
+      { consume: vi.fn(async () => ({ allowed: true })) } as never,
+      { publish: vi.fn() } as never,
+      { error: vi.fn(), warn: vi.fn() } as never,
+      {
+        startSpan: vi.fn(() => ({
+          end: vi.fn(),
+          fail: vi.fn()
+        }))
+      } as never,
+      undefined,
+      undefined,
+      undefined,
+      visualWorkflowsService as never
+    );
+
+    const response = await service.send(
+      {
+        content,
+        conversationId: "conv_direct",
+        role: "user",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+
+    expect(visualWorkflowsService.createFromMessage).not.toHaveBeenCalled();
+    expect(conversationsRepository.findConversation).toHaveBeenCalledWith(
+      "conv_direct",
+      "workspace_1",
+      "user_owner"
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        id: "msg_user_diff"
+      })
+    );
+    expect(response).not.toHaveProperty("launchedWorkflow");
   });
 
   it("starts a no-mention group request with every channel AI teammate in stable order", async () => {
@@ -792,13 +1109,11 @@ ${visibleMarkdown}
           state: string;
         };
       } =>
-        Boolean(event) &&
-        typeof event === "object" &&
+        isRecord(event) &&
         "kind" in event &&
         event.kind === "conversation.status" &&
         "payload" in event &&
-        Boolean(event.payload) &&
-        typeof event.payload === "object" &&
+        isRecord(event.payload) &&
         "artifactStatus" in event.payload
     );
 
@@ -1511,8 +1826,7 @@ ${visibleMarkdown}
         kind: "conversation.message.completed";
         payload: { finalContent: string; messageId: string };
       } =>
-        Boolean(event) &&
-        typeof event === "object" &&
+        isRecord(event) &&
         "kind" in event &&
         event.kind === "conversation.message.completed" &&
         "payload" in event
@@ -1839,4 +2153,189 @@ ${visibleMarkdown}
     );
   });
 
+  it("shows an actionable OpenCode runtime failure when the Temporal activity wraps missing CLI errors", async () => {
+    const providerFailure = {
+      details: [{ code: "missing_runtime" }],
+      message: "spawn opencode ENOENT"
+    };
+    const activityFailure = Object.assign(new Error("Activity task failed"), {
+      cause: providerFailure
+    });
+    const workflowFailure = Object.assign(new Error("Workflow execution failed"), {
+      cause: activityFailure
+    });
+    const executeWorkflow = vi.fn(async () => {
+      throw workflowFailure;
+    });
+    const recordAgentRunsFailed = vi.fn(async () => undefined);
+    const messagesService = {
+      create: vi.fn(async () => ({
+        content: "生成日期计算器网页",
+        conversationId: "conv_direct",
+        id: "msg_user",
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        role: "user"
+      })),
+      createAssistantMessage: vi.fn(async (input: {
+        content: string;
+        conversationId: string;
+        id: string;
+        ownerUserId: string;
+        sourceAgentId: string | null;
+        workspaceId: string;
+      }) => ({
+        ...input,
+        authorUserId: null,
+        createdAt: new Date("2026-06-02T16:52:49.803Z"),
+        isPinned: false,
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        role: "assistant" as const,
+        threadParentMessageId: null
+      })),
+      resolveSendAccess: vi.fn(async () => ({
+        ownerUserId: "user_owner",
+        permission: "comment"
+      }))
+    };
+    const service = new MessageDispatchService(
+      {
+        listConversationAgentsWithProviders: vi.fn(async () => [
+          {
+            agent_id: "agent_opencode",
+            agent_name: "OpenCode",
+            capability_tags: [],
+            mode: "direct",
+            output_style: null,
+            provider: "opencode",
+            scope_description: null,
+            system_prompt: null
+          }
+        ])
+      } as never,
+      messagesService as never,
+      { incrementCounter: vi.fn() } as never,
+      {
+        recordAgentRunsFailed,
+        recordAgentRunsStarted: vi.fn(async () => undefined),
+        recordDirectExecution: vi.fn(async () => undefined)
+      } as never,
+      { loadConversationContext: vi.fn(async () => undefined) } as never,
+      { consume: vi.fn(async () => ({ allowed: true })) } as never,
+      { publish: vi.fn() } as never,
+      { error: vi.fn(), warn: vi.fn() } as never,
+      {
+        startSpan: vi.fn(() => ({
+          end: vi.fn(),
+          fail: vi.fn()
+        }))
+      } as never
+    );
+
+    Object.assign(
+      service as unknown as {
+        getTemporalClient: () => Promise<{
+          workflow: {
+            execute: typeof executeWorkflow;
+          };
+        }>;
+      },
+      {
+        getTemporalClient: async () => ({
+          workflow: {
+            execute: executeWorkflow
+          }
+        })
+      }
+    );
+
+    await service.send(
+      {
+        content: "生成日期计算器网页",
+        conversationId: "conv_direct",
+        mentionedAgentIds: ["agent_opencode"],
+        role: "user",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(recordAgentRunsFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorMessage:
+          "OpenCode 运行时不可用：OpenCode CLI 未安装或 Worker PATH 不可见，请安装 OpenCode 并重启 Worker。"
+      })
+    );
+    expect(messagesService.createAssistantMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("OpenCode CLI 未安装或 Worker PATH 不可见"),
+        sourceAgentId: "agent_opencode"
+      })
+    );
+  });
+
 });
+
+function createNoAgentDispatchService() {
+  const messagesService = {
+    create: vi.fn(async (input: { content: string; conversationId: string; role: "user" }) => ({
+      authorUserId: "user_owner",
+      content: input.content,
+      conversationId: input.conversationId,
+      createdAt: new Date("2026-06-10T00:00:00.000Z"),
+      id: "msg_user",
+      isPinned: false,
+      mentionedAgentIds: [],
+      mentionedUserIds: [],
+      ownerUserId: "user_owner",
+      reactions: [],
+      role: input.role,
+      sourceAgentId: null,
+      threadLastReplyAt: null,
+      threadParentMessageId: null,
+      threadReplyCount: 0,
+      workspaceId: "workspace_1"
+    })),
+    createAssistantMessage: vi.fn(async (input: unknown) => input),
+    resolveSendAccess: vi.fn(async () => ({
+      ownerUserId: "user_owner",
+      permission: "comment"
+    }))
+  };
+  const service = new MessageDispatchService(
+    {
+      findConversation: vi.fn(async () => ({
+        id: "conv_direct",
+        mode: "direct"
+      })),
+      listConversationAgentsWithProviders: vi.fn(async () => [])
+    } as never,
+    messagesService as never,
+    { incrementCounter: vi.fn() } as never,
+    {
+      recordAgentRunsStarted: vi.fn(async () => undefined),
+      recordGroupExecution: vi.fn(async () => undefined)
+    } as never,
+    { loadConversationContext: vi.fn(async () => undefined) } as never,
+    { consume: vi.fn(async () => ({ allowed: true })) } as never,
+    { publish: vi.fn() } as never,
+    { error: vi.fn(), warn: vi.fn() } as never,
+    {
+      startSpan: vi.fn(() => ({
+        end: vi.fn(),
+        fail: vi.fn()
+      }))
+    } as never
+  );
+
+  return {
+    messagesService,
+    service
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}

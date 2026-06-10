@@ -78,6 +78,24 @@ describe("AuthPanel", () => {
             status: 200
           }
         )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            authenticated: true,
+            user: {
+              displayName: "Local Dev",
+              email: "local.dev@example.com",
+              id: "user_local_dev"
+            }
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            },
+            status: 200
+          }
+        )
       );
 
     render(<AuthPanel onAuthenticated={onAuthenticated} />);
@@ -111,9 +129,79 @@ describe("AuthPanel", () => {
         })
       );
     });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/auth/session",
+      expect.objectContaining({
+        credentials: "include"
+      })
+    );
 
     expect(await screen.findByRole("button", { name: "退出登录" })).toBeInTheDocument();
     expect(screen.getByText("local.dev@example.com")).toBeInTheDocument();
     expect(onAuthenticated).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report login success until the session endpoint confirms the cookie", async () => {
+    const onAuthenticated = vi.fn();
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authenticated: false }), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            session: {
+              expiresAt: "2026-06-24T00:00:00.000Z"
+            },
+            user: {
+              displayName: "Local Dev",
+              email: "local.dev@example.com",
+              id: "user_local_dev"
+            }
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            },
+            status: 200
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authenticated: false }), {
+          headers: {
+            "Content-Type": "application/json"
+          },
+          status: 200
+        })
+      );
+
+    render(<AuthPanel onAuthenticated={onAuthenticated} />);
+
+    fireEvent.change(await screen.findByLabelText("邮箱"), {
+      target: {
+        value: "local.dev@example.com"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: {
+        value: "LocalDev!123"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(
+      await screen.findByText("登录成功，但浏览器会话尚未建立，请重试。")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退出登录" })).not.toBeInTheDocument();
+    expect(onAuthenticated).not.toHaveBeenCalled();
   });
 });

@@ -29,6 +29,27 @@ describe("activityErrors", () => {
     expect(failure).toBeInstanceOf(ApplicationFailure);
     expect((failure as ApplicationFailure).nonRetryable).toBe(true);
     expect((failure as ApplicationFailure).type).toBe("AgentAdapterError");
+    expect((failure as ApplicationFailure).details).toEqual([
+      {
+        code: "provider_failed"
+      }
+    ]);
+  });
+
+  it("preserves missing runtime adapter error codes in Temporal details", () => {
+    const failure = toTemporalActivityFailure(
+      new AgentAdapterError("OpenCode CLI 未安装。", {
+        code: "missing_runtime",
+        retryable: false
+      })
+    );
+
+    expect(failure).toBeInstanceOf(ApplicationFailure);
+    expect((failure as ApplicationFailure).details).toEqual([
+      {
+        code: "missing_runtime"
+      }
+    ]);
   });
 
   it("keeps retryable adapter errors retryable for Temporal", () => {

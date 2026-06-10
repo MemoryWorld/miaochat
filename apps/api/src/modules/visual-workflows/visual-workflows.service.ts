@@ -97,8 +97,8 @@ export class VisualWorkflowsService {
       workspaceId: input.workspaceId
     });
 
-    const definition = buildMovieWebpageWorkflowDefinition();
-    const title = extractWorkflowTitle(input.content) ?? "电影资料收集到网页生成 workflow";
+    const definition = buildWorkflowDefinitionFromMessage(input.content);
+    const title = extractWorkflowTitle(input.content) ?? buildDefaultWorkflowTitle(input.content);
     const workflowId = randomUUID();
 
     const result = await this.database.execute<VisualWorkflowRow>(sql`
@@ -521,7 +521,7 @@ export class VisualWorkflowsService {
       workspaceId: parsed.workspaceId
     });
 
-    const definition = buildMovieWebpageWorkflowDefinition();
+    const definition = buildWorkflowDefinitionFromMessage(workflow.description);
 
     await this.database.execute(sql`
       UPDATE visual_workflows
@@ -619,18 +619,22 @@ export class VisualWorkflowsService {
     inputValues: Record<string, string>;
     workflow: VisualWorkflow;
   }): Promise<Artifact> {
-    const movieName = input.inputValues.movieName?.trim();
+    const primaryInput = resolvePrimaryWorkflowInput(input.workflow, input.inputValues);
 
-    if (!movieName) {
-      throw new BadRequestException("电影名是必填项。");
+    if (!primaryInput.value) {
+      throw new BadRequestException(`${primaryInput.label}是必填项。`);
     }
 
     return this.artifactsService.createRuntimeWebpageArtifact({
       draft: {
-        fileName: `${slugifyFilePart(movieName)}-workflow-output.html`,
-        html: buildWorkflowOutputHtml(movieName, input.workflow),
+        fileName: `${slugifyFilePart(primaryInput.value || input.workflow.title)}-workflow-output.html`,
+        html: buildWorkflowOutputHtml({
+          inputValues: input.inputValues,
+          primaryInput,
+          workflow: input.workflow
+        }),
         mimeType: "text/html",
-        title: `${movieName} workflow 输出网页`,
+        title: `${primaryInput.value} workflow 输出网页`,
         type: "webpage"
       },
       messageId: input.workflow.sourceMessageId,
@@ -639,40 +643,48 @@ export class VisualWorkflowsService {
   }
 }
 
-function buildMovieWebpageWorkflowDefinition(): VisualWorkflowDefinition {
+export function buildWorkflowDefinitionFromMessage(content: string): VisualWorkflowDefinition {
+  if (isDateCalculatorWorkflow(content)) {
+    return buildDateCalculatorWorkflowDefinition();
+  }
+
+  return buildGenericWebpageWorkflowDefinition(content);
+}
+
+function buildDateCalculatorWorkflowDefinition(): VisualWorkflowDefinition {
   const nodes: VisualWorkflowNode[] = [
     {
-      id: "input_movie",
-      inputSummary: "用户输入电影名。",
-      label: "输入节点：电影名",
-      outputSummary: "标准化后的电影名。",
+      id: "input_date",
+      inputSummary: "用户输入一个具体日期。",
+      label: "输入节点：日期",
+      outputSummary: "标准化后的日期。",
       position: { x: 0, y: 0 },
       role: "用户输入",
       type: "input"
     },
     {
-      id: "collect_material",
-      inputSummary: "接收电影名。",
-      label: "资料收集节点",
-      outputSummary: "影片背景、时间线、角色与阵营资料。",
+      id: "normalize_date",
+      inputSummary: "接收原始日期。",
+      label: "日期规范化节点",
+      outputSummary: "可计算的年月日数据。",
       position: { x: 220, y: 0 },
-      role: "资料收集",
+      role: "数据整理",
       type: "collection"
     },
     {
-      id: "outline",
-      inputSummary: "接收结构化资料。",
-      label: "大纲生成节点",
-      outputSummary: "首屏、时间线、角色阵营和影片卡片布局大纲。",
+      id: "calculate_days",
+      inputSummary: "接收标准化日期。",
+      label: "天数计算节点",
+      outputSummary: "目标日期到今天的天数、星期几和可读说明。",
       position: { x: 440, y: 0 },
-      role: "信息架构",
+      role: "业务计算",
       type: "outline"
     },
     {
       id: "html",
-      inputSummary: "接收页面大纲。",
+      inputSummary: "接收计算结果和页面要求。",
       label: "HTML 生成节点",
-      outputSummary: "完整单文件响应式 HTML。",
+      outputSummary: "日期计算器单文件响应式 HTML。",
       position: { x: 660, y: 0 },
       role: "网页生成",
       type: "html_generation"
@@ -681,7 +693,7 @@ function buildMovieWebpageWorkflowDefinition(): VisualWorkflowDefinition {
       id: "qa",
       inputSummary: "接收 HTML 草稿。",
       label: "QA 检查节点",
-      outputSummary: "检查响应式布局、内容完整度和下载交付物。",
+      outputSummary: "检查日期输入、计算结果、复制结果和响应式布局。",
       position: { x: 880, y: 0 },
       role: "质量保障",
       type: "qa"
@@ -699,18 +711,106 @@ function buildMovieWebpageWorkflowDefinition(): VisualWorkflowDefinition {
 
   return visualWorkflowDefinitionSchema.parse({
     edges: [
-      { from: "input_movie", id: "edge_input_collect", label: "电影名", to: "collect_material" },
-      { from: "collect_material", id: "edge_collect_outline", label: "资料", to: "outline" },
+      { from: "input_date", id: "edge_input_normalize", label: "日期", to: "normalize_date" },
+      { from: "normalize_date", id: "edge_normalize_calculate", label: "标准日期", to: "calculate_days" },
+      { from: "calculate_days", id: "edge_calculate_html", label: "计算结果", to: "html" },
+      { from: "html", id: "edge_html_qa", label: "HTML 草稿", to: "qa" },
+      { from: "qa", id: "edge_qa_output", label: "验收通过", to: "output_html" }
+    ],
+    inputSchema: [
+      {
+        description: "用于计算距离今天相差天数的日期。",
+        key: "date",
+        label: "日期",
+        placeholder: "例如：2026-06-10",
+        required: true
+      }
+    ],
+    nodes,
+    outputSchema: [
+      {
+        description: "最终生成并写入文件区的网页产物。",
+        key: "htmlArtifact",
+        label: "HTML artifact",
+        mimeType: "text/html"
+      }
+    ]
+  });
+}
+
+function buildGenericWebpageWorkflowDefinition(content: string): VisualWorkflowDefinition {
+  const subject = inferWorkflowSubject(content);
+  const nodes: VisualWorkflowNode[] = [
+    {
+      id: "input_topic",
+      inputSummary: "用户输入页面主题或任务目标。",
+      label: "输入节点：主题",
+      outputSummary: "标准化后的页面主题和约束。",
+      position: { x: 0, y: 0 },
+      role: "用户输入",
+      type: "input"
+    },
+    {
+      id: "collect_context",
+      inputSummary: "接收页面主题。",
+      label: "资料整理节点",
+      outputSummary: "围绕主题提炼关键内容、受众和页面模块。",
+      position: { x: 220, y: 0 },
+      role: "资料整理",
+      type: "collection"
+    },
+    {
+      id: "outline",
+      inputSummary: "接收结构化上下文。",
+      label: "页面结构节点",
+      outputSummary: "首屏、核心内容区、交互区和响应式布局大纲。",
+      position: { x: 440, y: 0 },
+      role: "信息架构",
+      type: "outline"
+    },
+    {
+      id: "html",
+      inputSummary: "接收页面结构。",
+      label: "HTML 生成节点",
+      outputSummary: "完整单文件响应式 HTML。",
+      position: { x: 660, y: 0 },
+      role: "网页生成",
+      type: "html_generation"
+    },
+    {
+      id: "qa",
+      inputSummary: "接收 HTML 草稿。",
+      label: "QA 检查节点",
+      outputSummary: "检查目标贴合度、响应式布局和可下载交付物。",
+      position: { x: 880, y: 0 },
+      role: "质量保障",
+      type: "qa"
+    },
+    {
+      id: "output_html",
+      inputSummary: "接收通过 QA 的 HTML。",
+      label: "输出节点：HTML artifact",
+      outputSummary: "可预览、可打开、可下载的 HTML artifact。",
+      position: { x: 1100, y: 0 },
+      role: "文件输出",
+      type: "output"
+    }
+  ];
+
+  return visualWorkflowDefinitionSchema.parse({
+    edges: [
+      { from: "input_topic", id: "edge_input_context", label: "主题", to: "collect_context" },
+      { from: "collect_context", id: "edge_context_outline", label: "上下文", to: "outline" },
       { from: "outline", id: "edge_outline_html", label: "页面结构", to: "html" },
       { from: "html", id: "edge_html_qa", label: "HTML 草稿", to: "qa" },
       { from: "qa", id: "edge_qa_output", label: "验收通过", to: "output_html" }
     ],
     inputSchema: [
       {
-        description: "用于资料收集和网页生成的电影名称。",
-        key: "movieName",
-        label: "电影名",
-        placeholder: "例如：变形金刚真人电影",
+        description: "用于生成网页的主题、对象或产品名称。",
+        key: "topic",
+        label: "主题",
+        placeholder: subject,
         required: true
       }
     ],
@@ -795,6 +895,64 @@ function extractWorkflowTitle(content: string): string | null {
   return target ? `${target.trim()} workflow` : null;
 }
 
+function buildDefaultWorkflowTitle(content: string): string {
+  const subject = inferWorkflowSubject(content);
+
+  return `${subject} workflow`;
+}
+
+function isDateCalculatorWorkflow(content: string): boolean {
+  return /日期|年月日|星期几|多少天|到今天|距今天|date|days?\s*(?:until|from|between)|calculator/i.test(content);
+}
+
+function inferWorkflowSubject(content: string): string {
+  const quoted = /[“"「『']([^”"」』']{2,80})[”"」』']/.exec(content)?.[1]?.trim();
+
+  if (quoted) {
+    return quoted;
+  }
+
+  const target = /(?:创建|生成|制作|设计|目标|goal)\s*(?:一个|新的|一份)?\s*([^。；;\n]{2,80}?)(?:的\s*)?(?:workflow|工作流|网页|页面|网站)/iu.exec(content)?.[1]?.trim();
+
+  if (target) {
+    return target.replace(/^[：:\s]+/, "").slice(0, 60);
+  }
+
+  const compact = content
+    .replace(/workflow|工作流|创建|生成|制作|设计/giu, "")
+    .replace(/\s+/g, " ")
+    .replace(/[。；;\n].*$/u, "")
+    .trim();
+
+  return (compact || "网页生成").slice(0, 60);
+}
+
+function resolvePrimaryWorkflowInput(
+  workflow: VisualWorkflow,
+  inputValues: Record<string, string>
+): {
+  key: string;
+  label: string;
+  value: string;
+} {
+  const entry = workflow.definition.inputSchema.find((item) => item.required !== false) ??
+    workflow.definition.inputSchema[0];
+
+  if (!entry) {
+    return {
+      key: "topic",
+      label: "主题",
+      value: workflow.title
+    };
+  }
+
+  return {
+    key: entry.key,
+    label: entry.label,
+    value: inputValues[entry.key]?.trim() ?? ""
+  };
+}
+
 function normalizeWorkflowInputValues(
   workflow: VisualWorkflow,
   inputValues: Record<string, string>
@@ -824,11 +982,27 @@ function slugifyFilePart(value: string): string {
     .replace(/[\s_-]+/g, "-")
     .toLowerCase();
 
-  return ascii || "movie";
+  return ascii || "workflow";
 }
 
-function buildWorkflowOutputHtml(movieName: string, workflow: VisualWorkflow): string {
-  const escapedMovieName = escapeHtml(movieName);
+function buildWorkflowOutputHtml(input: {
+  inputValues: Record<string, string>;
+  primaryInput: {
+    key: string;
+    label: string;
+    value: string;
+  };
+  workflow: VisualWorkflow;
+}): string {
+  if (input.primaryInput.key === "date") {
+    return buildDateCalculatorOutputHtml(input.primaryInput.value, input.workflow);
+  }
+
+  return buildGenericWorkflowOutputHtml(input);
+}
+
+function buildDateCalculatorOutputHtml(dateValue: string, workflow: VisualWorkflow): string {
+  const escapedDate = escapeHtml(dateValue);
   const escapedTitle = escapeHtml(workflow.title);
 
   return `<!doctype html>
@@ -836,16 +1010,102 @@ function buildWorkflowOutputHtml(movieName: string, workflow: VisualWorkflow): s
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapedMovieName} 资料网页</title>
+  <title>${escapedDate} 日期计算器</title>
   <style>
-    body { margin: 0; font-family: Inter, "Noto Sans SC", Arial, sans-serif; color: #172033; background: #f6f8fb; }
+    :root { color-scheme: light; --ink: #172033; --muted: #607089; --line: #d9e2ef; --panel: #ffffff; --bg: #f4f7fb; --accent: #0f766e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, "Noto Sans SC", Arial, sans-serif; color: var(--ink); background: var(--bg); }
+    main { min-height: 100vh; display: grid; gap: 24px; padding: clamp(20px, 5vw, 56px); }
+    .hero { display: grid; gap: 16px; align-content: center; min-height: 48vh; border-bottom: 1px solid var(--line); }
+    .eyebrow { margin: 0; color: var(--accent); font-weight: 800; }
+    h1 { margin: 0; font-size: clamp(34px, 7vw, 76px); line-height: 1.02; letter-spacing: 0; }
+    .lead { max-width: 760px; margin: 0; color: var(--muted); font-size: 18px; line-height: 1.8; }
+    .result { display: grid; gap: 12px; width: min(720px, 100%); padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+    .number { font-size: clamp(48px, 12vw, 112px); line-height: 1; font-weight: 900; color: var(--accent); }
+    .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+    .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 18px; }
+    button { width: max-content; border: 0; border-radius: 8px; background: var(--accent); color: white; padding: 11px 14px; font-weight: 800; cursor: pointer; }
+    h2, h3, p { margin-top: 0; }
+    p { line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">${escapedTitle}</p>
+      <h1>日期距离计算器</h1>
+      <p class="lead">输入日期：${escapedDate}。页面会计算该日期与今天相差多少天，并显示星期几，可复制结果。</p>
+      <div class="result" aria-live="polite">
+        <span class="number" id="day-count">-</span>
+        <strong id="summary">正在计算...</strong>
+        <button type="button" id="copy-result">复制结果</button>
+      </div>
+    </section>
+    <section>
+      <h2>流程节点</h2>
+      <div class="grid">
+        ${workflow.definition.nodes.map((node) => `<article class="card"><h3>${escapeHtml(node.label)}</h3><p>${escapeHtml(node.outputSummary)}</p></article>`).join("\n        ")}
+      </div>
+    </section>
+  </main>
+  <script>
+    const dateLabel = ${JSON.stringify(dateValue)};
+    const sourceDate = new Date(${JSON.stringify(dateValue)});
+    const today = new Date();
+    const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.round((startOfDay(sourceDate) - startOfDay(today)) / 86400000);
+    const weekdays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+    const absDays = Math.abs(diffDays);
+    const direction = diffDays === 0 ? "就是今天" : diffDays > 0 ? "距离今天还有" : "距今天已经过去";
+    const summary = Number.isNaN(diffDays)
+      ? "日期无法解析，请输入 YYYY-MM-DD 格式。"
+      : \`\${dateLabel} 是 \${weekdays[sourceDate.getDay()]}，\${direction}\${diffDays === 0 ? "" : \`\${absDays} 天\`}。\`;
+    document.getElementById("day-count").textContent = Number.isNaN(diffDays) ? "?" : String(absDays);
+    document.getElementById("summary").textContent = summary;
+    document.getElementById("copy-result").addEventListener("click", async () => {
+      await navigator.clipboard?.writeText(summary);
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function buildGenericWorkflowOutputHtml(input: {
+  inputValues: Record<string, string>;
+  primaryInput: {
+    key: string;
+    label: string;
+    value: string;
+  };
+  workflow: VisualWorkflow;
+}): string {
+  const escapedSubject = escapeHtml(input.primaryInput.value);
+  const escapedTitle = escapeHtml(input.workflow.title);
+  const inputRows = input.workflow.definition.inputSchema
+    .map((entry) => {
+      const value = input.inputValues[entry.key]?.trim() || "未填写";
+      return `<article class="card"><h3>${escapeHtml(entry.label)}</h3><p>${escapeHtml(value)}</p></article>`;
+    })
+    .join("\n        ");
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapedSubject}</title>
+  <style>
+    :root { --ink: #172033; --muted: #5f6f86; --line: #dce4ef; --panel: #ffffff; --bg: #f5f7fb; --accent: #0f766e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, "Noto Sans SC", Arial, sans-serif; color: var(--ink); background: var(--bg); }
     main { min-height: 100vh; }
-    .hero { display: grid; gap: 18px; padding: clamp(28px, 6vw, 72px); background: #101827; color: white; }
-    .hero h1 { margin: 0; font-size: clamp(32px, 6vw, 72px); line-height: 1.02; letter-spacing: 0; }
-    .hero p { max-width: 760px; margin: 0; color: #d8e1f0; font-size: 18px; line-height: 1.8; }
-    .section { padding: 28px clamp(18px, 5vw, 64px); }
+    .hero { display: grid; gap: 18px; align-content: center; min-height: 56vh; padding: clamp(28px, 6vw, 72px); border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fff 0%, #edf4f2 100%); }
+    .eyebrow { margin: 0; color: var(--accent); font-weight: 800; }
+    h1 { margin: 0; font-size: clamp(34px, 7vw, 76px); line-height: 1.02; letter-spacing: 0; }
+    .lead { max-width: 780px; margin: 0; color: var(--muted); font-size: 18px; line-height: 1.8; }
+    section { padding: 28px clamp(18px, 5vw, 64px); }
     .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-    .card { border: 1px solid #dbe3ef; border-radius: 8px; background: white; padding: 18px; }
+    .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 18px; }
     h2 { margin: 0 0 14px; font-size: 24px; }
     h3 { margin: 0 0 8px; font-size: 18px; }
     p { line-height: 1.7; }
@@ -854,20 +1114,20 @@ function buildWorkflowOutputHtml(movieName: string, workflow: VisualWorkflow): s
 <body>
   <main>
     <section class="hero">
-      <p>${escapedTitle}</p>
-      <h1>${escapedMovieName}</h1>
-      <p>这是由可视化 workflow 执行链生成的单文件网页产物，覆盖首屏、资料梳理、页面结构、HTML 生成与 QA 检查。</p>
+      <p class="eyebrow">${escapedTitle}</p>
+      <h1>${escapedSubject}</h1>
+      <p class="lead">这是由可视化 workflow 执行链生成的单文件网页产物，内容来自本次执行输入和 workflow 节点定义。</p>
     </section>
-    <section class="section">
-      <h2>流程节点</h2>
+    <section>
+      <h2>执行输入</h2>
       <div class="grid">
-        ${workflow.definition.nodes.map((node) => `<article class="card"><h3>${escapeHtml(node.label)}</h3><p>${escapeHtml(node.outputSummary)}</p></article>`).join("\n        ")}
+        ${inputRows}
       </div>
     </section>
-    <section class="section">
-      <h2>交付说明</h2>
-      <div class="card">
-        <p>输出节点已生成 HTML artifact，可在文件区预览、打开或下载。后续可把资料收集节点接入真实数据源，把 HTML 生成节点接入模型或模板引擎。</p>
+    <section>
+      <h2>流程节点</h2>
+      <div class="grid">
+        ${input.workflow.definition.nodes.map((node) => `<article class="card"><h3>${escapeHtml(node.label)}</h3><p>${escapeHtml(node.outputSummary)}</p></article>`).join("\n        ")}
       </div>
     </section>
   </main>

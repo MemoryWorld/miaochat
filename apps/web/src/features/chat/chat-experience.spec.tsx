@@ -69,7 +69,7 @@ describe("ChatExperience", () => {
     fetchMock.mockReset();
   });
 
-  it("shows the login panel without an empty channel count when the workspace session is missing", async () => {
+  it("shows the login panel without false empty conversation or artifact states when the workspace session is missing", async () => {
     mockFetchByUrl({
       [`${apiBaseUrl}/auth/session`]: [
         jsonResponse(200, {
@@ -85,11 +85,87 @@ describe("ChatExperience", () => {
 
     render(<ChatExperience />);
 
-    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "前往设置登录" })).toHaveAttribute(
+      "href",
+      "/settings?section=profile"
+    );
     expect(screen.getByText("请先登录后再继续操作。")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退出登录" })).not.toBeInTheDocument();
     expect(screen.queryByText("频道列表")).not.toBeInTheDocument();
     expect(screen.queryByText("0 条")).not.toBeInTheDocument();
     expect(screen.queryByText(/当前频道还没有消息/)).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有可预览的 HTML 产物。")).not.toBeInTheDocument();
+  });
+
+  it("does not show the login panel when workspace loading briefly fails but the session is still authenticated", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: true,
+          user: {
+            displayName: "Phase A Demo",
+            email: "phase-a-demo@example.com",
+            id: "user_phase_a_demo"
+          }
+        })
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(401, {
+          message: "请先登录后再继续操作。"
+        }),
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-28T00:00:00.000Z",
+            id: "default-workspace",
+            name: "Phase A Demo Workspace",
+            ownerUserId: "user_phase_a_demo",
+            updatedAt: "2026-05-28T00:00:00.000Z"
+          }
+        ])
+      ]
+    });
+
+    render(<ChatExperience />);
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([url]) => url === `${apiBaseUrl}/workspaces`)
+      ).toHaveLength(2);
+    });
+    expect(screen.getByRole("heading", { name: "会话" })).toBeInTheDocument();
+    expect(screen.queryByText("请先登录后再继续操作。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/当前工作区还没有可用模型连接/i)
+    ).toBeInTheDocument();
+  });
+
+  it("does not show artifact empty states while the workspace session is still loading", () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url === `${apiBaseUrl}/workspaces`) {
+        return new Promise<Response>(() => undefined);
+      }
+
+      throw new Error(`Unexpected fetch call while workspace is loading: ${url}`);
+    });
+
+    render(<ChatExperience />);
+
+    expect(screen.queryByText("还没有可预览的 HTML 产物。")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前会话还没有文件产物。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "网页预览" })).not.toBeInTheDocument();
   });
 
   it("shows setup-first guidance when the workspace has no model connection", async () => {
@@ -124,9 +200,10 @@ describe("ChatExperience", () => {
       ).toBe(true);
     });
 
-    expect(await screen.findByRole("link", { name: "添加模型连接" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "模型连接" })).toBeInTheDocument();
     expect(screen.getByText(/当前工作区还没有可用模型连接/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(screen.queryByText("身份与会话")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
     expect(
       screen.queryByText(/seeded mock direct conversation/i)
     ).not.toBeInTheDocument();
@@ -153,26 +230,117 @@ describe("ChatExperience", () => {
 
     expect(await screen.findByRole("link", { name: "Miaochat" })).toBeInTheDocument();
     expect(screen.queryByText("频道兼容视图")).not.toBeInTheDocument();
-    expect(screen.getByText("协作入口")).toBeInTheDocument();
-    expect(screen.getByText("频道列表")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "会话" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "网页预览" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "工作流" })).toBeInTheDocument();
     const primaryNavigation = screen.getByRole("navigation", {
-      name: "Primary workspace navigation"
+      name: "编码工作台导航"
     });
 
-    expect(within(primaryNavigation).getByRole("link", { name: "工作台" })).toBeInTheDocument();
-    expect(within(primaryNavigation).getByRole("link", { name: "收件箱" })).toBeInTheDocument();
-    expect(within(primaryNavigation).getByRole("link", { name: "频道" })).toBeInTheDocument();
-    expect(within(primaryNavigation).getByRole("link", { name: "任务" })).toBeInTheDocument();
-    expect(within(primaryNavigation).getByRole("link", { name: "设置" })).toBeInTheDocument();
-    expect(
-      within(primaryNavigation).queryByRole("link", { name: /AI 同事 角色、技能与记忆/i })
-    ).not.toBeInTheDocument();
-    expect(
-      within(primaryNavigation).queryByRole("link", { name: /直接协作 快速进入实时协作/i })
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "新建同事" })).toBeInTheDocument();
+    expect(within(primaryNavigation).getByRole("link", { name: "会话" })).toBeInTheDocument();
+    expect(within(primaryNavigation).getByRole("link", { name: "Workflow" })).toBeInTheDocument();
+    expect(within(primaryNavigation).getByRole("link", { name: "模型连接" })).toBeInTheDocument();
+    expect(within(primaryNavigation).queryByRole("link", { name: "收件箱" })).not.toBeInTheDocument();
+    expect(within(primaryNavigation).queryByRole("link", { name: "任务" })).not.toBeInTheDocument();
+    expect(within(primaryNavigation).queryByRole("link", { name: "频道" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "新建同事" })).not.toBeInTheDocument();
     expect(screen.queryByText("Chat Workspace")).not.toBeInTheDocument();
     expect(screen.queryByText("AgentHub")).not.toBeInTheDocument();
+  });
+
+  it("orders conversations by pinned status and recent activity while keeping archived conversations in the archive view", async () => {
+    const pinnedConversation = createConversation({
+      id: "conv_pinned",
+      isPinned: true,
+      title: "置顶需求",
+      updatedAt: "2026-06-01T00:00:00.000Z"
+    });
+    const recentConversation = createConversation({
+      id: "conv_recent",
+      title: "最近活跃",
+      updatedAt: "2026-06-09T00:00:00.000Z"
+    });
+    const oldConversation = createConversation({
+      id: "conv_old",
+      title: "普通旧会话",
+      updatedAt: "2026-06-02T00:00:00.000Z"
+    });
+    const archivedConversation = createConversation({
+      archivedAt: "2026-06-08T00:00:00.000Z",
+      id: "conv_archived",
+      title: "归档任务",
+      updatedAt: "2026-06-10T00:00:00.000Z"
+    });
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          pinnedConversation,
+          oldConversation,
+          archivedConversation,
+          recentConversation
+        ])
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace&includeArchived=true`]: [
+        jsonResponse(200, [
+          pinnedConversation,
+          oldConversation,
+          archivedConversation,
+          recentConversation
+        ])
+      ],
+      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_pinned&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_pinned&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-28T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-28T00:00:00.000Z"
+          }
+        ])
+      ]
+    });
+
+    render(<ChatExperience />);
+
+    const conversationList = await screen.findByTestId("conversation-list");
+    expect(await within(conversationList).findByText("置顶需求")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(conversationList).queryByText("归档任务")).not.toBeInTheDocument();
+    });
+
+    const activeConversationText = Array.from(conversationList.querySelectorAll("article"))
+      .map((article) => article.textContent ?? "")
+      .join("\n");
+    expect(activeConversationText.indexOf("置顶需求")).toBeLessThan(
+      activeConversationText.indexOf("最近活跃")
+    );
+    expect(activeConversationText.indexOf("最近活跃")).toBeLessThan(
+      activeConversationText.indexOf("普通旧会话")
+    );
+    expect(
+      screen.queryByText("归档会话将在 30 天后自动删除，请及时恢复需要保留的会话。")
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看归档会话" }));
+
+    expect(
+      await screen.findByText("归档会话将在 30 天后自动删除，请及时恢复需要保留的会话。")
+    ).toBeInTheDocument();
+    expect(await within(conversationList).findByText("归档任务")).toBeInTheDocument();
+    expect(within(conversationList).queryByText("置顶需求")).not.toBeInTheDocument();
+    expect(within(conversationList).queryByText("最近活跃")).not.toBeInTheDocument();
+    expect(within(conversationList).queryByText("普通旧会话")).not.toBeInTheDocument();
   });
 
   it("restores the last selected conversation instead of jumping to the first timeline item", async () => {
@@ -237,10 +405,10 @@ describe("ChatExperience", () => {
     render(<ChatExperience />);
 
     expect(
-      await screen.findByRole("heading", { name: "# 当前测试频道" })
+      await screen.findByRole("heading", { name: "当前测试频道" })
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "# 旧频道" })
+      screen.queryByRole("heading", { name: "旧频道" })
     ).not.toBeInTheDocument();
   });
 
@@ -287,22 +455,25 @@ describe("ChatExperience", () => {
           message: "无法加载会话。"
         })
       ],
-      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
-        jsonResponse(200, [
-          {
-            id: "model_conn_demo",
-            kind: "deepseek_api",
-            label: "DeepSeek 工作区连接",
-            model: "deepseek-chat",
-            preset: "balanced",
-            status: "valid",
-            workspaceId: "default-workspace"
-          }
-        ])
-      ],
-      [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
-        jsonResponse(200, [])
-      ],
+	      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+	        jsonResponse(200, [
+	          {
+	            id: "model_conn_demo",
+	            kind: "opencode_model",
+	            label: "OpenCode 工作区连接",
+	            model: "deepseek/deepseek-chat",
+	            preset: "balanced",
+	            status: "valid",
+	            workspaceId: "default-workspace"
+	          }
+	        ])
+	      ],
+	      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+	        jsonResponse(200, [createCredential("cred_opencode", "opencode", "valid")])
+	      ],
+	      [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
+	        jsonResponse(200, [])
+	      ],
       [`${apiBaseUrl}/messages?conversationId=conv_current_test&workspaceId=default-workspace`]: [
         jsonResponse(200, [message])
       ],
@@ -328,7 +499,7 @@ describe("ChatExperience", () => {
     render(<ChatExperience />);
 
     expect(
-      await screen.findByRole("heading", { name: "# 当前测试频道" })
+      await screen.findByRole("heading", { name: "当前测试频道" })
     ).toBeInTheDocument();
     expect(await screen.findByText("已有真实消息")).toBeInTheDocument();
     await waitFor(() => {
@@ -355,7 +526,7 @@ describe("ChatExperience", () => {
         timeout: 2_500
       }
     );
-    expect(screen.getByRole("heading", { name: "# 当前测试频道" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "当前测试频道" })).toBeInTheDocument();
     expect(screen.getByText("已有真实消息")).toBeInTheDocument();
     expect(screen.getByText("1 条")).toBeInTheDocument();
     expect(screen.queryByText("请先登录后再继续操作。")).not.toBeInTheDocument();
@@ -427,7 +598,7 @@ describe("ChatExperience", () => {
     render(<ChatExperience />);
 
     expect(
-      await screen.findByRole("heading", { name: "# 连接中频道" })
+      await screen.findByRole("heading", { name: "连接中频道" })
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(MockEventSource.instances.length).toBeGreaterThan(0);
@@ -725,7 +896,7 @@ describe("ChatExperience", () => {
 
     render(<ChatExperience />);
 
-    expect(await screen.findByRole("heading", { name: "# 普通频道" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "普通频道" })).toBeInTheDocument();
     await waitFor(() => {
       expect(MockEventSource.instances.length).toBeGreaterThan(0);
     });
@@ -742,7 +913,7 @@ describe("ChatExperience", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
-    expect(await screen.findByRole("heading", { name: "# 普通频道" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "普通频道" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Workflow 预览" })).toBeInTheDocument();
     expect(screen.getByText(/输入节点：电影名/)).toBeInTheDocument();
     expect(screen.getByText(/输出节点：HTML artifact/)).toBeInTheDocument();
@@ -758,7 +929,16 @@ describe("ChatExperience", () => {
     expect(screen.queryByText("AI 同事正在处理你的消息")).not.toBeInTheDocument();
   });
 
-  it("opens the new-conversation flow when a phase-a credential is already bound", async () => {
+  it("shows platform choices and hides internal demo agents in the new-conversation flow", async () => {
+    const customAgent = createAgent("agent_custom_builder", "网页制作 Agent", {
+      capabilityTags: ["web", "custom"],
+      provider: "opencode"
+    });
+    const internalAgent = createAgent("agent_phase_a_planner", "方案规划同事", {
+      capabilityTags: ["phase-a", "demo"],
+      provider: "deepseek"
+    });
+
     mockFetchByUrl({
       [`${apiBaseUrl}/auth/session`]: [
         jsonResponse(200, {
@@ -777,17 +957,23 @@ describe("ChatExperience", () => {
         jsonResponse(200, [
           {
             id: "model_conn_demo",
-            kind: "deepseek_api",
-            label: "DeepSeek 工作区连接",
-            model: "deepseek-chat",
+            kind: "opencode_model",
+            label: "OpenCode 工作区连接",
+            model: "deepseek/deepseek-chat",
             preset: "balanced",
             status: "valid",
             workspaceId: "default-workspace"
           }
         ])
       ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          createCredential("cred_opencode", "opencode", "valid"),
+          createCredential("cred_codex", "codex", "invalid")
+        ])
+      ],
       [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
-        jsonResponse(200, [])
+        jsonResponse(200, [customAgent, internalAgent])
       ],
       [`${apiBaseUrl}/workspaces`]: [
         jsonResponse(200, [
@@ -804,24 +990,144 @@ describe("ChatExperience", () => {
 
     render(<ChatExperience />);
 
-    const newConversationButton = await screen.findByRole("button", {
-      name: "新建协作"
+    fireEvent.click(await screen.findByRole("button", { name: "打开新建对话面板" }));
+
+    expect(await screen.findByRole("button", { name: "关闭新建对话面板" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Codex/ })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /Claude Code/ })).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: /OpenCode/ })).toBeEnabled();
     });
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: /网页制作 Agent/ })).toBeEnabled();
+    });
+    expect(screen.getAllByText("平台自建 Agent").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("未连接，去模型连接").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("方案规划同事")).not.toBeInTheDocument();
 
-    newConversationButton.click();
-
-    expect(
-      await screen.findByText(/还没有可用的 AI 同事/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/seeded mock direct conversation/i)
-    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "群聊" }));
+    const createButton = screen.getByRole("button", { name: "创建对话" });
+    expect(createButton).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /OpenCode/ }));
+    expect(createButton).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /网页制作 Agent/ }));
+    expect(createButton).toBeEnabled();
   });
 
-  it("creates a channel and requires a second confirmation before deleting it", async () => {
+  it("creates a default platform agent before creating a platform conversation", async () => {
+    const createdAgent = createAgent("agent_codex_default", "Codex", {
+      capabilityTags: ["platform-runtime-agent"],
+      provider: "codex"
+    });
+    const createdConversation = {
+      archivedAt: null,
+      id: "conv_codex_platform",
+      isPinned: false,
+      mode: "direct",
+      ownerUserId: "user_phase_a_demo",
+      participants: [{ agentId: createdAgent.id, agentName: createdAgent.name }],
+      pinnedMessageIds: [],
+      title: "Codex频道",
+      updatedAt: "2026-05-28T00:00:00.000Z",
+      workspaceId: "default-workspace"
+    };
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: true,
+          user: {
+            displayName: "Phase A Demo",
+            email: "phase-a-demo@example.com",
+            id: "user_phase_a_demo"
+          }
+        })
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [createCredential("cred_codex", "codex", "valid")])
+      ],
+      [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/custom-agents`]: [
+        jsonResponse(201, createdAgent)
+      ],
+      [`${apiBaseUrl}/conversations`]: [
+        jsonResponse(201, createdConversation)
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_codex_platform&workspaceId=default-workspace`]:
+        [jsonResponse(200, [])],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_codex_platform&workspaceId=default-workspace`]:
+        [jsonResponse(200, null)],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-28T00:00:00.000Z",
+            id: "default-workspace",
+            name: "Phase A Demo Workspace",
+            ownerUserId: "user_phase_a_demo",
+            updatedAt: "2026-05-28T00:00:00.000Z"
+          }
+        ])
+      ]
+    });
+
+    render(<ChatExperience />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开新建对话面板" }));
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: /Codex/ })).toBeEnabled();
+    });
+    const createButton = screen.getByRole("button", { name: "创建对话" });
+    await waitFor(() => {
+      expect(createButton).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建对话" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Codex频道" })).toBeInTheDocument();
+    });
+
+    const createAgentCall = fetchMock.mock.calls.find(
+      ([url]) => url === `${apiBaseUrl}/custom-agents`
+    );
+    expect(createAgentCall).toBeDefined();
+    expect(
+      JSON.parse(
+        String(createAgentCall?.[1] && "body" in createAgentCall[1] ? createAgentCall[1].body : "{}")
+      )
+    ).toMatchObject({
+      capabilityTags: ["platform-runtime-agent"],
+      name: "Codex",
+      provider: "codex",
+      workspaceId: "default-workspace"
+    });
+
+    const conversationCall = fetchMock.mock.calls.find(
+      ([url]) => url === `${apiBaseUrl}/conversations`
+    );
+    expect(
+      JSON.parse(
+        String(conversationCall?.[1] && "body" in conversationCall[1] ? conversationCall[1].body : "{}")
+      )
+    ).toMatchObject({
+      agentIds: [createdAgent.id],
+      mode: "direct",
+      workspaceId: "default-workspace"
+    });
+  });
+
+  it("creates a direct conversation and requires a second confirmation before deleting it", async () => {
     const teammate = {
       ...createAgent("agent_channel_builder", "频道执行同事"),
-      capabilityTags: ["频道"]
+      capabilityTags: ["频道", "custom"],
+      provider: "opencode"
     };
     const createdConversation = {
       archivedAt: null,
@@ -854,14 +1160,17 @@ describe("ChatExperience", () => {
         jsonResponse(200, [
           {
             id: "model_conn_demo",
-            kind: "deepseek_api",
-            label: "DeepSeek 工作区连接",
-            model: "deepseek-chat",
+            kind: "opencode_model",
+            label: "OpenCode 工作区连接",
+            model: "deepseek/deepseek-chat",
             preset: "balanced",
             status: "valid",
             workspaceId: "default-workspace"
           }
         ])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [createCredential("cred_opencode", "opencode", "valid")])
       ],
       [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
         jsonResponse(200, [teammate])
@@ -897,24 +1206,23 @@ describe("ChatExperience", () => {
         )
       ).toBe(true);
     });
-    fireEvent.click(await screen.findByRole("button", { name: "新建协作" }));
-    expect(
-      await screen.findByLabelText("AI 同事", { selector: "select" }, { timeout: 3_000 })
-    ).toHaveValue(teammate.id);
-    const createChannelButton = await screen.findByRole("button", { name: "创建频道" });
+    fireEvent.click(await screen.findByRole("button", { name: "打开新建对话面板" }));
+    expect(await screen.findByRole("radio", { name: /频道执行同事/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole("radio", { name: /频道执行同事/ }));
+    const createChannelButton = await screen.findByRole("button", { name: "创建对话" });
     await waitFor(() => {
       expect(createChannelButton).toBeEnabled();
     });
     fireEvent.click(createChannelButton);
 
     expect(
-      await screen.findByRole("heading", { name: "# 频道执行同事频道" })
+      await screen.findByRole("heading", { name: "频道执行同事频道" })
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "删除 频道执行同事频道" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     expect(
-      screen.getByText("再次确认后会删除这个频道及其消息记录。")
+      screen.getByText("再次确认后会删除这个会话及其消息记录。")
     ).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([url, options]) =>
@@ -926,11 +1234,11 @@ describe("ChatExperience", () => {
       )
     ).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "确认删除 频道执行同事频道" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("heading", { name: "# 频道执行同事频道" })
+        screen.queryByRole("heading", { name: "频道执行同事频道" })
       ).not.toBeInTheDocument();
     });
 
@@ -942,11 +1250,11 @@ describe("ChatExperience", () => {
       })
     );
     expect(
-      screen.getByText("当前还没有频道。先新建一条与 AI 同事的协作，再把任务、文件和置顶内容逐步沉淀进来。")
+      screen.getByText("还没有会话。新建单聊或群聊后，就可以让 Agent 帮你制作网页或创建 Workflow。")
     ).toBeInTheDocument();
   });
 
-  it("switches the home timeline between chat, files, and pinned messages", async () => {
+  it("shows chat, files, and pinned context in the three-column workspace", async () => {
     const conversation = {
       archivedAt: null,
       id: "conv_tabs",
@@ -1002,14 +1310,17 @@ describe("ChatExperience", () => {
         jsonResponse(200, [
           {
             id: "model_conn_demo",
-            kind: "deepseek_api",
-            label: "DeepSeek 工作区连接",
-            model: "deepseek-chat",
+            kind: "opencode_model",
+            label: "OpenCode 工作区连接",
+            model: "deepseek/deepseek-chat",
             preset: "balanced",
             status: "valid",
             workspaceId: "default-workspace"
           }
         ])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [createCredential("cred_opencode", "opencode", "valid")])
       ],
       [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
         jsonResponse(200, [])
@@ -1053,19 +1364,119 @@ describe("ChatExperience", () => {
     render(<ChatExperience />);
 
     expect(await screen.findByText("Markdown 交付物已生成。")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "会话文件" })).toBeInTheDocument();
+    expect(screen.getAllByText("协作交付物").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "长期上下文" })).toBeInTheDocument();
+    expect(screen.getAllByText("这是置顶结论").length).toBeGreaterThan(0);
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "文件" }));
-    expect(await screen.findByRole("heading", { name: "频道文件" })).toBeInTheDocument();
-    expect(screen.getByText("协作交付物")).toBeInTheDocument();
-    expect(screen.queryByText("Markdown 交付物已生成。")).not.toBeInTheDocument();
+  it("unpins a message and removes it from long-term context", async () => {
+    const conversation = {
+      archivedAt: null,
+      id: "conv_unpin",
+      isPinned: false,
+      mode: "direct",
+      ownerUserId: "user_phase_a_demo",
+      participants: [{ agentId: "agent_unpin", agentName: "上下文同事" }],
+      pinnedMessageIds: ["msg_unpin"],
+      title: "取消置顶测试",
+      updatedAt: "2026-06-06T00:19:38.000Z",
+      workspaceId: "default-workspace"
+    };
+    const pinnedMessage = {
+      content: "请长期记住这个要求",
+      conversationId: "conv_unpin",
+      createdAt: "2026-06-06T00:19:39.000Z",
+      id: "msg_unpin",
+      isPinned: true,
+      mentionedAgentIds: [],
+      ownerUserId: "user_phase_a_demo",
+      role: "user",
+      sourceAgentId: null,
+      workspaceId: "default-workspace"
+    };
+    const unpinnedMessage = {
+      ...pinnedMessage,
+      isPinned: false
+    };
 
-    fireEvent.click(screen.getByRole("button", { name: "置顶" }));
-    expect(await screen.findByRole("heading", { name: "置顶消息" })).toBeInTheDocument();
-    expect(screen.getByText("这是置顶结论")).toBeInTheDocument();
-    expect(screen.queryByText("协作交付物")).not.toBeInTheDocument();
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: true,
+          user: {
+            displayName: "Phase A Demo",
+            email: "phase-a-demo@example.com",
+            id: "user_phase_a_demo"
+          }
+        })
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [conversation])
+      ],
+      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_unpin&workspaceId=default-workspace`]: [
+        jsonResponse(200, [pinnedMessage])
+      ],
+      [`${apiBaseUrl}/artifacts?messageId=msg_unpin&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/messages/msg_unpin/unpin?workspaceId=default-workspace`]: [
+        jsonResponse(200, {
+          message: unpinnedMessage,
+          pinnedMessageIds: []
+        })
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_unpin&workspaceId=default-workspace`]:
+        [jsonResponse(200, null)],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-28T00:00:00.000Z",
+            id: "default-workspace",
+            name: "Phase A Demo Workspace",
+            ownerUserId: "user_phase_a_demo",
+            updatedAt: "2026-05-28T00:00:00.000Z"
+          }
+        ])
+      ]
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "聊天" }));
-    expect(await screen.findByText("Markdown 交付物已生成。")).toBeInTheDocument();
+    render(<ChatExperience />);
+
+    const pinnedHeading = await screen.findByRole("heading", { name: "长期上下文" });
+    const pinnedSection = pinnedHeading.closest("section");
+
+    expect(pinnedSection).not.toBeNull();
+    expect(
+      await within(pinnedSection as HTMLElement).findByText("请长期记住这个要求")
+    ).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "取消置顶" }));
+
+    await waitFor(() => {
+      expect(
+        within(pinnedSection as HTMLElement).getByText("还没有置顶消息。可以在消息操作中 pin 关键要求。")
+      ).toBeInTheDocument();
+    });
+    expect(
+      within(pinnedSection as HTMLElement).queryByText("请长期记住这个要求")
+    ).not.toBeInTheDocument();
+
+    const unpinCall = fetchMock.mock.calls.find(
+      ([url]) => url === `${apiBaseUrl}/messages/msg_unpin/unpin?workspaceId=default-workspace`
+    );
+    expect(unpinCall?.[1]).toMatchObject({
+      method: "POST"
+    });
   });
 
   it("launches a coding workflow with the built-in team and asks the tech lead to plan first", async () => {
@@ -1237,14 +1648,17 @@ describe("ChatExperience", () => {
         jsonResponse(200, [
           {
             id: "model_conn_demo",
-            kind: "deepseek_api",
-            label: "DeepSeek 工作区连接",
-            model: "deepseek-chat",
+            kind: "opencode_model",
+            label: "OpenCode 工作区连接",
+            model: "deepseek/deepseek-chat",
             preset: "balanced",
             status: "valid",
             workspaceId: "default-workspace"
           }
         ])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [createCredential("cred_opencode", "opencode", "valid")])
       ],
       [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
         jsonResponse(200, [])
@@ -1274,6 +1688,7 @@ describe("ChatExperience", () => {
 
     render(<ChatExperience />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "打开编码团队" }));
     const launchCodingButton = await screen.findByRole("button", { name: "启动编码工作流" });
     await waitFor(() => {
       expect(launchCodingButton).toBeEnabled();
@@ -1289,7 +1704,7 @@ describe("ChatExperience", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { name: "# 编码工作流 · 修复落地页演示" })
+        screen.getByRole("heading", { name: "编码工作流 · 修复落地页演示" })
       ).toBeInTheDocument();
     });
 
@@ -1354,16 +1769,68 @@ function mockFetchByUrl(responsesByUrl: Record<string, Response[]>): void {
   });
 }
 
-function createAgent(id: string, name: string) {
+function createConversation(overrides: Partial<{
+  archivedAt: string | null;
+  id: string;
+  isPinned: boolean;
+  title: string;
+  updatedAt: string;
+}> = {}) {
+  return {
+    archivedAt: null,
+    id: "conv_test",
+    isPinned: false,
+    mode: "group",
+    ownerUserId: "user_demo",
+    participants: [],
+    pinnedMessageIds: [],
+    title: "测试会话",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    workspaceId: "default-workspace",
+    ...overrides
+  };
+}
+
+function createAgent(
+  id: string,
+  name: string,
+  overrides: Partial<{
+    capabilityTags: string[];
+    provider: "claude-code" | "codex" | "deepseek" | "hermes" | "mock" | "opencode" | "openclaw";
+  }> = {}
+) {
   return {
     avatarUrl: null,
+    approvalMode: "balanced",
     capabilityTags: ["builtin-coding-team", "编码"],
     id,
+    memoryMode: "workspace_plus_teammate",
+    modelProfileId: null,
     name,
     ownerUserId: "user_phase_a_demo",
     provider: "deepseek",
+    outputStyle: "清晰、结构化、先给结论再给步骤。",
+    scopeDescription: null,
     systemPrompt: `${name} 的默认提示词。`,
     toolBindings: [],
+    workspaceId: "default-workspace",
+    ...overrides
+  };
+}
+
+function createCredential(
+  id: string,
+  provider: "claude-code" | "codex" | "deepseek" | "hermes" | "opencode" | "openclaw",
+  validationState: "invalid" | "pending" | "valid"
+) {
+  return {
+    credentialSource: "user_provided",
+    id,
+    label: `${provider} connection`,
+    ownerUserId: "user_phase_a_demo",
+    provider,
+    providerAccountId: provider === "opencode" ? "deepseek/deepseek-chat" : provider,
+    validationState,
     workspaceId: "default-workspace"
   };
 }

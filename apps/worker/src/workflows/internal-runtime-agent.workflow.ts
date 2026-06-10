@@ -12,7 +12,7 @@ const { executeInternalRuntimeAgentActivity } = proxyActivities<{
   retry: {
     maximumAttempts: 1
   },
-  startToCloseTimeout: "1 minute"
+  startToCloseTimeout: "5 minutes"
 });
 
 export type InternalRuntimeAgentWorkflowInput = {

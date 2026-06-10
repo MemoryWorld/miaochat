@@ -45,6 +45,7 @@ describe("buildAgentHarnessInstructions", () => {
     expect(instructions).toContain("handoff_request");
     expect(instructions).toContain("artifact.markdown.create");
     expect(instructions).toContain("artifact.webpage.create");
+    expect(instructions).toContain("artifact.diff.create");
     expect(instructions).toContain("visibleMessage");
     expect(instructions).toContain("Prompt Manifest");
     expect(instructions).toContain("short_term_memory");

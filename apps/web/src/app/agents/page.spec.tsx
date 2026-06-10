@@ -28,16 +28,14 @@ describe("AgentsPage", () => {
     fetchMock.mockReset();
   });
 
-  it("renders the lightweight teammate entry and points users to the creation wizard", async () => {
+  it("renders the lightweight teammate entry without the old teammate-directory action", async () => {
     mockWorkspaceFetch();
 
     render(<AgentsPage />);
 
     expect(await screen.findByRole("heading", { name: "创建同事" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "新建同事" })).toHaveAttribute(
-      "href",
-      "/teammates/new"
-    );
+    expect(screen.getByText(/不再把同事目录作为一层主导航/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "新建同事" })).not.toBeInTheDocument();
   });
 
   it("does not request the old custom-agent directory data", async () => {

@@ -78,6 +78,15 @@ describe("assistant visible content sanitization", () => {
               },
               inputSchemaVersion: "1",
               toolName: "artifact.markdown.create"
+            },
+            {
+              idempotencyKey: "artifact:review-diff",
+              input: {
+                patch: "diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-old\n+new\n",
+                title: "Review diff"
+              },
+              inputSchemaVersion: "1",
+              toolName: "artifact.diff.create"
             }
           ],
           expectedSideEffects: ["Create a downloadable Markdown artifact."],
@@ -133,6 +142,7 @@ describe("assistant visible content sanitization", () => {
 
     expect(cleaned).toBe("已完成发布说明。");
     expect(cleaned).not.toContain("artifact.markdown.create");
+    expect(cleaned).not.toContain("artifact.diff.create");
     expect(cleaned).not.toContain("tool_plan");
   });
 

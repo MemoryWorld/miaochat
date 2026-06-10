@@ -254,6 +254,23 @@ export class ConversationsRepository {
     return Boolean(result.rows[0]);
   }
 
+  async deleteExpiredArchivedConversations(
+    workspaceId: string,
+    ownerUserId: string,
+    executor?: DatabaseExecutor
+  ): Promise<number> {
+    const result = await this.resolveExecutor(executor).execute<{ id: string }>(sql`
+      DELETE FROM conversations
+      WHERE workspace_id = ${workspaceId}
+        AND owner_user_id = ${ownerUserId}
+        AND archived_at IS NOT NULL
+        AND archived_at <= now() - interval '30 days'
+      RETURNING id
+    `);
+
+    return result.rows.length;
+  }
+
   async listWorkspaceParticipants(
     workspaceId: string,
     ownerUserId: string

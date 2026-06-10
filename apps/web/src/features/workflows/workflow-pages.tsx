@@ -17,6 +17,7 @@ import { Input } from "../../components/ui/input";
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
 import { AuthPanel } from "../auth/auth-panel";
+import { MarkdownContent } from "../chat/markdown-content";
 import { useActiveWorkspace } from "../workspaces/use-active-workspace";
 import { WorkspaceSwitcher } from "../workspaces/workspace-switcher";
 import { buildArtifactFileUrl } from "../artifacts/artifact-links";
@@ -492,9 +493,9 @@ function WorkflowDetailContent({
             <h2 className="m-0 mt-3 text-2xl font-semibold tracking-tight text-slate-950">
               {workflow.title}
             </h2>
-            <p className="mb-0 mt-2 max-w-4xl text-sm leading-7 text-slate-600">
-              {workflow.description}
-            </p>
+            <div className="mb-0 mt-2 max-w-4xl text-sm leading-7 text-slate-600">
+              <MarkdownContent content={workflow.description} />
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button disabled={!canExecute} onClick={onExecute}>

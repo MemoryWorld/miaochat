@@ -1,6 +1,7 @@
 export type PublicErrorCode =
   | "credential_invalid"
   | "internal"
+  | "missing_runtime"
   | "not_found"
   | "provider_failed"
   | "provider_timeout"
@@ -31,6 +32,11 @@ const catalog: Record<PublicErrorCode, Omit<PublicError, "retryAfterMs">> = {
     code: "internal",
     message: "Something went wrong on our side. Try again in a moment.",
     status: 500
+  },
+  missing_runtime: {
+    code: "missing_runtime",
+    message: "The configured agent runtime is not available. Check the worker runtime setup.",
+    status: 503
   },
   not_found: {
     code: "not_found",
@@ -111,6 +117,10 @@ export function mapToPublicError(error: unknown): PublicError {
 
     if (code === "validation" || name.includes("zod") || message.includes("validation")) {
       return buildPublicError("validation");
+    }
+
+    if (code === "missing_runtime" || message.includes("missing runtime")) {
+      return buildPublicError("missing_runtime");
     }
 
     if (

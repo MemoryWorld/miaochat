@@ -32,7 +32,7 @@ export function TeammateDirectoryPage() {
             这里先只保留创建入口，不再把同事目录作为一层主导航。
           </p>
           <p className="m-0 text-sm leading-7 text-slate-600">
-            创建完成后，后续管理和协作会回到频道里继续推进，避免把客户带进重复的目录管理视图。
+            创建完成后，后续管理和协作会回到会话里继续推进，避免把用户带进重复的目录管理视图。
           </p>
         </div>
       </section>

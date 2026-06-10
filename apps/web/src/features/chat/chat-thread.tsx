@@ -26,7 +26,7 @@ type ChatThreadProps = {
   liveStatus?: OrchestratorStatusEventPayload | null;
   messages: Message[];
   onApplyDiffMessage?: (message: Message) => Promise<string | void> | string | void;
-  onPinMessage: (messageId: string) => Promise<void>;
+  onTogglePinMessage: (message: Message) => Promise<void>;
   onQuoteMessage?: (quoted: string) => void;
   onReplyMessage?: (message: Message) => void;
   resolveAuthorLabel?: (message: Message) => string | undefined;
@@ -44,7 +44,7 @@ export function ChatThread({
   liveStatus = null,
   messages,
   onApplyDiffMessage,
-  onPinMessage,
+  onTogglePinMessage,
   onQuoteMessage,
   onReplyMessage,
   resolveAuthorLabel,
@@ -89,7 +89,7 @@ export function ChatThread({
             padding: "1rem 1.1rem"
           }}
         >
-          正在加载频道消息...
+          正在加载会话消息...
         </div>
       ) : null}
       {!suppressEmptyState &&
@@ -105,7 +105,7 @@ export function ChatThread({
             padding: "1rem 1.1rem"
           }}
         >
-          当前频道还没有消息。发送第一条消息，开始和 AI 同事一起推进工作。
+          当前会话还没有消息。发送第一条消息，开始和 Agent 一起推进网页或 Workflow。
         </div>
       ) : null}
       {messages.map((message, index) => {
@@ -141,7 +141,7 @@ export function ChatThread({
               message={message}
               onApplyDiff={onApplyDiffMessage}
               onPin={() => {
-                void onPinMessage(message.id);
+                void onTogglePinMessage(message);
               }}
               onQuote={onQuoteMessage}
               onReply={onReplyMessage}

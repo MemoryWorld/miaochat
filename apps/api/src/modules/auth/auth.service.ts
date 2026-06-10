@@ -8,6 +8,7 @@ import {
 import { promisify } from "node:util";
 
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -15,6 +16,7 @@ import {
 } from "@nestjs/common";
 
 import type { PoolClient } from "pg";
+import { ZodError } from "zod";
 
 import { DatabaseService } from "../database/database.service.js";
 import { AuthAuditService } from "./auth-audit.service.js";
@@ -67,7 +69,7 @@ export class AuthService {
   ) {}
 
   async signup(input: unknown): Promise<AuthResponse & { setCookie: string }> {
-    const parsed = parseSignupInput(input);
+    const parsed = parseAuthInput(() => parseSignupInput(input));
     const displayName = parsed.displayName ?? deriveDisplayName(parsed.email);
     const passwordHash = await hashSecret(parsed.password);
 
@@ -152,7 +154,7 @@ export class AuthService {
     input: unknown,
     context: AuthRequestContext = {}
   ): Promise<AuthResponse & { setCookie: string }> {
-    const parsed = parseLoginInput(input);
+    const parsed = parseAuthInput(() => parseLoginInput(input));
     const ipAddress = normalizeIpAddress(context.ipAddress);
 
     try {
@@ -303,7 +305,7 @@ export class AuthService {
     input: unknown,
     context: AuthRequestContext = {}
   ): Promise<{ accepted: true }> {
-    const parsed = parsePasswordResetRequestInput(input);
+    const parsed = parseAuthInput(() => parsePasswordResetRequestInput(input));
     const ipAddress = normalizeIpAddress(context.ipAddress);
 
     await this.authRateLimitService.enforcePasswordResetLimit(parsed.email, ipAddress);
@@ -417,6 +419,18 @@ function normalizeIpAddress(ipAddress: string | undefined): string {
   const normalized = ipAddress?.trim();
 
   return normalized && normalized.length > 0 ? normalized : "unknown";
+}
+
+function parseAuthInput<T>(parser: () => T): T {
+  try {
+    return parser();
+  } catch (error) {
+    if (error instanceof ZodError) {
+      throw new BadRequestException("登录信息格式不正确。");
+    }
+
+    throw error;
+  }
 }
 
 function createOpaqueToken(): string {

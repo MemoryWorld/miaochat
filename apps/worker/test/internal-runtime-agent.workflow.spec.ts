@@ -34,6 +34,15 @@ describe("internalRuntimeAgentWorkflow", () => {
       "../src/workflows/internal-runtime-agent.workflow.js"
     );
 
+    expect(proxyActivitiesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retry: expect.objectContaining({
+          maximumAttempts: 1
+        }),
+        startToCloseTimeout: "5 minutes"
+      })
+    );
+
     await expect(
       internalRuntimeAgentWorkflow({
         agentId: "agent_1",

@@ -70,6 +70,18 @@ export class MessagesController {
     return this.messagesService.pin(messageId, parsed, user.id);
   }
 
+  @Post(":messageId/unpin")
+  @HttpCode(200)
+  async unpin(
+    @Param("messageId") messageId: string,
+    @Query("workspaceId") workspaceId?: string,
+    @Headers("cookie") cookieHeader?: string
+  ) {
+    const user = await this.authService.requireAuthenticatedUser(cookieHeader);
+    const parsed = workspaceIdSchema.parse(workspaceId ?? "default-workspace");
+    return this.messagesService.unpin(messageId, parsed, user.id);
+  }
+
   @Get(":messageId/thread")
   async getThread(
     @Param("messageId") messageId: string,

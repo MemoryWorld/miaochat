@@ -22,7 +22,7 @@ const settingsSections = [
   { id: "members", label: "成员" },
   { id: "model-connections", label: "模型连接" },
   { id: "billing", label: "账单" },
-  { id: "capabilities", label: "能力管理" }
+  { id: "capabilities", label: "能力说明" }
 ] as const;
 
 export type SettingsSectionId = (typeof settingsSections)[number]["id"];
@@ -79,7 +79,7 @@ export function SettingsHost({
               设置与管理
             </h1>
             <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              管理账户、工作区、模型连接、成员、账单和能力开关。
+              管理账户、工作区、模型连接、成员、账单和能力说明。
             </p>
           </div>
           {legacySetupMode ? (
@@ -213,7 +213,7 @@ export function SettingsHost({
           <div>
             <h2 className="m-0 text-2xl font-semibold text-slate-950">模型连接</h2>
             <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              添加国产模型、Codex 或 Claude Code 连接，让 AI 同事可以执行真实协作任务。
+              添加 OpenCode、Codex 或 Claude Code 连接。
             </p>
           </div>
           {isWorkspaceReady ? (
@@ -241,9 +241,9 @@ export function SettingsHost({
       {selectedSection === "capabilities" ? (
         <section className="grid gap-4">
           <div>
-            <h2 className="m-0 text-2xl font-semibold text-slate-950">能力管理</h2>
+            <h2 className="m-0 text-2xl font-semibold text-slate-950">能力说明</h2>
             <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              管理 AI 同事可以使用的能力、权限范围和风险提示。
+              查看 AI 同事可以使用的能力、适用角色、权限范围和风险提示。
             </p>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
@@ -255,23 +255,20 @@ export function SettingsHost({
                 <div className="flex items-center justify-between gap-3">
                   <strong className="text-slate-950">{capability.name}</strong>
                   <Badge tone={capability.enabled ? "primary" : "muted"}>
-                    {capability.enabled ? "已启用" : "可安装"}
+                    {capability.enabled ? "已启用" : "能力目录"}
                   </Badge>
                 </div>
                 <p className="mb-0 mt-2">{capability.summary}</p>
                 <div className="mt-3 grid gap-1 text-xs text-slate-500">
-                  <span>版本：{capability.version}</span>
+                  <span>适用同事：{renderCompatibleRoles(capability.compatibleRoles)}</span>
                   <span>权限：{capability.permissionScope}</span>
                   <span>风险：{capability.riskNote}</span>
                 </div>
-                <button className={`${secondaryActionClassName} mt-3`} type="button">
-                  {capability.enabled ? "停用" : "安装"}
-                </button>
               </article>
             ))}
             {capabilities.data.length === 0 ? (
               <div className="rounded-[24px] border border-dashed border-slate-200 bg-white/70 p-4 text-sm leading-7 text-slate-600">
-                当前还没有可管理的能力。
+                当前还没有能力说明。
               </div>
             ) : null}
           </div>
@@ -356,6 +353,10 @@ function renderMemberStatus(status: WorkspaceMemberDirectoryEntry["status"]): st
     case "invited":
       return "待启用";
   }
+}
+
+function renderCompatibleRoles(roles: string[]): string {
+  return roles.length > 0 ? roles.join("、") : "按同事配置";
 }
 
 const secondaryActionClassName =

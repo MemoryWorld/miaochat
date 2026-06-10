@@ -49,6 +49,7 @@ export async function dispatchAgentActivity(
   try {
     maybeThrowMockDispatchFailure(input);
     const runtime = await createPhaseARuntimeExecution({
+      credentialId: input.modelProfileId,
       executionMode: "group",
       ownerUserId: input.ownerUserId,
       provider: input.provider,

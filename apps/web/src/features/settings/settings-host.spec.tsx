@@ -163,9 +163,62 @@ describe("SettingsHost", () => {
 
     render(<SettingsHost initialSection="credentials" legacySetupMode />);
 
-    expect(await screen.findByText("DeepSeek（OpenCode）连接")).toBeInTheDocument();
+    expect(await screen.findByText("DeepSeek 连接")).toBeInTheDocument();
     expect(screen.getByText(/\/setup/)).toBeInTheDocument();
     expect(screen.getAllByText("模型连接").length).toBeGreaterThan(0);
+  });
+
+  it("renders capabilities as a read-only skill catalog without install or disable actions", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/workspace-member-directory?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/workspace-billing-summary?workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ],
+      [`${apiBaseUrl}/workspace-capabilities?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            compatibleRoles: ["技术负责人", "项目协同"],
+            enabled: true,
+            id: "planning-and-approval",
+            installState: "enabled",
+            name: "计划与审批",
+            permissionScope: "可读取需求、频道消息和计划审批",
+            riskNote: "建议在关键节点保留确认记录。",
+            source: "工作区能力库",
+            summary: "负责拆解计划、整理风险，并把关键节点提交给用户确认。",
+            version: "1.0.0",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ]
+    });
+
+    render(<SettingsHost initialSection="capabilities" />);
+
+    expect(await screen.findByRole("heading", { name: "能力说明" })).toBeInTheDocument();
+    expect(await screen.findByText("计划与审批")).toBeInTheDocument();
+    expect(
+      screen.getByText("负责拆解计划、整理风险，并把关键节点提交给用户确认。")
+    ).toBeInTheDocument();
+    expect(screen.getByText("适用同事：技术负责人、项目协同")).toBeInTheDocument();
+    expect(screen.getByText("权限：可读取需求、频道消息和计划审批")).toBeInTheDocument();
+    expect(screen.getByText("风险：建议在关键节点保留确认记录。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "安装" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停用" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
   });
 
   it("refreshes active workspaces after the auth panel reports login success", async () => {

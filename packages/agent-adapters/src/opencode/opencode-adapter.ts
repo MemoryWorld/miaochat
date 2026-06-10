@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+
 import type {
   AgentAdapter,
   AgentContextMessage,
@@ -159,8 +161,14 @@ async function loadOpenCodeClientFactory(): Promise<OpenCodeClientFactory> {
       throw new Error("Package @opencode-ai/sdk does not export createOpencode().");
     }
 
+    assertOpenCodeCliAvailable();
+
     return (options) => sdk.createOpencode!(options);
-  } catch {
+  } catch (error) {
+    if (error instanceof AgentAdapterError) {
+      throw error;
+    }
+
     throw new AgentAdapterError(
       "OpenCode SDK 不可用，请安装 @opencode-ai/sdk 或配置 OpenCode 运行环境。",
       {
@@ -301,10 +309,46 @@ function normalizeOpenCodeError(error: unknown): AgentAdapterError {
     return error;
   }
 
-  return new AgentAdapterError(`OpenCode 执行失败：${formatOpenCodeError(error)}`, {
-    code: "provider_failed",
-    retryable: isRetryableOpenCodeError(error)
+  const message = formatOpenCodeError(error);
+  const missingRuntime = isMissingOpenCodeRuntimeError(error, message);
+
+  return new AgentAdapterError(
+    missingRuntime
+      ? `${formatMissingOpenCodeRuntimeMessage()}${message ? ` ${message}` : ""}`
+      : `OpenCode 执行失败：${message}`,
+    {
+      code: missingRuntime ? "missing_runtime" : "provider_failed",
+      retryable: !missingRuntime && isRetryableOpenCodeError(error)
+    }
+  );
+}
+
+function assertOpenCodeCliAvailable(): void {
+  const result = spawnSync("opencode", ["--version"], {
+    stdio: "ignore",
+    timeout: 3_000
   });
+
+  if (result.error) {
+    throw new AgentAdapterError(
+      `${formatMissingOpenCodeRuntimeMessage()} ${result.error.message}`,
+      {
+        code: "missing_runtime",
+        retryable: false
+      }
+    );
+  }
+}
+
+function formatMissingOpenCodeRuntimeMessage(): string {
+  return "OpenCode 运行时不可用：OpenCode CLI 未安装或 Worker PATH 不可见，请安装 OpenCode 并重启 Worker。";
+}
+
+function isMissingOpenCodeRuntimeError(error: unknown, message = formatOpenCodeError(error)): boolean {
+  const code =
+    isRecord(error) && typeof error.code === "string" ? error.code.toUpperCase() : "";
+
+  return code === "ENOENT" || /spawn opencode ENOENT|opencode.*not found|ENOENT/i.test(message);
 }
 
 function formatOpenCodeError(error: unknown): string {

@@ -19,6 +19,7 @@ import {
   type Message,
   type OrchestratorStatusEventPayload,
   type ProviderId,
+  type CodingWorkflowLaunchResponse,
   type RuntimeArtifactDraft,
   type RuntimeArtifactStatus,
   type StreamEvent,
@@ -41,6 +42,7 @@ import { StructuredLogger } from "../../observability/structured-logger.service.
 import { TraceRecorder } from "../../observability/trace-recorder.service.js";
 import { StreamBrokerService } from "../streams/stream-broker.service.js";
 import { ArtifactsService } from "../artifacts/artifacts.service.js";
+import { formatRuntimeFailureReason } from "../agent-runtime/runtime-error-format.js";
 import { CodingWorkflowsService } from "../coding-workflows/coding-workflows.service.js";
 import { WorkspacePermissionGuard } from "../workspaces/permission.guard.js";
 import { VisualWorkflowsService } from "../visual-workflows/visual-workflows.service.js";
@@ -64,7 +66,12 @@ const resolvedConversationSchema = z.object({
   mode: z.enum(["direct", "group"])
 });
 
+const dispatchMessageInputSchema = createMessageInputSchema.extend({
+  role: z.literal("user").default("user")
+});
+
 type MessageDispatchResponse = Message & {
+  launchedCodingWorkflow?: CodingWorkflowLaunchResponse;
   launchedWorkflow?: VisualWorkflow;
 };
 
@@ -104,11 +111,20 @@ export class MessageDispatchService implements OnModuleDestroy {
   }
 
   async send(input: unknown, ownerUserId: string): Promise<MessageDispatchResponse> {
-    const parsed = createMessageInputSchema.parse(input);
+    const parsedResult = dispatchMessageInputSchema.safeParse(input);
 
-    if (parsed.role !== "user") {
-      throw new BadRequestException("Only user-authored messages can be dispatched.");
+    if (!parsedResult.success) {
+      throw new BadRequestException({
+        code: "validation",
+        issues: parsedResult.error.issues.map((issue) => ({
+          message: issue.message,
+          path: issue.path
+        })),
+        message: "消息发送请求格式无效。"
+      });
     }
+
+    const parsed = parsedResult.data;
 
     const rateLimitKey = `messages.send:${parsed.workspaceId}:${parsed.conversationId}`;
     const rateLimit = await this.rateLimitService.consume({ key: rateLimitKey });
@@ -165,6 +181,37 @@ export class MessageDispatchService implements OnModuleDestroy {
       return {
         ...userMessage,
         launchedWorkflow
+      };
+    }
+
+    const codingWorkflowIntent =
+      parsed.mentionedAgentIds.length === 0
+        ? parseCodingWebpageCreationIntent(parsed.content)
+        : null;
+
+    if (codingWorkflowIntent) {
+      if (!this.codingWorkflowsService) {
+        throw new BadRequestException("编码工作流服务暂时不可用。");
+      }
+
+      await this.workspacePermissionGuard?.assert(
+        sendAccess.ownerUserId,
+        parsed.workspaceId,
+        "conversation.create"
+      );
+
+      const launchedCodingWorkflow = await this.codingWorkflowsService.create(
+        {
+          goal: codingWorkflowIntent.goal,
+          priority: "normal",
+          workspaceId: parsed.workspaceId
+        },
+        sendAccess.ownerUserId
+      );
+
+      return {
+        ...userMessage,
+        launchedCodingWorkflow
       };
     }
 
@@ -289,7 +336,10 @@ export class MessageDispatchService implements OnModuleDestroy {
         runtimeMetadata?: Record<string, unknown>;
         streamEvents: StreamEvent[];
       };
-      const visibleFinalContent = sanitizeAssistantVisibleContent(execution.finalContent);
+      const visibleFinalContent = enforceWebpageArtifactHonesty(
+        sanitizeAssistantVisibleContent(execution.finalContent),
+        execution.artifacts
+      );
       const assistantMessageId = randomUUID();
       const streamEvents = remapStreamEventMessageIds(
         execution.streamEvents,
@@ -507,8 +557,13 @@ export class MessageDispatchService implements OnModuleDestroy {
             ? [markdownFallback]
             : [])
         ];
+        const honestFinalContent = enforceWebpageArtifactHonesty(
+          visibleResult.finalContent,
+          resultArtifacts
+        );
         const visibleResultWithArtifacts = {
           ...visibleResult,
+          finalContent: honestFinalContent,
           ...(resultArtifacts.length > 0 ? { artifacts: resultArtifacts } : {})
         };
         const assistantMessage = await this.messagesService.createAssistantMessage({
@@ -932,7 +987,12 @@ function runtimeArtifactStatusState(status: RuntimeArtifactStatus["status"]) {
 }
 
 function runtimeArtifactStatusSummary(status: RuntimeArtifactStatus): string {
-  const artifactKind = status.type === "diff" ? "Diff 文件" : "Markdown 文件";
+  const artifactKind =
+    status.type === "diff"
+      ? "Diff 文件"
+      : status.type === "webpage"
+        ? "网页预览"
+        : "Markdown 文件";
 
   switch (status.status) {
     case "created":
@@ -1114,7 +1174,7 @@ function summarizeGroupFailures(failures: OrchestratorState["failures"]): string
 }
 
 function errorMessageForCheckpoint(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatRuntimeFailureReason(error);
 }
 
 function formatGroupFailureNotice(state: OrchestratorState): string {
@@ -1289,20 +1349,117 @@ function createAssistantCompletedEvent(message: Message): StreamEvent {
 }
 
 function parseVisualWorkflowCreationIntent(content: string): { goal: string } | null {
-  const normalized = content.toLowerCase();
-  const mentionsWorkflow = /workflow|工作流/iu.test(content) || /workflow/iu.test(normalized);
+  const intentText = stripCodeBlocksForWorkflowIntent(content);
+  const normalized = intentText.toLowerCase();
+  const mentionsWorkflow = /workflow|工作流/iu.test(intentText) || /workflow/iu.test(normalized);
   const asksToCreate =
     /创建|新建|设计|生成|建立|搭建|帮我创建|create|build|generate|new/iu.test(
-      content
+      intentText
     );
 
-  if (!mentionsWorkflow || !asksToCreate) {
+  if (!mentionsWorkflow || !asksToCreate || negatesWorkflowCreation(intentText)) {
     return null;
   }
 
-  const goal = extractVisualWorkflowGoal(content);
+  const goal = extractVisualWorkflowGoal(intentText);
 
   return goal ? { goal } : null;
+}
+
+function parseCodingWebpageCreationIntent(content: string): { goal: string } | null {
+  const intentText = stripCodeBlocksForWorkflowIntent(content).trim();
+
+  if (!intentText || negatesWebpageCreation(intentText)) {
+    return null;
+  }
+
+  const hasWebpageTarget =
+    /网页|网站|页面|单页应用|前端页面|落地页|首屏|响应式|html|website|web\s*page|landing\s*page|single\s*page\s*app|todolist|todo\s*list/iu.test(
+      intentText
+    );
+  const asksToCreate =
+    /创建|新建|生成|制作|实现|开发|搭建|做一个|写一个|给我做|想要|需要|要一个|create|build|generate|make|implement/iu.test(
+      intentText
+    );
+  const asksForPreviewableArtifact =
+    /可预览|可下载|产物|artifact|下载|预览/iu.test(intentText) &&
+    /html|网页|网站|页面|web/iu.test(intentText);
+
+  if (!(hasWebpageTarget && (asksToCreate || asksForPreviewableArtifact))) {
+    return null;
+  }
+
+  return { goal: intentText };
+}
+
+function stripCodeBlocksForWorkflowIntent(content: string): string {
+  return content
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/~~~[\s\S]*?~~~/g, " ")
+    .replace(/`[^`\r\n]*`/g, " ");
+}
+
+function negatesWorkflowCreation(content: string): boolean {
+  return [
+    /(?:不要|别|无需|不用|禁止|不是|并非|不需要)[^。；;\n]{0,32}(?:识别|当成|作为|视为|创建|新建|生成|建立|触发|发起)[^。；;\n]{0,32}(?:workflow|工作流)/iu,
+    /(?:workflow|工作流)[^。；;\n]{0,32}(?:不要|别|无需|不用|禁止|不是|并非|不需要)[^。；;\n]{0,32}(?:识别|当成|作为|视为|创建|新建|生成|建立|触发|发起)/iu,
+    /\b(?:do\s+not|don't|dont|no|not)\b[^.\n]{0,48}\b(?:create|build|generate|trigger|detect)\b[^.\n]{0,48}\bworkflow\b/iu,
+    /\bworkflow\b[^.\n]{0,48}\b(?:do\s+not|don't|dont|no|not)\b[^.\n]{0,48}\b(?:create|build|generate|trigger|detect)\b/iu
+  ].some((pattern) => pattern.test(content));
+}
+
+function negatesWebpageCreation(content: string): boolean {
+  return [
+    /(?:不要|别|无需|不用|禁止|不是|并非|不需要)[^。；;\n]{0,32}(?:创建|新建|生成|制作|实现|开发|搭建|触发|发起)[^。；;\n]{0,32}(?:网页|网站|页面|html|website|web\s*page)/iu,
+    /(?:网页|网站|页面|html|website|web\s*page)[^。；;\n]{0,32}(?:不要|别|无需|不用|禁止|不是|并非|不需要)[^。；;\n]{0,32}(?:创建|新建|生成|制作|实现|开发|搭建|触发|发起)/iu,
+    /\b(?:do\s+not|don't|dont|no|not)\b[^.\n]{0,48}\b(?:create|build|generate|make|implement|trigger)\b[^.\n]{0,48}\b(?:website|web\s*page|html)\b/iu
+  ].some((pattern) => pattern.test(content));
+}
+
+function enforceWebpageArtifactHonesty(
+  content: string,
+  artifacts?: RuntimeArtifactDraft[]
+): string {
+  if (!claimsWebpageDeliverable(content) || hasRuntimeWebpageArtifact(artifacts ?? [])) {
+    return content;
+  }
+
+  return [
+    "网页生成失败，未产生可预览或可下载的 HTML 产物。",
+    "请重试，或改用“制作网页”入口启动编码工作流。"
+  ].join("\n");
+}
+
+function hasRuntimeWebpageArtifact(artifacts: RuntimeArtifactDraft[]): boolean {
+  return artifacts.some(
+    (artifact) =>
+      artifact.type === "webpage" ||
+      artifact.mimeType.toLowerCase().includes("html")
+  );
+}
+
+function claimsWebpageDeliverable(content: string): boolean {
+  const normalized = stripNegatedWebpageClaims(content);
+
+  if (!/(网页|网站|页面|html|web\s*page|website)/iu.test(normalized)) {
+    return false;
+  }
+
+  return /已(?:经)?(?:生成|创建|产出|完成|做好)|生成了|创建了|可(?:直接)?(?:预览|下载|打开)|artifact|产物/u.test(
+    normalized
+  );
+}
+
+function stripNegatedWebpageClaims(content: string): string {
+  return content
+    .replace(
+      /(?:没有|未|未能|无法|不会|不能|并未|尚未)[^。\n；;]*?(?:生成|创建|产出|完成|做好|预览|下载)[^。\n；;]*?(?:网页|网站|页面|html|web\s*page|website)[^。\n；;]*/giu,
+      ""
+    )
+    .replace(
+      /(?:网页|网站|页面|html|web\s*page|website)[^。\n；;]*?(?:没有|未|未能|无法|不会|不能|并未|尚未)[^。\n；;]*?(?:生成|创建|产出|完成|做好|预览|下载)[^。\n；;]*/giu,
+      ""
+    );
 }
 
 function extractVisualWorkflowGoal(content: string): string | null {

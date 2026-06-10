@@ -137,7 +137,7 @@ export function ChatComposer({
             setContent(event.target.value);
             onTyping?.();
           }}
-          placeholder="请告诉 AI 同事下一步需要推进什么。"
+          placeholder="输入任务，或 @ 指定 Agent。比如：用 Codex 做一个 React 组件。"
           rows={3}
           value={content}
           style={{
@@ -154,10 +154,10 @@ export function ChatComposer({
           <div className="text-xs font-semibold text-slate-500">快捷动作</div>
           <div className="flex flex-wrap gap-2">
             {[
-              { label: "总结", value: "请总结当前频道的关键结论和下一步。" },
-              { label: "创建任务", value: "请根据当前讨论创建一组可执行任务。" },
-              { label: "生成计划", value: "请先生成计划，列出风险和验收标准。" },
-              { label: "邀请同事", value: "我需要邀请一位同事加入这个频道。" }
+              { label: "制作网页", value: "请制作一个响应式单文件 HTML 网页，并生成可下载产物。" },
+              { label: "创建 Workflow", value: "请创建一个可视化 workflow，先展示节点预览和输入输出，等待我执行。" },
+              { label: "修改产物", value: "请基于当前最新产物继续修改，并说明变更点。" },
+              { label: "部署状态", value: "请检查当前网页产物是否可以部署，并给出部署状态。" }
             ].map((action) => (
               <button
                 className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"

@@ -2,13 +2,17 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 
-import type { Artifact } from "@agenthub/contracts";
+import type { Artifact, ArtifactRevision, ArtifactRevisionDiff } from "@agenthub/contracts";
 
 import { ArtifactEditDispatcher } from "../chat/artifact-edit-dispatcher";
 import { MarkdownContent } from "../chat/markdown-content";
+import { UnifiedDiffView } from "../chat/unified-diff-view";
 import {
   buildArtifactContentUrl,
   buildArtifactFileUrl,
+  buildArtifactRevisionDiffUrl,
+  buildArtifactRevisionRestoreUrl,
+  buildArtifactRevisionsUrl,
   buildArtifactViewerUrl
 } from "./artifact-links";
 
@@ -25,6 +29,13 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
   const [previewText, setPreviewText] = useState<string | null>(null);
   const [previewStatus, setPreviewStatus] = useState<PreviewStatus>("idle");
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [versionsExpanded, setVersionsExpanded] = useState(false);
+  const [revisions, setRevisions] = useState<ArtifactRevision[] | null>(null);
+  const [revisionStatus, setRevisionStatus] = useState<PreviewStatus>("idle");
+  const [revisionError, setRevisionError] = useState<string | null>(null);
+  const [selectedDiff, setSelectedDiff] = useState<ArtifactRevisionDiff | null>(null);
+  const [diffStatus, setDiffStatus] = useState<PreviewStatus>("idle");
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
   const cardType = getCardType(artifact);
   const isImage = isImageArtifact(artifact);
@@ -77,6 +88,102 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
 
     return () => controller.abort();
   }, [artifact, canLoadTextPreview, expanded, previewText]);
+
+  useEffect(() => {
+    setRevisions(null);
+    setRevisionStatus("idle");
+    setRevisionError(null);
+    setSelectedDiff(null);
+    setDiffStatus("idle");
+    setRestoreMessage(null);
+  }, [artifact.id]);
+
+  useEffect(() => {
+    if (!versionsExpanded || revisions !== null) {
+      return;
+    }
+
+    const controller = new AbortController();
+    setRevisionStatus("loading");
+    setRevisionError(null);
+
+    fetch(buildArtifactRevisionsUrl(artifact.id, artifact.workspaceId), {
+      credentials: "include",
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`版本历史加载失败（${response.status}）。`);
+        }
+
+        return response.json() as Promise<ArtifactRevision[]>;
+      })
+      .then((payload) => {
+        setRevisions(payload);
+        setRevisionStatus("ready");
+      })
+      .catch((cause) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setRevisionStatus("error");
+        setRevisionError(cause instanceof Error ? cause.message : "版本历史加载失败。");
+      });
+
+    return () => controller.abort();
+  }, [artifact.id, artifact.workspaceId, revisions, versionsExpanded]);
+
+  async function loadRevisionDiff(revisionIndex: number) {
+    setDiffStatus("loading");
+    setSelectedDiff(null);
+    setRestoreMessage(null);
+
+    try {
+      const response = await fetch(
+        buildArtifactRevisionDiffUrl(artifact.id, artifact.workspaceId, revisionIndex),
+        { credentials: "include" }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Diff 加载失败（${response.status}）。`);
+      }
+
+      const payload = await response.json() as ArtifactRevisionDiff;
+      setSelectedDiff(payload);
+      setDiffStatus("ready");
+    } catch (cause) {
+      setDiffStatus("error");
+      setRevisionError(cause instanceof Error ? cause.message : "Diff 加载失败。");
+    }
+  }
+
+  async function restoreRevision(revisionIndex: number) {
+    setRestoreMessage(`正在回退到版本 #${revisionIndex}...`);
+
+    try {
+      const response = await fetch(
+        buildArtifactRevisionRestoreUrl(artifact.id, artifact.workspaceId, revisionIndex),
+        {
+          body: JSON.stringify({ summary: `Restore revision ${revisionIndex} from artifact card.` }),
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          method: "POST"
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`回退失败（${response.status}）。`);
+      }
+
+      setRestoreMessage(`已回退到版本 #${revisionIndex}，并记录为新版本。`);
+      setRevisions(null);
+      setSelectedDiff(null);
+      setDiffStatus("idle");
+    } catch (cause) {
+      setRestoreMessage(cause instanceof Error ? cause.message : "回退失败。");
+    }
+  }
 
   const visiblePreviewText = previewText ?? "";
 
@@ -153,6 +260,15 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
             下载
           </a>
         ) : null}
+        <button
+          aria-expanded={versionsExpanded}
+          aria-label={versionsExpanded ? `Collapse ${artifact.title} version history` : `Open ${artifact.title} version history`}
+          onClick={() => setVersionsExpanded((value) => !value)}
+          style={secondaryButtonStyle}
+          type="button"
+        >
+          版本历史
+        </button>
       </div>
 
       {expanded ? (
@@ -170,6 +286,74 @@ export function ArtifactCard({ artifact, conversationId }: ArtifactCardProps) {
             previewStatus,
             visiblePreviewText
           })}
+        </section>
+      ) : null}
+
+      {versionsExpanded ? (
+        <section
+          aria-label={`${artifact.title} version history`}
+          data-artifact-revisions
+          style={versionPanelStyle}
+        >
+          {revisionStatus === "loading" ? (
+            <p style={emptyStateStyle}>正在加载版本历史...</p>
+          ) : null}
+          {revisionStatus === "error" ? (
+            <p role="alert" style={errorStyle}>{revisionError}</p>
+          ) : null}
+          {revisionStatus === "ready" && revisions?.length === 0 ? (
+            <p style={emptyStateStyle}>当前产物还没有版本记录。</p>
+          ) : null}
+          {revisionStatus === "ready" && revisions && revisions.length > 0 ? (
+            <div style={versionListStyle}>
+              {revisions.map((revision) => (
+                <article
+                  data-artifact-revision-row
+                  key={revision.id}
+                  style={versionRowStyle}
+                >
+                  <div>
+                    <strong>版本 #{revision.revisionIndex}</strong>
+                    <p style={versionMetaStyle}>
+                      {formatRevisionDate(revision.createdAt)}
+                      {revision.summary ? ` · ${revision.summary}` : ""}
+                    </p>
+                  </div>
+                  <div style={actionRowStyle}>
+                    <button
+                      onClick={() => void loadRevisionDiff(revision.revisionIndex)}
+                      style={secondaryButtonStyle}
+                      type="button"
+                    >
+                      查看 Diff
+                    </button>
+                    <button
+                      onClick={() => void restoreRevision(revision.revisionIndex)}
+                      style={secondaryButtonStyle}
+                      type="button"
+                    >
+                      回退
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          {diffStatus === "loading" ? (
+            <p style={emptyStateStyle}>正在加载版本 Diff...</p>
+          ) : null}
+          {selectedDiff ? (
+            <div data-artifact-revision-diff style={versionDiffStyle}>
+              <p style={versionMetaStyle}>
+                版本 {selectedDiff.before ? `#${selectedDiff.before.revisionIndex}` : "空内容"} 到 #{selectedDiff.after.revisionIndex}
+                {selectedDiff.truncated ? " · 内容已截断" : ""}
+              </p>
+              <UnifiedDiffView patch={selectedDiff.patch} />
+            </div>
+          ) : null}
+          {restoreMessage ? (
+            <p aria-live="polite" style={versionMetaStyle}>{restoreMessage}</p>
+          ) : null}
         </section>
       ) : null}
 
@@ -271,6 +455,21 @@ function truncatePreviewText(text: string): string {
   return `${text.slice(0, previewTextLimit)}${previewTruncationNotice}`;
 }
 
+function formatRevisionDate(value: Date | string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "时间未知";
+  }
+
+  return date.toLocaleString("zh-CN", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  });
+}
+
 type ExpandedPreviewInput = {
   artifact: Artifact;
   canEmbedPreview: boolean;
@@ -313,7 +512,9 @@ function renderExpandedPreview({
     }
 
     if (visiblePreviewText) {
-      return isMarkdownArtifact(artifact) ? (
+      return isDiffArtifact(artifact) ? (
+        <UnifiedDiffView patch={visiblePreviewText} />
+      ) : isMarkdownArtifact(artifact) ? (
         <div data-artifact-inline-preview style={markdownPreviewStyle}>
           <MarkdownContent content={visiblePreviewText} />
         </div>
@@ -512,6 +713,11 @@ function isMarkdownArtifact(artifact: Artifact): boolean {
   return artifact.mimeType.toLowerCase().includes("markdown");
 }
 
+function isDiffArtifact(artifact: Artifact): boolean {
+  const mimeType = artifact.mimeType.toLowerCase();
+  return artifact.kind === "diff" || mimeType.includes("diff") || /\.diff$/i.test(artifact.title);
+}
+
 function isHtmlArtifact(artifact: Artifact): boolean {
   return artifact.mimeType.toLowerCase().includes("html");
 }
@@ -576,6 +782,46 @@ const actionRowStyle: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   gap: "0.45rem"
+};
+
+const versionPanelStyle: CSSProperties = {
+  borderTop: "1px solid rgba(15, 23, 42, 0.1)",
+  display: "grid",
+  gap: "0.6rem",
+  paddingTop: "0.7rem"
+};
+
+const versionListStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.45rem"
+};
+
+const versionRowStyle: CSSProperties = {
+  alignItems: "center",
+  background: "#fff",
+  border: "1px solid rgba(15, 23, 42, 0.1)",
+  borderRadius: "8px",
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "0.6rem",
+  justifyContent: "space-between",
+  padding: "0.65rem"
+};
+
+const versionMetaStyle: CSSProperties = {
+  color: "#667085",
+  fontSize: "0.78rem",
+  margin: 0
+};
+
+const versionDiffStyle: CSSProperties = {
+  border: "1px solid rgba(15, 23, 42, 0.1)",
+  borderRadius: "8px",
+  display: "grid",
+  gap: "0.5rem",
+  maxHeight: "360px",
+  overflow: "auto",
+  padding: "0.65rem"
 };
 
 const actionLinkStyle: CSSProperties = {

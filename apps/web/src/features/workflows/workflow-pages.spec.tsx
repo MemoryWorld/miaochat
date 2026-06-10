@@ -211,6 +211,57 @@ describe("WorkflowDetailPageClient", () => {
       workspaceId: "default-workspace"
     });
   });
+
+  it("renders workflow descriptions with fenced diffs as line-level diff markup", async () => {
+    const workflowWithDiff = {
+      ...baseWorkflow,
+      description: [
+        "请评审这个 patch：",
+        "",
+        "```diff",
+        "diff --git a/app.ts b/app.ts",
+        "--- a/app.ts",
+        "+++ b/app.ts",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "```"
+      ].join("\n")
+    };
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/visual-workflows/workflow_visual?workspaceId=default-workspace`]: [
+        jsonResponse(200, workflowWithDiff)
+      ],
+      [`${apiBaseUrl}/visual-workflows/workflow_visual/runs?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ]
+    });
+
+    const { container } = render(
+      <WorkflowDetailPageClient
+        initialWorkspaceId="default-workspace"
+        workflowId="workflow_visual"
+      />
+    );
+
+    expect(await screen.findByRole("heading", { name: "Workflow 详情" })).toBeInTheDocument();
+    expect(await screen.findByText("请评审这个 patch：")).toBeInTheDocument();
+    expect(container.querySelector("[data-unified-diff]")).toBeInTheDocument();
+    expect(container.querySelector('[data-diff-line-kind="removed"]')).toHaveTextContent("-old");
+    expect(container.querySelector('[data-diff-line-kind="added"]')).toHaveTextContent("+new");
+  });
 });
 
 function jsonResponse(status: number, payload: unknown): Response {

@@ -1286,13 +1286,18 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     ]);
   }
 
-  async function handlePinMessage(messageId: string): Promise<void> {
+  async function handleTogglePinMessage(message: Message): Promise<void> {
+    const nextAction = message.isPinned ? "unpin" : "pin";
+    const fallbackMessage = message.isPinned
+      ? "取消置顶消息失败。"
+      : "置顶选中消息失败。";
+
     setErrorMessage(null);
-    setIsPinningMessageId(messageId);
+    setIsPinningMessageId(message.id);
 
     try {
       const response = await fetch(
-        `${apiBaseUrl}/messages/${messageId}/pin?workspaceId=${activeWorkspaceId}`,
+        `${apiBaseUrl}/messages/${message.id}/${nextAction}?workspaceId=${activeWorkspaceId}`,
         {
           credentials: "include",
           method: "POST"
@@ -1301,7 +1306,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "置顶选中消息失败。"));
+        throw new Error(readErrorMessage(payload, fallbackMessage));
       }
 
       const parsed = payload as {
@@ -1329,7 +1334,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "置顶选中消息失败。"
+        error instanceof Error ? error.message : fallbackMessage
       );
     } finally {
       setIsPinningMessageId(null);
@@ -1602,8 +1607,8 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
               liveStatus={visibleOrchestratorStatus}
               messages={displayedMessages}
               isLoading={messages.isLoading || isMessagesHydrating}
-              onPinMessage={handlePinMessage}
               onReplyMessage={handleOpenThread}
+              onTogglePinMessage={handleTogglePinMessage}
               resolveAuthorLabel={resolveMessageAuthorLabel}
               suppressEmptyState={!isWorkspaceReady || isChannelUnavailable || isMessagesHydrating}
             />
@@ -1614,8 +1619,8 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                 channelMembers={visibleChannelMembers}
                 isSending={isSending}
                 onClose={() => setThreadDrawer(null)}
-                onPinMessage={handlePinMessage}
                 onSendReply={handleSendThreadReply}
+                onTogglePinMessage={handleTogglePinMessage}
                 resolveAuthorLabel={resolveMessageAuthorLabel}
                 thread={threadDrawer}
               />
@@ -2069,8 +2074,8 @@ function ThreadDrawer({
   channelMembers,
   isSending,
   onClose,
-  onPinMessage,
   onSendReply,
+  onTogglePinMessage,
   resolveAuthorLabel,
   thread
 }: {
@@ -2079,13 +2084,13 @@ function ThreadDrawer({
   channelMembers: ChannelMember[];
   isSending: boolean;
   onClose: () => void;
-  onPinMessage: (messageId: string) => Promise<void>;
   onSendReply: (input: {
     attachments: File[];
     content: string;
     mentionedAgentIds: string[];
     mentionedUserIds: string[];
   }) => Promise<boolean | void>;
+  onTogglePinMessage: (message: Message) => Promise<void>;
   resolveAuthorLabel: (message: Message) => string | undefined;
   thread: {
     error: string | null;
@@ -2128,7 +2133,7 @@ function ThreadDrawer({
             isPinningMessageId={null}
             liveAssistantMessage={null}
             messages={threadMessages}
-            onPinMessage={onPinMessage}
+            onTogglePinMessage={onTogglePinMessage}
             resolveAuthorLabel={resolveAuthorLabel}
           />
           <ChatComposer

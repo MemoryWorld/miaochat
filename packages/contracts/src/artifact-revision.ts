@@ -24,5 +24,19 @@ export const createArtifactRevisionInputSchema = z.object({
   summary: z.string().max(2000).optional()
 });
 
+export const artifactRevisionDiffSchema = z.object({
+  after: artifactRevisionSchema,
+  before: artifactRevisionSchema.nullable(),
+  patch: z.string(),
+  truncated: z.boolean().default(false)
+});
+
+export const restoreArtifactRevisionInputSchema = z.object({
+  authorUserId: z.string().min(1).optional(),
+  summary: z.string().max(2000).optional()
+});
+
 export type ArtifactRevision = z.infer<typeof artifactRevisionSchema>;
+export type ArtifactRevisionDiff = z.infer<typeof artifactRevisionDiffSchema>;
 export type CreateArtifactRevisionInput = z.infer<typeof createArtifactRevisionInputSchema>;
+export type RestoreArtifactRevisionInput = z.infer<typeof restoreArtifactRevisionInputSchema>;

@@ -18,6 +18,7 @@
     "deploy:acceptance:real": "tsx scripts/deploy/run-real-deploy-acceptance.ts",
     "deploy:cleanup:real": "tsx scripts/deploy/cleanup-real-deploys.ts",
     "deploy:seed-targets:real": "tsx scripts/deploy/seed-real-deploy-targets.ts",
+    "dev:all": "pnpm --parallel --filter api --filter web --filter worker run dev",
     "mobile:android:release": "pnpm --filter mobile android:release",
     "mobile:ios:release": "pnpm --filter mobile ios:release",
     "lint": "turbo run lint",

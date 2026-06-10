@@ -37,6 +37,7 @@ export async function executeDirectAgentActivity(
 ): Promise<AgentExecutionResult> {
   try {
     const runtime = await createPhaseARuntimeExecution({
+      credentialId: input.modelProfileId,
       executionMode: "direct",
       ownerUserId: input.ownerUserId,
       provider: input.provider,

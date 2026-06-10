@@ -12,22 +12,25 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("WorkspaceNavigation", () => {
-  it("marks channel detail routes as the channel section", () => {
-    pathname = "/channels/conv_deepseek_direct";
+  it("renders only the slim coding navigation", () => {
+    pathname = "/";
 
     render(<WorkspaceNavigation />);
 
     const navigation = screen.getByRole("navigation", {
       name: "Primary workspace navigation"
     });
-    const channelLink = within(navigation).getByRole("link", { name: "频道" });
+    const conversationLink = within(navigation).getByRole("link", { name: "会话" });
 
-    expect(channelLink).toHaveClass("bg-slate-950");
-    expect(within(navigation).getByRole("link", { name: "工作台" })).not.toHaveClass(
-      "bg-slate-950"
-    );
+    expect(conversationLink).toHaveClass("bg-slate-950");
+    expect(within(navigation).getByRole("link", { name: "Workflow" })).toBeInTheDocument();
+    expect(within(navigation).getByRole("link", { name: "模型连接" })).toBeInTheDocument();
     expect(within(navigation).getByRole("link", { name: "设置" })).not.toHaveClass(
       "bg-slate-950"
     );
+    expect(within(navigation).queryByRole("link", { name: "收件箱" })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole("link", { name: "任务" })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole("link", { name: "日历" })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole("link", { name: "频道" })).not.toBeInTheDocument();
   });
 });

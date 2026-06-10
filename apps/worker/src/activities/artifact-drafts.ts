@@ -1,6 +1,9 @@
 import {
+  artifactDiffCreateToolInputSchema,
   artifactMarkdownCreateToolInputSchema,
   artifactWebpageCreateToolInputSchema,
+  runtimeDiffArtifactDraftSchema,
+  runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactDraftSchema,
   runtimeMarkdownArtifactToolName,
   runtimeWebpageArtifactDraftSchema,
@@ -11,7 +14,11 @@ import {
 
 const maxDraftsPerResult = 3;
 
-export { runtimeMarkdownArtifactToolName, runtimeWebpageArtifactToolName };
+export {
+  runtimeDiffArtifactToolName,
+  runtimeMarkdownArtifactToolName,
+  runtimeWebpageArtifactToolName
+};
 
 export function extractRuntimeArtifactDrafts(
   envelope: MultiAgentOutputEnvelope
@@ -81,6 +88,25 @@ function buildArtifactDraftFromToolCall(
     return draft.success ? draft.data : null;
   }
 
+  if (toolName === runtimeDiffArtifactToolName) {
+    const input = artifactDiffCreateToolInputSchema.safeParse(rawInput);
+
+    if (!input.success) {
+      return null;
+    }
+
+    const draft = runtimeDiffArtifactDraftSchema.safeParse({
+      fileName: normalizeArtifactFileName(input.data.fileName ?? input.data.title, ".diff"),
+      mimeType: "text/x-diff",
+      patch: input.data.patch,
+      title: normalizeTitle(input.data.title),
+      truncated: input.data.truncated,
+      type: "diff"
+    });
+
+    return draft.success ? draft.data : null;
+  }
+
   return null;
 }
 
@@ -88,7 +114,10 @@ function normalizeTitle(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
-function normalizeArtifactFileName(value: string, extension: ".html" | ".md"): string {
+function normalizeArtifactFileName(
+  value: string,
+  extension: ".diff" | ".html" | ".md"
+): string {
   const withoutPath = value
     .trim()
     .split(/[\\/]+/)
@@ -109,7 +138,8 @@ function normalizeArtifactFileName(value: string, extension: ".html" | ".md"): s
     .replace(/^\.+/, "")
     .replace(/[.-]+$/, "");
   const baseName = safeName.length > 0 ? safeName : "artifact";
-  const extensionPattern = extension === ".md" ? /\.md$/i : /\.html$/i;
+  const extensionPattern =
+    extension === ".md" ? /\.md$/i : extension === ".html" ? /\.html$/i : /\.diff$/i;
   const withExtension = extensionPattern.test(baseName) ? baseName : `${baseName}${extension}`;
 
   if (withExtension.length <= 160) {

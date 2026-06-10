@@ -50,7 +50,7 @@ describe("OpenCode-backed model connection integration", () => {
       method: "POST",
       payload: {
         apiKey: "sk-test-opencode",
-        label: "DeepSeek（OpenCode）连接",
+        label: "DeepSeek 连接",
         model: "deepseek/deepseek-chat",
         preset: "powerful",
         workspaceId
@@ -73,7 +73,7 @@ describe("OpenCode-backed model connection integration", () => {
       method: "POST",
       payload: {
         apiKey: "sk-test-opencode",
-        label: "DeepSeek（OpenCode）连接",
+        label: "DeepSeek 连接",
         model: "deepseek/deepseek-chat",
         preset: "powerful",
         workspaceId
@@ -86,7 +86,7 @@ describe("OpenCode-backed model connection integration", () => {
     expect(created).toEqual(
       expect.objectContaining({
         kind: "opencode_model",
-        label: "DeepSeek（OpenCode）连接",
+        label: "DeepSeek 连接",
         model: "deepseek/deepseek-chat",
         preset: "powerful",
         status: "valid",
@@ -121,7 +121,7 @@ describe("OpenCode-backed model connection integration", () => {
       method: "POST",
       payload: {
         apiKey: "bad",
-        label: "DeepSeek（OpenCode）连接",
+        label: "DeepSeek 连接",
         model: "deepseek/deepseek-chat",
         workspaceId
       },

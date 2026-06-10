@@ -39,18 +39,15 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
 
     async function loadSession(): Promise<void> {
       try {
-        const response = await fetch(`${apiBaseUrl}/auth/session`, {
-          credentials: "include"
-        });
-        const payload = await readJson(response);
+        const nextUser = await fetchAuthenticatedSession();
 
         if (!isActive) {
           return;
         }
 
         startTransition(() => {
-          if (response.ok && isAuthenticated(payload)) {
-            setUser(payload.user);
+          if (nextUser) {
+            setUser(nextUser);
             setErrorMessage(null);
             return;
           }
@@ -106,7 +103,10 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
         throw new Error(readErrorMessage(payload, "登录失败，请检查邮箱和密码。"));
       }
 
-      const nextUser = readAuthUser(payload);
+      const nextUser = await fetchAuthenticatedSession();
+      if (!nextUser) {
+        throw new Error("登录成功，但浏览器会话尚未建立，请重试。");
+      }
 
       startTransition(() => {
         setUser(nextUser);
@@ -226,6 +226,15 @@ export function AuthPanel({ onAuthenticated, onLoggedOut }: AuthPanelProps) {
   );
 }
 
+async function fetchAuthenticatedSession(): Promise<AuthUser | null> {
+  const response = await fetch(`${apiBaseUrl}/auth/session`, {
+    credentials: "include"
+  });
+  const payload = await readJson(response);
+
+  return response.ok && isAuthenticated(payload) ? payload.user : null;
+}
+
 function isAuthenticated(
   payload: unknown
 ): payload is Extract<SessionPayload, { authenticated: true }> {
@@ -250,19 +259,6 @@ function isAuthUser(payload: unknown): payload is AuthUser {
     "id" in payload &&
     typeof payload.id === "string"
   );
-}
-
-function readAuthUser(payload: unknown): AuthUser {
-  if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "user" in payload &&
-    isAuthUser(payload.user)
-  ) {
-    return payload.user;
-  }
-
-  throw new Error("Unable to read the authenticated user.");
 }
 
 async function readJson(response: Response): Promise<unknown> {

@@ -25,7 +25,6 @@ type ValidationState =
 type ConnectionOption = {
   accountHelp: string;
   accountLabel: string;
-  badgeLabel: string;
   defaultAccountId: string;
   defaultLabel: string;
   id: string;
@@ -37,69 +36,63 @@ type ConnectionOption = {
 
 const connectionOptions: ConnectionOption[] = [
   {
-    accountHelp: "默认使用 OpenCode 的 deepseek/deepseek-chat；如你的 OpenCode 配置不同，可直接改写 provider/model。",
+    accountHelp: "",
     accountLabel: "OpenCode 模型标识",
-    badgeLabel: "国产模型",
     defaultAccountId: "deepseek/deepseek-chat",
-    defaultLabel: "DeepSeek（OpenCode）连接",
+    defaultLabel: "DeepSeek 连接",
     id: "deepseek-opencode",
     keyPlaceholder: "sk-...",
     label: "DeepSeek",
     provider: "opencode",
-    summary: "通过 OpenCode 接入 DeepSeek，不再走旧 DeepSeek 直连接口。"
+    summary: "DeepSeek 模型连接。"
   },
   {
-    accountHelp: "默认使用 qwen/qwen3-coder-plus；如你的 OpenCode provider id 不同，可直接改写。",
+    accountHelp: "",
     accountLabel: "OpenCode 模型标识",
-    badgeLabel: "国产模型",
     defaultAccountId: "qwen/qwen3-coder-plus",
-    defaultLabel: "通义千问（OpenCode）连接",
+    defaultLabel: "通义千问连接",
     id: "qwen-opencode",
     keyPlaceholder: "DashScope API Key",
     label: "通义千问 / Qwen",
     provider: "opencode",
-    summary: "通过 OpenCode 接入 Qwen 系列模型。"
+    summary: "Qwen 模型连接。"
   },
   {
-    accountHelp: "默认使用 moonshot/kimi-k2；如你的 OpenCode provider id 不同，可直接改写。",
+    accountHelp: "",
     accountLabel: "OpenCode 模型标识",
-    badgeLabel: "国产模型",
     defaultAccountId: "moonshot/kimi-k2",
-    defaultLabel: "Kimi（OpenCode）连接",
+    defaultLabel: "Kimi 连接",
     id: "moonshot-opencode",
     keyPlaceholder: "Moonshot API Key",
     label: "Kimi / Moonshot",
     provider: "opencode",
-    summary: "通过 OpenCode 接入 Kimi / Moonshot。"
+    summary: "Kimi 模型连接。"
   },
   {
-    accountHelp: "默认使用 zhipu/glm-4.5；如你的 OpenCode provider id 不同，可直接改写。",
+    accountHelp: "",
     accountLabel: "OpenCode 模型标识",
-    badgeLabel: "国产模型",
     defaultAccountId: "zhipu/glm-4.5",
-    defaultLabel: "智谱 GLM（OpenCode）连接",
+    defaultLabel: "智谱 GLM 连接",
     id: "zhipu-opencode",
     keyPlaceholder: "智谱 API Key",
     label: "智谱 GLM",
     provider: "opencode",
-    summary: "通过 OpenCode 接入智谱 GLM。"
+    summary: "GLM 模型连接。"
   },
   {
-    accountHelp: "默认使用 minimax/minimax-m1；如你的 OpenCode provider id 不同，可直接改写。",
+    accountHelp: "",
     accountLabel: "OpenCode 模型标识",
-    badgeLabel: "国产模型",
     defaultAccountId: "minimax/minimax-m1",
-    defaultLabel: "MiniMax（OpenCode）连接",
+    defaultLabel: "MiniMax 连接",
     id: "minimax-opencode",
     keyPlaceholder: "MiniMax API Key",
     label: "MiniMax",
     provider: "opencode",
-    summary: "通过 OpenCode 接入 MiniMax。"
+    summary: "MiniMax 模型连接。"
   },
   {
     accountHelp: "填 OpenCode 支持的 provider/model，例如 deepseek/deepseek-chat 或你的自定义 provider。",
     accountLabel: "OpenCode 模型标识",
-    badgeLabel: "OpenCode",
     defaultAccountId: "opencode",
     defaultLabel: "OpenCode 自定义连接",
     id: "opencode-custom",
@@ -111,7 +104,6 @@ const connectionOptions: ConnectionOption[] = [
   {
     accountHelp: "Codex 账号标识；具体模型可由 CODEX_MODEL 环境变量控制。",
     accountLabel: "账号标识",
-    badgeLabel: "代码 Agent",
     defaultAccountId: "codex",
     defaultLabel: "Codex 工作区连接",
     id: "codex",
@@ -123,7 +115,6 @@ const connectionOptions: ConnectionOption[] = [
   {
     accountHelp: "Claude Code 账号标识；具体模型可由 CLAUDE_CODE_MODEL 环境变量控制。",
     accountLabel: "账号标识",
-    badgeLabel: "代码 Agent",
     defaultAccountId: "anthropic",
     defaultLabel: "Claude Code 工作区连接",
     id: "claude-code",
@@ -345,10 +336,9 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
       <section className="grid gap-4 rounded-[28px] border border-slate-200 bg-white/85 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <Badge tone="primary">{selectedConnectionOption.badgeLabel}</Badge>
-            <h3 className="m-0 mt-3 text-xl font-semibold text-slate-950">添加模型连接</h3>
+            <h3 className="m-0 text-xl font-semibold text-slate-950">添加模型连接</h3>
             <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
-              国产模型通过 OpenCode 统一接入；Codex 和 Claude Code 仍作为代码 Agent 专用连接保留。API Key 只用于服务端执行，不会在页面中明文展示。
+              选择来源，填写模型标识和 API Key，验证后保存。
             </p>
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -381,9 +371,11 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
               value={providerAccountId}
               onChange={(event) => setProviderAccountId(event.target.value)}
             />
-            <span className="text-xs font-normal leading-5 text-slate-500">
-              {selectedConnectionOption.accountHelp}
-            </span>
+            {selectedConnectionOption.accountHelp ? (
+              <span className="text-xs font-normal leading-5 text-slate-500">
+                {selectedConnectionOption.accountHelp}
+              </span>
+            ) : null}
           </label>
           <label className={fieldLabelClassName}>
             API Key
@@ -428,19 +420,13 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
       </section>
 
       <section className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="m-0 text-lg font-semibold text-slate-950">已保存连接</h3>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {connections.length} 个
-          </span>
-        </div>
         {isLoading ? (
           <ConnectionEmpty title="正在加载连接..." />
         ) : connections.length === 0 ? (
           <ConnectionEmpty title="当前工作区还没有模型连接。" />
         ) : (
           connections.map((connection) => {
-            const option = resolveSavedCredentialOption(connection);
+            const displayLabel = renderConnectionLabel(connection);
 
             return (
               <article
@@ -449,15 +435,14 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <strong className="min-w-0 break-words text-slate-950">
-                    {connection.label}
+                    {displayLabel}
                   </strong>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="muted">{option.label}</Badge>
                     <Badge tone={connection.validationState === "valid" ? "primary" : "muted"}>
                       {renderConnectionStatus(connection.validationState)}
                     </Badge>
                     <Button
-                      aria-label={`删除 ${connection.label}`}
+                      aria-label={`删除 ${displayLabel}`}
                       className="border-red-200 bg-red-50 px-3 text-xs text-red-700 hover:bg-red-100 disabled:text-red-300"
                       disabled={deletingConnectionId === connection.id}
                       onClick={() => void handleDeleteConnection(connection)}
@@ -471,10 +456,7 @@ export function ModelConnectionsPanel({ workspaceId }: { workspaceId: string }) 
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
                   <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {connection.providerAccountId}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {option.summary}
+                    模型：{connection.providerAccountId}
                   </span>
                 </div>
               </article>
@@ -556,6 +538,14 @@ function renderConnectionStatus(status: ProviderCredential["validationState"]): 
   }
 }
 
+function renderConnectionLabel(connection: CredentialMetadata): string {
+  return connection.label
+    .replace(/（OpenCode）/g, " ")
+    .replace(/([\u4e00-\u9fff])\s+连接/g, "$1连接")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function isVisibleModelCredential(credential: CredentialMetadata): boolean {
   return (
     credential.provider === "opencode" ||
@@ -574,7 +564,6 @@ function resolveSavedCredentialOption(credential: CredentialMetadata): Connectio
     return {
       accountHelp: "旧 DeepSeek 直连凭证，仅用于兼容历史数据；新建连接会通过 OpenCode 保存。",
       accountLabel: "模型",
-      badgeLabel: "旧直连",
       defaultAccountId: credential.providerAccountId,
       defaultLabel: credential.label,
       id: "legacy-deepseek",
