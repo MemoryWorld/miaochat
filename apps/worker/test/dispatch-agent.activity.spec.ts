@@ -18,7 +18,8 @@ vi.mock("../src/observability/observability.js", () => ({
   getWorkerTracer: () => ({
     startSpan: () => ({
       end: vi.fn(),
-      fail: vi.fn()
+      fail: vi.fn(),
+      record: vi.fn()
     })
   })
 }));
