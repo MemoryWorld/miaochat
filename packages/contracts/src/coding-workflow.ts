@@ -139,7 +139,7 @@ export const builtInCodingProfiles = [
     ],
     runtimeBackend: "enhanced-hermes",
     starterPrompt:
-      "你是这条编码工作流的技术负责人。先阅读用户目标，输出清晰的实施计划、职责分工、风险、依赖和验证方案，再等待用户确认。计划获批并且其他同事完成后，你要汇总原始目标完成度、已完成项、未完成项、风险和下一步。",
+      "你是这条网页制作协作会话的技术负责人。先阅读用户目标，输出清晰的实施计划、职责分工、风险、依赖和验证方案，再等待用户确认。计划获批并且其他同事完成后，你要汇总原始目标完成度、已完成项、未完成项、风险和下一步。",
     summary: "负责需求澄清、计划拆解、风险把控和最终汇总。",
     toolPolicy: "默认只读上下文和计划输出，不直接执行高风险改动。",
     visibilityPolicy: "始终在时间线里公开计划、风险和审批请求。"
@@ -162,7 +162,7 @@ export const builtInCodingProfiles = [
     ],
     runtimeBackend: "enhanced-hermes",
     starterPrompt:
-      "你是这条编码工作流的软件工程师。只有在计划已被确认后才进入实现，专注于可靠交付、最小改动和清晰说明。",
+      "你是这条网页制作协作会话的软件工程师。只有在计划已被确认后才进入实现，专注于可靠交付、最小改动和清晰说明。",
     summary: "负责实现、构建、测试和变更说明。",
     toolPolicy: "可读写代码并运行构建与测试。",
     visibilityPolicy: "必须回写实现摘要、验证结果和残余风险。"
@@ -185,7 +185,7 @@ export const builtInCodingProfiles = [
     ],
     runtimeBackend: "enhanced-hermes",
     starterPrompt:
-      "你是这条编码工作流的代码评审工程师。重点检查风险、行为变化、回归概率和缺失测试，不要直接替代工程师实施。",
+      "你是这条网页制作协作会话的代码评审工程师。重点检查风险、行为变化、回归概率和缺失测试，不要直接替代工程师实施。",
     summary: "负责审查实现质量、风险与回归。",
     toolPolicy: "读取 diff、构建记录和测试结果，不直接合入。",
     visibilityPolicy: "必须回写审查结论、阻塞项和建议。"
@@ -208,7 +208,7 @@ export const builtInCodingProfiles = [
     ],
     runtimeBackend: "enhanced-hermes",
     starterPrompt:
-      "你是这条编码工作流的质量保障测试工程师。针对计划和实现设计验证路径，回报失败点、覆盖缺口和回归结果。",
+      "你是这条网页制作协作会话的质量保障测试工程师。针对计划和实现设计验证路径，回报失败点、覆盖缺口和回归结果。",
     summary: "负责验证、回归和验收建议。",
     toolPolicy: "运行测试并整理验证结果。",
     visibilityPolicy: "必须回写覆盖范围、失败点和验收建议。"
@@ -265,6 +265,7 @@ export const codingWorkflowDetailSchema = z.object({
   repoContext: z.string().nullable().default(null),
   reviewerAgentId: z.string().min(1),
   runtimeBackend: runtimeBackendSchema,
+  sourceMessageId: z.string().min(1).nullable().default(null),
   state: codingWorkflowStateSchema,
   taskSnapshot: z.array(codingWorkflowTaskSchema).default([]),
   teammates: z.array(codingWorkflowTeammateSchema).default([]),
@@ -283,6 +284,7 @@ export const createCodingWorkflowInputSchema = z.object({
     builtInCodingProfiles.map((profile) => profile.id)
   ),
   repoContext: z.string().trim().min(1).optional(),
+  sourceMessageId: z.string().trim().min(1).optional(),
   workspaceId: workspaceIdSchema.default("default-workspace")
 });
 
@@ -360,13 +362,14 @@ export function getBuiltInCodingProfileByRole(role: BuiltInCodingRole) {
 export function buildBuiltInCodingAgentInput(
   profile: BuiltInCodingProfile,
   provider: CustomAgent["provider"],
-  workspaceId: string
+  workspaceId: string,
+  modelProfileId: string | null = null
 ): CreateCustomAgentInput {
   return {
     approvalMode: "balanced",
     capabilityTags: profile.capabilityTags,
     memoryMode: "workspace_plus_teammate",
-    modelProfileId: "balanced",
+    modelProfileId,
     name: profile.name,
     outputStyle: "先给结论，再列出关键步骤、风险和下一步。",
     provider,
@@ -411,7 +414,7 @@ export function buildInitialCodingTaskSnapshotForRoles(
 }
 
 export function buildCodingWorkflowTitle(goal: string): string {
-  return `编码工作流 · ${goal.trim().slice(0, 32)}`;
+  return `网页制作 · ${goal.trim().slice(0, 32)}`;
 }
 
 export function buildCodingKickoffMessage(input: {
@@ -424,7 +427,7 @@ export function buildCodingKickoffMessage(input: {
   repoContext?: string | null;
 }): string {
   const sections = [
-    "你们现在进入一条新的编码工作流。",
+    "你们现在进入一条新的网页制作协作会话。",
     `本次目标：${input.goal.trim()}`
   ];
 

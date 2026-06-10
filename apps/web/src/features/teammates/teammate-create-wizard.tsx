@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { startTransition, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 
 import type {
   Conversation,
   CreateCustomAgentInput,
+  CustomAgent,
   ProviderCredential
 } from "@agenthub/contracts";
 
@@ -40,7 +41,6 @@ type TeammateTemplate = {
   id: string;
   memoryMode: CreateCustomAgentInput["memoryMode"];
   mission: string;
-  modelProfileId: string;
   name: string;
   outputStyle: string;
   recommended: boolean;
@@ -130,7 +130,6 @@ const templateCatalog: TeammateTemplate[] = [
     id: template.id,
     memoryMode: "workspace_plus_teammate" as const,
     mission: template.mission,
-    modelProfileId: "balanced",
     name: template.name,
     outputStyle: "先给结论，再列出关键步骤、风险和下一步。",
     recommended: true,
@@ -143,7 +142,6 @@ const templateCatalog: TeammateTemplate[] = [
     id: "custom",
     memoryMode: "workspace",
     mission: "根据用户指定的职责协作，遇到边界不清晰时先提出澄清问题。",
-    modelProfileId: "balanced",
     name: "自定义同事",
     outputStyle: "简洁、可执行，必要时先列出待确认问题。",
     recommended: false,
@@ -156,7 +154,6 @@ const templateCatalog: TeammateTemplate[] = [
     id: "delivery_partner",
     memoryMode: "workspace_plus_teammate",
     mission: "跟进交付上下文，整理变更说明和行动项。",
-    modelProfileId: "fast",
     name: "交付协同",
     outputStyle: "先给交付结论，再列清单和负责人。",
     recommended: true,
@@ -201,11 +198,11 @@ export function TeammateCreateWizard() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [memoryMode, setMemoryMode] =
     useState<CreateCustomAgentInput["memoryMode"]>(defaultTemplate.memoryMode);
-  const [modelProfileId, setModelProfileId] = useState(defaultTemplate.modelProfileId);
   const [name, setName] = useState(defaultTemplate.name);
   const [outputStyle, setOutputStyle] = useState(defaultTemplate.outputStyle);
   const [roleDescription, setRoleDescription] = useState(defaultTemplate.mission);
   const [runtimeProvider, setRuntimeProvider] = useState<RuntimeProvider>("opencode");
+  const [selectedCredentialId, setSelectedCredentialId] = useState("");
   const [scopeDescription, setScopeDescription] = useState("");
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplate.id);
@@ -227,6 +224,10 @@ export function TeammateCreateWizard() {
     workspaceId ? `/credentials?workspaceId=${workspaceId}` : null,
     []
   );
+  const customAgents = useSurfaceData<CustomAgent[]>(
+    !isChannelScopedCreate && workspaceId ? `/custom-agents?workspaceId=${workspaceId}` : null,
+    []
+  );
 
   const selectedTemplate = useMemo<TeammateTemplate>(
     () => templateCatalog.find((template) => template.id === selectedTemplateId) ?? defaultTemplate,
@@ -239,13 +240,40 @@ export function TeammateCreateWizard() {
         ?.participants.map((participant) => participant.agentName) ?? [],
     [channelConversations.data, channelId]
   );
-  const channelNameWarning = resolveChannelNameWarning(name, channelMemberNames);
+  const workspaceAgentNames = useMemo(
+    () =>
+      Array.isArray(customAgents.data)
+        ? customAgents.data.map((agent) => agent.name)
+        : [],
+    [customAgents.data]
+  );
+  const nameWarning = isChannelScopedCreate
+    ? resolveNameWarning({
+        entityLabel: "当前频道",
+        name,
+        occupiedNames: channelMemberNames
+      })
+    : resolveNameWarning({
+        entityLabel: "工作区",
+        name,
+        occupiedNames: workspaceAgentNames
+      });
   const currentStep = wizardSteps[selectedStepIndex] ?? defaultWizardStep;
   const selectedProviderOption = resolveProviderOption(runtimeProvider);
-  const credentialList = Array.isArray(credentials.data) ? credentials.data : [];
-  const hasValidProviderCredential = credentialList.some(
-    (credential) => isValidCredentialForRuntimeProvider(credential, runtimeProvider)
+  const credentialList = useMemo(
+    () => Array.isArray(credentials.data) ? credentials.data : [],
+    [credentials.data]
   );
+  const validRuntimeCredentials = useMemo(
+    () => credentialList.filter((credential) =>
+      isValidCredentialForRuntimeProvider(credential, runtimeProvider)
+    ),
+    [credentialList, runtimeProvider]
+  );
+  const hasValidProviderCredential = validRuntimeCredentials.length > 0;
+  const selectedCredential = validRuntimeCredentials.find(
+    (credential) => credential.id === selectedCredentialId
+  ) ?? validRuntimeCredentials[0] ?? null;
   const disabledReason = resolveCreateDisabledReason({
     hasValidProviderCredential,
     isLoadingCredentials: credentials.isLoading,
@@ -257,6 +285,16 @@ export function TeammateCreateWizard() {
     workspaceId
   });
 
+  useEffect(() => {
+    setSelectedCredentialId((current) => {
+      if (current && validRuntimeCredentials.some((credential) => credential.id === current)) {
+        return current;
+      }
+
+      return validRuntimeCredentials[0]?.id ?? "";
+    });
+  }, [validRuntimeCredentials]);
+
   function applyTemplate(template: TeammateTemplate): void {
     setSelectedTemplateId(template.id);
     setName(template.name);
@@ -265,7 +303,6 @@ export function TeammateCreateWizard() {
     setSelectedTools(template.suggestedTools);
     setMemoryMode(template.memoryMode);
     setApprovalMode(template.approvalMode);
-    setModelProfileId(template.modelProfileId);
     setOutputStyle(template.outputStyle);
   }
 
@@ -290,8 +327,11 @@ export function TeammateCreateWizard() {
           skillText
         }),
         memoryMode,
-        modelProfileId,
-        name,
+        modelProfileId: selectedCredential?.id ?? selectedCredentialId,
+        name: resolveSubmittedAgentName({
+          name,
+          occupiedNames: isChannelScopedCreate ? channelMemberNames : workspaceAgentNames
+        }),
         outputStyle,
         provider: runtimeProvider,
         scopeDescription: scopeDescription.trim() || null,
@@ -453,12 +493,12 @@ export function TeammateCreateWizard() {
               AI 同事名称
               <Input value={name} onChange={(event) => setName(event.target.value)} />
             </label>
-            {channelNameWarning ? (
+            {nameWarning ? (
               <p
                 className="m-0 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-6 text-amber-800"
                 role="alert"
               >
-                {channelNameWarning}
+                {nameWarning}
               </p>
             ) : null}
             <label className={fieldLabelClassName}>
@@ -562,12 +602,24 @@ export function TeammateCreateWizard() {
               </Select>
             </label>
             <label className={fieldLabelClassName}>
-              模型偏好
-              <Select value={modelProfileId} onChange={(event) => setModelProfileId(event.target.value)}>
-                <option value="balanced">均衡</option>
-                <option value="fast">快速</option>
-                <option value="powerful">高性能</option>
+              模型连接
+              <Select
+                aria-label="模型连接"
+                value={selectedCredential?.id ?? selectedCredentialId}
+                onChange={(event) => setSelectedCredentialId(event.target.value)}
+              >
+                {validRuntimeCredentials.length === 0 ? (
+                  <option value="">暂无可用连接</option>
+                ) : null}
+                {validRuntimeCredentials.map((credential) => (
+                  <option key={credential.id} value={credential.id}>
+                    {renderCredentialOptionLabel(credential)}
+                  </option>
+                ))}
               </Select>
+              <span className="text-xs font-normal leading-5 text-slate-500">
+                Agent 会使用所选已验证连接执行任务。
+              </span>
             </label>
             <label className={fieldLabelClassName}>
               输出风格
@@ -616,9 +668,12 @@ export function TeammateCreateWizard() {
             <dl className="m-0 grid gap-3 md:grid-cols-2">
               <MetaBlock label="工作模式" value={selectedWorkMode} />
               <MetaBlock label="运行 Provider" value={selectedProviderOption.label} />
+              <MetaBlock
+                label="模型连接"
+                value={selectedCredential ? renderCredentialOptionLabel(selectedCredential) : "未选择"}
+              />
               <MetaBlock label="记忆方式" value={renderMemoryMode(memoryMode)} />
               <MetaBlock label="审批方式" value={renderApprovalMode(approvalMode)} />
-              <MetaBlock label="模型偏好" value={renderModelProfile(modelProfileId)} />
               <MetaBlock label="工具" value={selectedTools.join("、") || "暂不开放工具"} />
               <MetaBlock label="协作护栏" value={renderHarnessDesignSummary(selectedHarnessOptionIds)} />
               <MetaBlock label="能力标签" value={skillText || "未填写"} />
@@ -791,17 +846,6 @@ function renderMemoryMode(mode: CreateCustomAgentInput["memoryMode"]): string {
   }
 }
 
-function renderModelProfile(modelProfileId: string): string {
-  switch (modelProfileId) {
-    case "fast":
-      return "快速";
-    case "powerful":
-      return "高性能";
-    default:
-      return "均衡";
-  }
-}
-
 function resolveCreateEndpoint(channelId: string | null): string {
   if (!channelId) {
     return `${apiBaseUrl}/custom-agents`;
@@ -818,16 +862,33 @@ function resolveReturnTo(returnTo: string | null, channelId: string | null): str
   return channelId ? `/channels/${channelId}?tab=chat` : null;
 }
 
-function resolveChannelNameWarning(name: string, occupiedNames: string[]): string | null {
-  const requestedName = name.trim();
+function resolveNameWarning(input: {
+  entityLabel: "工作区" | "当前频道";
+  name: string;
+  occupiedNames: string[];
+}): string | null {
+  const requestedName = input.name.trim();
 
-  if (!requestedName || !occupiedNames.includes(requestedName)) {
+  if (!requestedName || !input.occupiedNames.includes(requestedName)) {
     return null;
   }
 
-  const suggestedName = resolveAvailableTeammateName(requestedName, occupiedNames);
+  const suggestedName = resolveAvailableTeammateName(requestedName, input.occupiedNames);
 
-  return `当前频道已存在名为“${requestedName}”的 AI 同事，保存时将自动命名为“${suggestedName}”。`;
+  return `${input.entityLabel}已存在名为“${requestedName}”的 AI 同事，保存时将自动命名为“${suggestedName}”。`;
+}
+
+function resolveSubmittedAgentName(input: {
+  name: string;
+  occupiedNames: string[];
+}): string {
+  const requestedName = input.name.trim();
+
+  if (!requestedName) {
+    return input.name;
+  }
+
+  return resolveAvailableTeammateName(requestedName, input.occupiedNames);
 }
 
 function resolveAvailableTeammateName(
@@ -907,6 +968,10 @@ function isValidCredentialForRuntimeProvider(
   }
 
   return credential.provider === runtimeProvider;
+}
+
+function renderCredentialOptionLabel(credential: CredentialMetadata): string {
+  return `${credential.label} · ${credential.providerAccountId}`;
 }
 
 function toggleValue(values: string[], value: string): string[] {

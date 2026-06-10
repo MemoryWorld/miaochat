@@ -710,9 +710,9 @@ export class WorkspaceShellService {
         ownerScopeId: row.id,
         startAt: row.created_at,
         status: mapWorkflowStateToCalendarStatus(row.state),
-        summary: row.deadline ? `原始截止要求：${row.deadline}` : "来自编码工作流的计划事件。",
+        summary: row.deadline ? `原始截止要求：${row.deadline}` : "来自网页制作协作的计划事件。",
         teammateId: null,
-        title: `编码工作流 · ${row.goal}`,
+        title: `网页制作 · ${row.goal}`,
         workflowId: row.id,
         workspaceId: row.workspace_id
       });

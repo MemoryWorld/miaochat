@@ -559,41 +559,6 @@ function resolveConnectionOption(optionId: string): ConnectionOption {
   return connectionOptions.find((option) => option.id === optionId) ?? defaultConnectionOption;
 }
 
-function resolveSavedCredentialOption(credential: CredentialMetadata): ConnectionOption {
-  if (credential.provider === "deepseek") {
-    return {
-      accountHelp: "旧 DeepSeek 直连凭证，仅用于兼容历史数据；新建连接会通过 OpenCode 保存。",
-      accountLabel: "模型",
-      defaultAccountId: credential.providerAccountId,
-      defaultLabel: credential.label,
-      id: "legacy-deepseek",
-      keyPlaceholder: "sk-...",
-      label: "旧 DeepSeek 直连",
-      provider: "opencode",
-      summary: "历史连接，可删除或新建 OpenCode-backed 连接替换。"
-    };
-  }
-
-  const matchedPreset = connectionOptions.find(
-    (option) =>
-      option.provider === credential.provider &&
-      option.defaultAccountId === credential.providerAccountId
-  );
-
-  if (matchedPreset) {
-    return matchedPreset;
-  }
-
-  if (credential.provider === "opencode") {
-    return resolveConnectionOption("opencode-custom");
-  }
-
-  return (
-    connectionOptions.find((option) => option.provider === credential.provider) ??
-    defaultConnectionOption
-  );
-}
-
 function resolveValidateDisabledReason(input: {
   apiKey: string;
   isBusy: boolean;

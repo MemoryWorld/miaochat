@@ -81,12 +81,19 @@ describe("CodingWorkflowDispatchService", () => {
       stageLabel: "coding.execution_started",
       stageTeammateId: "software_engineer",
       summary: "软件工程师正在根据已批准计划进行实现。",
+      sourceMessageId: "msg_user_source",
       workflowId: "workflow_1",
       workflowState: "execution_running",
       workspaceId: "workspace_1"
     });
 
     expect(executeSingleAgent).toHaveBeenCalledTimes(2);
+    expect(loadConversationContext).toHaveBeenCalledWith(
+      "conv_workflow",
+      "workspace_1",
+      "user_owner",
+      "msg_user_source"
+    );
     expect(executeSingleAgent.mock.calls[1]?.[0].message).toContain("artifact.webpage.create");
     expect(executeSingleAgent.mock.calls[1]?.[0].message).toContain("我已创建网页，但没有给出可解析的 artifact。");
     expect(result.artifacts).toEqual([webpageArtifact]);

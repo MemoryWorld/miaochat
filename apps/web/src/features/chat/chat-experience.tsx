@@ -14,7 +14,12 @@ import {
   type Conversation,
   type CustomAgent,
   type DeployCommandResult,
+  isMessageAttachmentTextMimeType,
   type Message,
+  messageAttachmentInputMaxContentChars,
+  messageAttachmentInputMaxCount,
+  messageAttachmentInputMaxFileNameChars,
+  type MessageAttachmentInput,
   type ModelConnection,
   type OrchestratorStatusEventPayload,
   type ProviderCredential,
@@ -795,13 +800,19 @@ export function ChatExperience() {
     name: string,
     profile: (typeof platformProviderProfiles)[number]
   ): Promise<CustomAgent> {
+    const credential = findCredentialForProvider(providerCredentials, profile.provider);
+
+    if (!credential) {
+      throw new Error("请先在设置中添加并验证模型连接。");
+    }
+
     const response = await fetch(`${apiBaseUrl}/custom-agents`, {
       body: JSON.stringify({
         approvalMode: "balanced",
         avatarUrl: null,
         capabilityTags: [platformRuntimeAgentTag],
         memoryMode: "workspace_plus_teammate",
-        modelProfileId: null,
+        modelProfileId: credential.id,
         name,
         outputStyle: "清晰、结构化、先给结论再给步骤。",
         provider: profile.provider,
@@ -970,6 +981,7 @@ export function ChatExperience() {
   }
 
   async function sendUserMessage(input: {
+    attachments?: MessageAttachmentInput[];
     content: string;
     conversationId: string;
     mentionedAgentIds: string[];
@@ -977,6 +989,7 @@ export function ChatExperience() {
   }): Promise<MessageDispatchResponse> {
     const response = await fetch(`${apiBaseUrl}/messages/send`, {
       body: JSON.stringify({
+        attachments: input.attachments ?? [],
         content: input.content,
         conversationId: input.conversationId,
         mentionedAgentIds: input.mentionedAgentIds,
@@ -1039,7 +1052,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "启动编码工作流失败。"));
+        throw new Error(readErrorMessage(payload, "启动网页制作协作失败。"));
       }
 
       const created = payload as {
@@ -1052,7 +1065,7 @@ export function ChatExperience() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "启动编码工作流失败。"
+        error instanceof Error ? error.message : "启动网页制作协作失败。"
       );
     } finally {
       setIsLaunchingCodingWorkflow(false);
@@ -1089,7 +1102,7 @@ export function ChatExperience() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "更新工作流决策失败。"));
+        throw new Error(readErrorMessage(payload, "更新计划审批失败。"));
       }
 
       startTransition(() => {
@@ -1099,7 +1112,7 @@ export function ChatExperience() {
       schedulePostSendRefresh(codingWorkflow.conversationId);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "更新工作流决策失败。"
+        error instanceof Error ? error.message : "更新计划审批失败。"
       );
     } finally {
       setIsDecisioningWorkflow(null);
@@ -1222,9 +1235,9 @@ export function ChatExperience() {
     content: string;
     mentionedAgentIds: string[];
     mentionedUserIds: string[];
-  }): Promise<void> {
+  }): Promise<boolean | void> {
     if (!selectedConversationId) {
-      return;
+      return false;
     }
 
     const conversationId = selectedConversationId;
@@ -1267,11 +1280,13 @@ export function ChatExperience() {
       }
 
       const message = await sendUserMessage({
+        attachments: await readTextAttachments(input.attachments),
         content: input.content,
         conversationId,
         mentionedAgentIds: input.mentionedAgentIds,
         mentionedUserIds: input.mentionedUserIds
       });
+      void loadArtifactsForMessage(message.id);
 
       const launchedWorkflow = message.launchedWorkflow;
 
@@ -1317,6 +1332,7 @@ export function ChatExperience() {
       setErrorMessage(
         error instanceof Error ? error.message : "发送消息失败。"
       );
+      return false;
     } finally {
       setIsSending(false);
     }
@@ -1716,9 +1732,9 @@ export function ChatExperience() {
 	              </h2>
 	              <p className="m-0 mt-1 truncate text-sm text-slate-500">
 		                {requiresLogin
-		                  ? "登录后即可恢复会话、网页预览和 Workflow。"
+			                  ? "登录后即可恢复会话、网页预览和可视化 Workflow。"
 		                  : isInitialWorkspaceLoading
-		                    ? "正在同步会话、网页预览和 Workflow。"
+			                    ? "正在同步会话、网页预览和可视化 Workflow。"
 		                  : selectedConversation
 		                  ? selectedParticipantLabel
 		                  : "单聊 Agent，或让多个 Agent 在群聊中协作。"}
@@ -1752,23 +1768,33 @@ export function ChatExperience() {
 		              <section className="mx-auto grid max-w-xl gap-4 py-8">
 		                <SoftLoadingState label="正在恢复工作区" />
 		              </section>
-		            ) : selectedConversationId ? (
-		              <ChatThread
-	                artifactsByMessageId={artifactsByMessageId}
-                artifactStatusesByMessageId={artifactStatusesByMessageId}
-                connectionState={stream.connectionState}
-                deployments={deployments}
-                isLoading={isLoadingWorkspaces || isLoadingMessages}
-                isPinningMessageId={isPinningMessageId}
-                liveAssistantMessage={liveAssistantMessage}
-                liveStatus={liveOrchestratorStatus}
-                messages={messages}
-                onApplyDiffMessage={handleApplyDiffMessage}
-                onQuoteMessage={handleQuoteMessage}
-                onTogglePinMessage={handleTogglePinMessage}
-                resolveAuthorLabel={resolveMessageAuthorLabel}
-                suppressEmptyState={requiresLogin || !selectedConversationId}
-              />
+			            ) : selectedConversationId ? (
+			              <div className="grid gap-4">
+			                {codingWorkflow ? (
+			                  <CodingWorkflowPanel
+			                    busyDecision={isDecisioningWorkflow}
+			                    messages={messages}
+			                    onDecision={handleWorkflowDecision}
+			                    workflow={codingWorkflow}
+			                  />
+			                ) : null}
+			                <ChatThread
+			                  artifactsByMessageId={artifactsByMessageId}
+			                  artifactStatusesByMessageId={artifactStatusesByMessageId}
+			                  connectionState={stream.connectionState}
+			                  deployments={deployments}
+			                  isLoading={isLoadingWorkspaces || isLoadingMessages}
+			                  isPinningMessageId={isPinningMessageId}
+			                  liveAssistantMessage={liveAssistantMessage}
+			                  liveStatus={liveOrchestratorStatus}
+			                  messages={messages}
+			                  onApplyDiffMessage={handleApplyDiffMessage}
+			                  onQuoteMessage={handleQuoteMessage}
+			                  onTogglePinMessage={handleTogglePinMessage}
+			                  resolveAuthorLabel={resolveMessageAuthorLabel}
+			                  suppressEmptyState={requiresLogin || !selectedConversationId}
+			                />
+			              </div>
             ) : (
               <ConversationWelcome
                 canStart={hasReadyModelConnection}
@@ -1829,8 +1855,8 @@ export function ChatExperience() {
           <section className="grid gap-3 rounded-[16px] border border-slate-200 bg-white/90 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="m-0 text-base font-semibold text-slate-950">工作流</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">创建网页或可复用 Workflow。</p>
+	                <h2 className="m-0 text-base font-semibold text-slate-950">可视化 Workflow</h2>
+	                <p className="m-0 mt-1 text-sm text-slate-500">创建可复用的节点流程。</p>
               </div>
               <Button
                 onClick={() =>
@@ -1849,7 +1875,7 @@ export function ChatExperience() {
               onClick={() => setIsCodingLauncherOpen((current) => !current)}
               variant="secondary"
             >
-              {isCodingLauncherOpen ? "收起编码团队" : "打开编码团队"}
+	              {isCodingLauncherOpen ? "收起网页制作团队" : "打开网页制作团队"}
             </Button>
             {isCodingLauncherOpen ? (
               <WorkModeLauncher
@@ -1860,15 +1886,7 @@ export function ChatExperience() {
                 onLaunchCoding={handleLaunchCodingWorkflow}
               />
             ) : null}
-            {codingWorkflow ? (
-              <CodingWorkflowPanel
-                busyDecision={isDecisioningWorkflow}
-                messages={messages}
-                onDecision={handleWorkflowDecision}
-                workflow={codingWorkflow}
-              />
-            ) : null}
-            {visualWorkflows.length > 0 ? (
+	            {visualWorkflows.length > 0 ? (
               <VisualWorkflowPanel
                 busyWorkflowId={executingVisualWorkflowId}
                 onCancel={handleCancelVisualWorkflow}
@@ -2167,7 +2185,7 @@ function TimelineFiles({
       </div>
       {isLoading && entries.length === 0 ? <SoftLoadingState label="正在同步文件" /> : null}
       {entries.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 2xl:grid-cols-2">
           {entries.map(({ artifact, message }) => (
             <ArtifactCard
               artifact={artifact}
@@ -2247,17 +2265,18 @@ function resolveValidConversationProviders(
   const providers = new Set<SupportedConversationProvider>();
 
   for (const credential of credentials) {
-    if (
-      credential.validationState === "valid" &&
-      isSupportedConversationProvider(credential.provider)
-    ) {
-      providers.add(credential.provider);
+    const provider = resolveConversationProviderForCredential(credential);
+
+    if (provider) {
+      providers.add(provider);
     }
   }
 
   if (
     modelConnections.some(
-      (connection) => connection.kind === "opencode_model" && connection.status === "valid"
+      (connection) =>
+        (connection.kind === "opencode_model" || connection.kind === "deepseek_api") &&
+        connection.status === "valid"
     )
   ) {
     providers.add("opencode");
@@ -2380,10 +2399,43 @@ function isDisplayableCustomConversationAgent(agent: CustomAgent): boolean {
   return !agent.capabilityTags.some((tag) => hiddenConversationAgentTags.has(tag));
 }
 
+function resolveConversationProviderForCredential(
+  credential: CredentialMetadata
+): SupportedConversationProvider | null {
+  if (credential.validationState !== "valid") {
+    return null;
+  }
+
+  if (credential.provider === "deepseek") {
+    return "opencode";
+  }
+
+  return isSupportedConversationProvider(credential.provider) ? credential.provider : null;
+}
+
 function isSupportedConversationProvider(
   provider: ProviderCredential["provider"] | CustomAgent["provider"]
 ): provider is SupportedConversationProvider {
   return provider === "claude-code" || provider === "codex" || provider === "opencode";
+}
+
+function findCredentialForProvider(
+  credentials: CredentialMetadata[],
+  provider: SupportedConversationProvider
+): CredentialMetadata | null {
+  return (
+    credentials.find((credential) => {
+      if (credential.validationState !== "valid") {
+        return false;
+      }
+
+      if (provider === "opencode") {
+        return credential.provider === "opencode" || credential.provider === "deepseek";
+      }
+
+      return credential.provider === provider;
+    }) ?? null
+  );
 }
 
 function createHttpError(status: number, message: string): Error & { status: number } {
@@ -2424,6 +2476,141 @@ function resolveStoredConversationId(
   }
 
   return conversations.some((conversation) => conversation.id === stored) ? stored : null;
+}
+
+async function readTextAttachments(files: File[]): Promise<MessageAttachmentInput[]> {
+  if (files.length === 0) {
+    return [];
+  }
+
+  if (files.length > messageAttachmentInputMaxCount) {
+    throw new Error(`一次最多发送 ${messageAttachmentInputMaxCount} 个文本附件。`);
+  }
+
+  const attachments: MessageAttachmentInput[] = [];
+
+  for (const file of files) {
+    const mimeType = inferTextAttachmentMimeType(file);
+
+    if (!mimeType || !isMessageAttachmentTextMimeType(mimeType)) {
+      throw new Error(`暂只支持 Markdown、纯文本、代码、JSON、XML 等文本附件：${file.name}`);
+    }
+
+    if (file.size > messageAttachmentInputMaxContentChars * 4) {
+      throw new Error(
+        `附件过大：${file.name}。单个文本附件最多 ${formatBytes(messageAttachmentInputMaxContentChars)}。`
+      );
+    }
+
+    const content = await readFileText(file);
+
+    if (content.trim().length === 0) {
+      throw new Error(`附件内容为空：${file.name}`);
+    }
+
+    if (content.length > messageAttachmentInputMaxContentChars) {
+      throw new Error(
+        `附件过大：${file.name}。单个文本附件最多 ${formatBytes(messageAttachmentInputMaxContentChars)}。`
+      );
+    }
+
+    attachments.push({
+      content,
+      fileName: normalizeAttachmentFileName(file.name),
+      mimeType
+    });
+  }
+
+  return attachments;
+}
+
+function readFileText(file: File): Promise<string> {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = () => reject(new Error(`读取附件失败：${file.name}`));
+    reader.onload = () => {
+      const result = reader.result;
+
+      resolve(typeof result === "string" ? result : "");
+    };
+    reader.readAsText(file);
+  });
+}
+
+function inferTextAttachmentMimeType(file: File): string | null {
+  const declaredType = file.type.trim().toLowerCase();
+
+  if (declaredType && isMessageAttachmentTextMimeType(declaredType)) {
+    return declaredType;
+  }
+
+  const extension = file.name.toLowerCase().split(".").pop() ?? "";
+
+  switch (extension) {
+    case "cjs":
+    case "js":
+    case "jsx":
+    case "mjs":
+      return "application/javascript";
+    case "css":
+      return "text/css";
+    case "csv":
+      return "text/csv";
+    case "diff":
+    case "patch":
+      return "text/x-diff";
+    case "htm":
+    case "html":
+      return "text/html";
+    case "json":
+      return "application/json";
+    case "log":
+    case "txt":
+      return "text/plain";
+    case "markdown":
+    case "md":
+      return "text/markdown";
+    case "ts":
+    case "tsx":
+      return "application/typescript";
+    case "xml":
+      return "application/xml";
+    case "yaml":
+    case "yml":
+      return "application/yaml";
+    default:
+      return declaredType || null;
+  }
+}
+
+function normalizeAttachmentFileName(fileName: string): string {
+  const normalized = fileName.trim().replace(/[\\/\r\n]+/g, "-");
+
+  if (normalized.length <= messageAttachmentInputMaxFileNameChars) {
+    return normalized || "attachment.txt";
+  }
+
+  const extensionMatch = /\.[a-z0-9]{1,12}$/i.exec(normalized);
+  const extension = extensionMatch?.[0] ?? "";
+  const baseLength = Math.max(
+    1,
+    messageAttachmentInputMaxFileNameChars - extension.length
+  );
+
+  return `${normalized.slice(0, baseLength)}${extension}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round(bytes / 1024 / 1024)}MB`;
+  }
+
+  return `${Math.round(bytes / 1024)}KB`;
 }
 
 async function readJson(response: Response): Promise<unknown> {

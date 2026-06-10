@@ -20,6 +20,7 @@ import {
   artifactTextContentSchema,
   createArtifactInputSchema,
   messageIdSchema,
+  messageAttachmentInputSchema,
   prepareArtifactUploadInputSchema,
   runtimeDiffArtifactDraftSchema,
   runtimeMarkdownArtifactDraftSchema,
@@ -28,7 +29,8 @@ import {
   type Artifact,
   type ArtifactDownloadUrl,
   type ArtifactTextContent,
-  type ArtifactUploadTarget
+  type ArtifactUploadTarget,
+  type MessageAttachmentInput
 } from "@agenthub/contracts";
 
 import { ChannelMembersService } from "../channels/channel-members.service.js";
@@ -72,6 +74,12 @@ const createRuntimeDiffArtifactInputSchema = z.object({
 
 const createRuntimeWebpageArtifactInputSchema = z.object({
   draft: runtimeWebpageArtifactDraftSchema,
+  messageId: messageIdSchema,
+  workspaceId: workspaceIdSchema.optional()
+});
+
+const createTextAttachmentInputSchema = z.object({
+  attachment: messageAttachmentInputSchema,
   messageId: messageIdSchema,
   workspaceId: workspaceIdSchema.optional()
 });
@@ -402,6 +410,50 @@ export class ArtifactsService {
       previewUrl: upload.previewUrl,
       storageKey: upload.storageKey,
       summary: "Initial markdown artifact."
+    });
+
+    return artifact;
+  }
+
+  async createTextAttachment(
+    input: unknown,
+    actorUserId: string
+  ): Promise<Artifact> {
+    const parsed = createTextAttachmentInputSchema.parse(input);
+    const workspaceId = parsed.workspaceId ?? "default-workspace";
+
+    await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "send",
+      workspaceId
+    });
+
+    const attachment: MessageAttachmentInput = parsed.attachment;
+    const upload = await this.storageService.writeTextAttachment({
+      content: attachment.content,
+      fileName: attachment.fileName,
+      messageId: parsed.messageId,
+      mimeType: attachment.mimeType,
+      workspaceId
+    });
+    const artifact = await this.create({
+      id: upload.artifactId,
+      kind: "attachment",
+      messageId: parsed.messageId,
+      mimeType: attachment.mimeType,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      title: attachment.fileName,
+      workspaceId
+    }, actorUserId);
+    await this.appendInitialRevision({
+      artifact,
+      authorUserId: actorUserId,
+      content: attachment.content,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      summary: "Initial chat attachment."
     });
 
     return artifact;

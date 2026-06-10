@@ -11,6 +11,7 @@ const agentIds = {
   codex: "agent_conv_codex_e2e",
   hermes: "agent_conv_hermes_e2e"
 };
+const teammateCredentialId = "cred_conversations_opencode_e2e";
 
 async function seedAgents(client: Client, ownerUserId: string): Promise<void> {
   await client.query(
@@ -41,6 +42,34 @@ async function clearWorkspace(client: Client): Promise<void> {
 
 async function clearAgents(client: Client): Promise<void> {
   await client.query("DELETE FROM custom_agents WHERE workspace_id = $1", [workspaceId]);
+}
+
+async function clearCredentials(client: Client): Promise<void> {
+  await client.query("DELETE FROM provider_credentials WHERE workspace_id = $1", [workspaceId]);
+}
+
+async function seedValidOpenCodeCredential(
+  client: Client,
+  ownerUserId: string
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO provider_credentials (
+        id,
+        credential_source,
+        encrypted_secret,
+        label,
+        owner_user_id,
+        provider,
+        provider_account_id,
+        validation_state,
+        workspace_id
+      )
+      VALUES ($1, 'user_provided', 'encrypted_test_secret', 'OpenCode test connection', $2, 'opencode', 'deepseek/deepseek-chat', 'valid', $3)
+      ON CONFLICT (id) DO NOTHING
+    `,
+    [teammateCredentialId, ownerUserId, workspaceId]
+  );
 }
 
 async function createConversationForRetentionTest(
@@ -80,6 +109,7 @@ describe("conversations and messages api", () => {
     await client.connect();
     await clearWorkspace(client);
     await clearAgents(client);
+    await clearCredentials(client);
 
     app = await createApp();
     await app.init();
@@ -93,6 +123,7 @@ describe("conversations and messages api", () => {
     ownerUserId = session.user.id;
 
     await seedAgents(client, ownerUserId);
+    await seedValidOpenCodeCredential(client, ownerUserId);
   });
 
   afterEach(async () => {
@@ -103,6 +134,7 @@ describe("conversations and messages api", () => {
     await app.close();
     await clearWorkspace(client);
     await clearAgents(client);
+    await clearCredentials(client);
     await client.end();
   });
 
@@ -421,7 +453,7 @@ describe("conversations and messages api", () => {
           avatarUrl: null,
           capabilityTags: ["测试", "频道"],
           memoryMode: "workspace_plus_teammate",
-          modelProfileId: "balanced",
+          modelProfileId: teammateCredentialId,
           name: `频道测试同事 ${Date.now()}`,
           outputStyle: "先给结论，再列出验证步骤。",
           scopeDescription: "只处理当前频道中的验证任务。",
@@ -507,7 +539,7 @@ describe("conversations and messages api", () => {
           avatarUrl: null,
           capabilityTags: ["计划"],
           memoryMode: "workspace_plus_teammate",
-          modelProfileId: "balanced",
+          modelProfileId: teammateCredentialId,
           name: "Conversation Hermes",
           outputStyle: "先给结论，再列出计划。",
           scopeDescription: "补充当前频道中的规划工作。",

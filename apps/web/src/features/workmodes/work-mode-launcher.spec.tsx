@@ -94,10 +94,10 @@ describe("WorkModeLauncher", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "删除代码评审工程师" }));
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    fireEvent.click(screen.getByRole("button", { name: "启动编码工作流" }));
+    fireEvent.click(screen.getByRole("button", { name: "启动网页制作协作" }));
     fireEvent.change(screen.getByLabelText("本次目标"), {
       target: {
-        value: "收敛首页编码工作流"
+        value: "收敛首页网页制作协作"
       }
     });
     fireEvent.click(screen.getByRole("button", { name: "开始协作" }));
@@ -105,7 +105,7 @@ describe("WorkModeLauncher", () => {
     await waitFor(() => {
       expect(onLaunchCoding).toHaveBeenCalledWith(
         expect.objectContaining({
-          goal: "收敛首页编码工作流",
+          goal: "收敛首页网页制作协作",
           recommendedRoleIds: ["tech_lead", "software_engineer", "qa_tester"]
         })
       );
@@ -121,7 +121,7 @@ describe("WorkModeLauncher", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "启动编码工作流" }));
+    fireEvent.click(screen.getByRole("button", { name: "启动网页制作协作" }));
 
     expect(
       screen.getByText(/会先由技术负责人提交计划，得到用户确认后才进入执行/)

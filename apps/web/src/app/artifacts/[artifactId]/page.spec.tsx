@@ -22,7 +22,7 @@ describe("ArtifactViewerPage", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({
         artifactId: "artifact_view_markdown",
-        content: "# 编码工作流回归测试验收总结\n\n| 项目 | 结果 |\n| --- | --- |\n| 原始想法完成度 | 85% |",
+        content: "# 编码工作流回归测试验收总结\n\n| 项目 | 结果 |\n| --- | --- |\n| 原始想法完成度 | 85% |\n\n```ts\nconst visible = true;\n```",
         mimeType: "text/markdown",
         title: "编码工作流回归测试验收总结",
         truncated: false
@@ -44,6 +44,10 @@ describe("ArtifactViewerPage", () => {
       (await screen.findAllByRole("heading", { name: "编码工作流回归测试验收总结" })).length
     ).toBeGreaterThan(0);
     expect(screen.getByText("原始想法完成度")).toBeInTheDocument();
+    expect(screen.getByText("const visible = true;")).toHaveStyle({
+      background: "transparent",
+      color: "inherit"
+    });
     expect(screen.getByRole("link", { name: "下载 Markdown" })).toHaveAttribute(
       "href",
       "/api/artifacts/artifact_view_markdown/file?workspaceId=default-workspace&disposition=attachment"

@@ -43,7 +43,7 @@ export function CodingWorkflowPanel({
   const canDecide = workflow.state === "plan_pending_approval";
 
   return (
-    <section className="mb-5 grid gap-4 rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#fffdf7,_#ffffff)] p-5 shadow-sm">
+    <section className="mb-5 grid gap-4 rounded-[18px] border border-slate-200 bg-[linear-gradient(180deg,_#fffdf7,_#ffffff)] p-4 shadow-sm">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="grid gap-2">
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -58,11 +58,11 @@ export function CodingWorkflowPanel({
             </span>
           </div>
           <div>
-            <h3 className="m-0 text-xl font-semibold text-slate-950">编码工作流</h3>
+            <h3 className="m-0 text-xl font-semibold text-slate-950">网页制作协作</h3>
             <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">{workflow.goal}</p>
           </div>
         </div>
-        <div className="grid gap-2 rounded-[22px] border border-slate-200 bg-white/80 p-4 text-sm text-slate-600">
+        <div className="grid gap-2 rounded-[14px] border border-slate-200 bg-white/80 p-4 text-sm text-slate-600">
           <div>
             <strong className="text-slate-950">当前协作成员</strong>
           </div>
@@ -82,13 +82,13 @@ export function CodingWorkflowPanel({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.95fr)]">
-        <article className="grid gap-3 rounded-[24px] border border-slate-200 bg-white/85 p-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
+        <article className="grid gap-3 rounded-[16px] border border-slate-200 bg-white/85 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h4 className="m-0 text-base font-semibold text-slate-950">计划门禁</h4>
               <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-                {planningName}必须先提交计划，获得确认后才允许进入执行。
+                {planningName}必须先提交计划，获得确认后才允许进入实现。
               </p>
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -96,7 +96,7 @@ export function CodingWorkflowPanel({
             </span>
           </div>
 
-          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-4">
+          <div className="rounded-[12px] border border-slate-200 bg-slate-50/80 p-4">
             <div className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
               {planningName}计划
             </div>
@@ -106,11 +106,11 @@ export function CodingWorkflowPanel({
           </div>
 
           {canDecide ? (
-            <div className="grid gap-3 rounded-[20px] border border-amber-200 bg-amber-50/80 p-4">
+            <div className="grid gap-3 rounded-[12px] border border-amber-200 bg-amber-50/80 p-4">
               <div>
                 <strong className="text-slate-950">人工确认</strong>
                 <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-                  这里是第一道硬门禁。你可以批准计划、要求{planningName}修改，或直接拒绝当前方向。
+                  批准后，软件工程师、代码评审工程师和质量保障测试工程师会在同一会话继续协作。
                 </p>
               </div>
               <label className="grid gap-2 text-sm font-semibold text-slate-700" htmlFor="workflow-note">
@@ -177,11 +177,11 @@ export function CodingWorkflowPanel({
         </article>
 
         <div className="grid gap-4">
-          <article className="grid gap-3 rounded-[24px] border border-slate-200 bg-white/85 p-4">
+          <article className="grid gap-3 rounded-[16px] border border-slate-200 bg-white/85 p-4">
             <div>
               <h4 className="m-0 text-base font-semibold text-slate-950">任务状态</h4>
               <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-                把当前计划与执行阶段显式暴露给用户，而不是只留在消息里。
+                当前计划和执行阶段会同步在时间线里。
               </p>
             </div>
             <div className="grid gap-2">
@@ -202,11 +202,11 @@ export function CodingWorkflowPanel({
             </div>
           </article>
 
-          <article className="grid gap-3 rounded-[24px] border border-slate-200 bg-white/85 p-4">
+          <article className="grid gap-3 rounded-[16px] border border-slate-200 bg-white/85 p-4">
             <div>
               <h4 className="m-0 text-base font-semibold text-slate-950">审批记录</h4>
               <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-                所有人工决定都留在同一工作区上下文里，便于回放和追责。
+                所有人工决定都会保留在当前会话里。
               </p>
             </div>
             {workflow.approvalHistory.length === 0 ? (

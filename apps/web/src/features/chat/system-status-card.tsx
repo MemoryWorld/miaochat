@@ -113,7 +113,7 @@ function formatStatusHeading(label: OrchestratorStatusEventPayload["label"]): st
     case "coding.awaiting_user_confirmation":
       return "等待用户确认";
     case "coding.completed":
-      return "工作流完成";
+      return "协作完成";
     default:
       return label.replace("orchestrator.", "Orchestrator ").replace(/_/g, " ");
   }

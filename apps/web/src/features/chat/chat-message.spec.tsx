@@ -168,6 +168,10 @@ describe("ChatMessage", () => {
     expect(screen.getByRole("heading", { name: "验收总结" })).toBeInTheDocument();
     expect(container.querySelector("table")).not.toBeNull();
     expect(container.querySelector("pre code")).toHaveTextContent("const done = true;");
+    expect(container.querySelector("pre code")).toHaveStyle({
+      background: "transparent",
+      color: "inherit"
+    });
     expect(container.textContent).not.toContain("## 验收总结");
     expect(container.textContent).not.toContain("| 项目 | 状态 |");
   });

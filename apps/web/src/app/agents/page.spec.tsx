@@ -13,7 +13,11 @@ vi.mock("next/navigation", async () => {
   const actual = await vi.importActual<Record<string, unknown>>("next/navigation");
   return {
     ...actual,
-    usePathname: () => "/teammates"
+    usePathname: () => "/agents",
+    useRouter: () => ({
+      replace: vi.fn()
+    }),
+    useSearchParams: () => new URLSearchParams()
   };
 });
 
@@ -28,14 +32,14 @@ describe("AgentsPage", () => {
     fetchMock.mockReset();
   });
 
-  it("renders the lightweight teammate entry without the old teammate-directory action", async () => {
+  it("renders the Agent creation wizard", async () => {
     mockWorkspaceFetch();
 
     render(<AgentsPage />);
 
-    expect(await screen.findByRole("heading", { name: "创建同事" })).toBeInTheDocument();
-    expect(screen.getByText(/不再把同事目录作为一层主导航/i)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "新建同事" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "定义 AI 同事" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1. 模板" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2. 身份" })).toBeInTheDocument();
   });
 
   it("does not request the old custom-agent directory data", async () => {
@@ -43,7 +47,7 @@ describe("AgentsPage", () => {
 
     render(<AgentsPage />);
 
-    await screen.findByRole("heading", { name: "创建同事" });
+    await screen.findByRole("heading", { name: "定义 AI 同事" });
 
     expect(
       fetchMock.mock.calls.some(([url]) =>
@@ -66,6 +70,24 @@ function mockWorkspaceFetch(): void {
             name: "默认工作区",
             ownerUserId: "user_demo",
             updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ],
+        200
+      );
+    }
+
+    if (url === "/api/credentials?workspaceId=default-workspace") {
+      return jsonResponse(
+        [
+          {
+            credentialSource: "user_provided",
+            id: "cred_opencode",
+            label: "DeepSeek 连接",
+            ownerUserId: "user_demo",
+            provider: "opencode",
+            providerAccountId: "deepseek/deepseek-chat",
+            validationState: "valid",
+            workspaceId: "default-workspace"
           }
         ],
         200

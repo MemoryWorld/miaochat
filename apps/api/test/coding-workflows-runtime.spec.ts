@@ -5,6 +5,7 @@ import { resolveCodingRuntimeAssignmentFromProviders } from "../src/modules/codi
 describe("resolveCodingRuntimeAssignmentFromProviders", () => {
   it("uses OpenCode for legacy DeepSeek credentials instead of creating DeepSeek direct agents", () => {
     expect(resolveCodingRuntimeAssignmentFromProviders(["deepseek"])).toEqual({
+      modelProfileId: null,
       provider: "opencode",
       runtimeBackend: "enhanced-hermes"
     });
@@ -12,6 +13,7 @@ describe("resolveCodingRuntimeAssignmentFromProviders", () => {
 
   it("prefers OpenCode when both OpenCode and legacy DeepSeek credentials exist", () => {
     expect(resolveCodingRuntimeAssignmentFromProviders(["deepseek", "opencode"])).toEqual({
+      modelProfileId: null,
       provider: "opencode",
       runtimeBackend: "enhanced-hermes"
     });

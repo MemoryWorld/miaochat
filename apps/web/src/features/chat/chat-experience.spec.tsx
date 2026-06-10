@@ -232,7 +232,7 @@ describe("ChatExperience", () => {
     expect(screen.queryByText("频道兼容视图")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "会话" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "网页预览" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "工作流" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "可视化 Workflow" })).toBeInTheDocument();
     const primaryNavigation = screen.getByRole("navigation", {
       name: "编码工作台导航"
     });
@@ -629,6 +629,159 @@ describe("ChatExperience", () => {
     expect(textarea).toHaveValue("等实时流连接后再发送");
   });
 
+  it("sends selected Markdown attachments with the chat message payload", async () => {
+    const conversation = {
+      archivedAt: null,
+      id: "conv_attachment",
+      isPinned: false,
+      mode: "direct",
+      ownerUserId: "user_phase_a_demo",
+      participants: [{ agentId: "agent_opencode", agentName: "OpenCode" }],
+      pinnedMessageIds: [],
+      title: "OpenCode",
+      updatedAt: "2026-06-10T00:00:00.000Z",
+      workspaceId: "default-workspace"
+    };
+    const sentMessage = {
+      content: "帮我看看这份 md 里面写了什么",
+      conversationId: "conv_attachment",
+      createdAt: "2026-06-10T00:00:01.000Z",
+      id: "msg_user_attachment",
+      isPinned: false,
+      mentionedAgentIds: [],
+      mentionedUserIds: [],
+      ownerUserId: "user_phase_a_demo",
+      role: "user",
+      sourceAgentId: null,
+      workspaceId: "default-workspace"
+    };
+    const attachedArtifact = {
+      createdAt: "2026-06-10T00:00:01.100Z",
+      id: "artifact_weekly_course",
+      kind: "attachment",
+      messageId: "msg_user_attachment",
+      mimeType: "text/markdown",
+      previewUrl: "https://example.test/weekly-course.md",
+      storageKey:
+        "artifacts/default-workspace/msg_user_attachment/artifact_weekly_course/weekly-course.md",
+      title: "weekly-course.md",
+      workspaceId: "default-workspace"
+    };
+
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: true,
+          user: {
+            displayName: "Phase A Demo",
+            email: "phase-a-demo@example.com",
+            id: "user_phase_a_demo"
+          }
+        })
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [conversation])
+      ],
+      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            id: "model_conn_demo",
+            kind: "opencode_model",
+            label: "OpenCode 工作区连接",
+            model: "deepseek/deepseek-chat",
+            preset: "balanced",
+            status: "valid",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [createCredential("cred_opencode", "opencode", "valid")])
+      ],
+      [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/messages?conversationId=conv_attachment&workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/coding-workflows?conversationId=conv_attachment&workspaceId=default-workspace`]: [
+        jsonResponse(200, null)
+      ],
+      [`${apiBaseUrl}/messages/send`]: [
+        jsonResponse(202, sentMessage)
+      ],
+      [`${apiBaseUrl}/artifacts?messageId=msg_user_attachment&workspaceId=default-workspace`]: [
+        jsonResponse(200, [attachedArtifact])
+      ],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-28T00:00:00.000Z",
+            id: "default-workspace",
+            name: "Phase A Demo Workspace",
+            ownerUserId: "user_phase_a_demo",
+            updatedAt: "2026-05-28T00:00:00.000Z"
+          }
+        ])
+      ]
+    });
+
+    render(<ChatExperience />);
+
+    expect(await screen.findByRole("heading", { name: "OpenCode" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+    MockEventSource.instances[0]?.emitOpen();
+
+    const file = new File(
+      ["# 本周课程\n\n- 讲解 AgentHub 多 Agent 协作平台。"],
+      "weekly-course.md",
+      { type: "text/markdown" }
+    );
+    fireEvent.change(screen.getByLabelText("选择文件"), {
+      target: {
+        files: [file]
+      }
+    });
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: {
+        value: "帮我看看这份 md 里面写了什么"
+      }
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => url === `${apiBaseUrl}/messages/send`))
+        .toBe(true);
+    });
+
+    const sendCall = fetchMock.mock.calls.find(([url]) => url === `${apiBaseUrl}/messages/send`);
+    const sendBody = JSON.parse(
+      String(sendCall?.[1] && "body" in sendCall[1] ? sendCall[1].body : "{}")
+    ) as { attachments?: Array<{ content: string; fileName: string; mimeType: string }> };
+
+    expect(sendBody.attachments).toEqual([
+      {
+        content: "# 本周课程\n\n- 讲解 AgentHub 多 Agent 协作平台。",
+        fileName: "weekly-course.md",
+        mimeType: "text/markdown"
+      }
+    ]);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${apiBaseUrl}/artifacts?messageId=msg_user_attachment&workspaceId=default-workspace`,
+        expect.objectContaining({
+          credentials: "include"
+        })
+      );
+    });
+    expect(await screen.findAllByText("weekly-course.md")).toHaveLength(2);
+  });
+
   it("routes to the visual workflow workbench when a natural-language channel message creates one", async () => {
     const teammates = [
       {
@@ -737,7 +890,7 @@ describe("ChatExperience", () => {
       workspaceId: "default-workspace"
     };
     const kickoffMessage = {
-      content: "你们现在进入一条新的编码工作流。\n本次目标：做一个电影网页",
+      content: "你们现在进入一条新的网页制作协作会话。\n本次目标：做一个电影网页",
       conversationId: "conv_created_workflow",
       createdAt: "2026-06-08T00:00:03.000Z",
       id: "msg_kickoff",
@@ -1014,6 +1167,64 @@ describe("ChatExperience", () => {
     expect(createButton).toBeEnabled();
   });
 
+  it("enables OpenCode conversations when only a legacy DeepSeek credential is valid", async () => {
+    mockFetchByUrl({
+      [`${apiBaseUrl}/auth/session`]: [
+        jsonResponse(200, {
+          authenticated: true,
+          user: {
+            displayName: "Phase A Demo",
+            email: "phase-a-demo@example.com",
+            id: "user_phase_a_demo"
+          }
+        })
+      ],
+      [`${apiBaseUrl}/conversations?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/credentials/model-connections?workspaceId=default-workspace`]: [
+        jsonResponse(200, [
+          {
+            id: "model_conn_legacy_deepseek",
+            kind: "deepseek_api",
+            label: "DeepSeek 工作区连接",
+            model: "deepseek-chat",
+            preset: "balanced",
+            status: "valid",
+            workspaceId: "default-workspace"
+          }
+        ])
+      ],
+      [`${apiBaseUrl}/credentials?workspaceId=default-workspace`]: [
+        jsonResponse(200, [createCredential("cred_deepseek", "deepseek", "valid")])
+      ],
+      [`${apiBaseUrl}/custom-agents?workspaceId=default-workspace`]: [
+        jsonResponse(200, [])
+      ],
+      [`${apiBaseUrl}/workspaces`]: [
+        jsonResponse(200, [
+          {
+            createdAt: "2026-05-28T00:00:00.000Z",
+            id: "default-workspace",
+            name: "Phase A Demo Workspace",
+            ownerUserId: "user_phase_a_demo",
+            updatedAt: "2026-05-28T00:00:00.000Z"
+          }
+        ])
+      ]
+    });
+
+    render(<ChatExperience />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开新建对话面板" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: /OpenCode/ })).toBeEnabled();
+    });
+    expect(screen.getByRole("radio", { name: /Codex/ })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /Claude Code/ })).toBeDisabled();
+  });
+
   it("creates a default platform agent before creating a platform conversation", async () => {
     const createdAgent = createAgent("agent_codex_default", "Codex", {
       capabilityTags: ["platform-runtime-agent"],
@@ -1104,6 +1315,7 @@ describe("ChatExperience", () => {
       )
     ).toMatchObject({
       capabilityTags: ["platform-runtime-agent"],
+      modelProfileId: "cred_codex",
       name: "Codex",
       provider: "codex",
       workspaceId: "default-workspace"
@@ -1497,7 +1709,7 @@ describe("ChatExperience", () => {
         { agentId: qa.id, agentName: qa.name }
       ],
       pinnedMessageIds: [],
-      title: "编码工作流 · 修复落地页演示",
+      title: "网页制作 · 修复落地页演示",
       updatedAt: "2026-05-28T00:00:00.000Z",
       workspaceId: "default-workspace"
     };
@@ -1605,7 +1817,7 @@ describe("ChatExperience", () => {
     };
     const kickoffMessage = {
       content:
-        "你们现在进入一条新的编码工作流。\n本次目标：修复落地页演示\n执行阶段预计参与成员：软件工程师、代码评审工程师、质量保障测试工程师\n请先由 技术负责人 输出计划、风险、分工和验证方案，并在获得用户确认前不要进入实现。\n其余参与成员先基于计划待命，等待用户确认后再进入执行。",
+        "你们现在进入一条新的网页制作协作会话。\n本次目标：修复落地页演示\n执行阶段预计参与成员：软件工程师、代码评审工程师、质量保障测试工程师\n请先由 技术负责人 输出计划、风险、分工和验证方案，并在获得用户确认前不要进入实现。\n其余参与成员先基于计划待命，等待用户确认后再进入执行。",
       conversationId: "conv_coding_workflow",
       createdAt: "2026-05-28T00:00:05.000Z",
       id: "msg_kickoff",
@@ -1688,8 +1900,8 @@ describe("ChatExperience", () => {
 
     render(<ChatExperience />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "打开编码团队" }));
-    const launchCodingButton = await screen.findByRole("button", { name: "启动编码工作流" });
+    fireEvent.click(await screen.findByRole("button", { name: "打开网页制作团队" }));
+    const launchCodingButton = await screen.findByRole("button", { name: "启动网页制作协作" });
     await waitFor(() => {
       expect(launchCodingButton).toBeEnabled();
     });
@@ -1704,7 +1916,7 @@ describe("ChatExperience", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { name: "编码工作流 · 修复落地页演示" })
+        screen.getByRole("heading", { name: "网页制作 · 修复落地页演示" })
       ).toBeInTheDocument();
     });
 

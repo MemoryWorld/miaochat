@@ -50,6 +50,7 @@ describe("TeammateCreateWizard", () => {
         ], 200)
       )
       .mockResolvedValueOnce(jsonResponse([validCredential()], 200))
+      .mockResolvedValueOnce(jsonResponse([], 200))
       .mockResolvedValueOnce(jsonResponse({ id: "agent_new" }, 201));
 
     render(<TeammateCreateWizard />);
@@ -73,9 +74,7 @@ describe("TeammateCreateWizard", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "5. 高级" }));
-    fireEvent.change(screen.getByLabelText("模型偏好"), {
-      target: { value: "fast" }
-    });
+    expect(screen.getByLabelText("模型连接")).toHaveValue("cred_opencode");
     expect(screen.getByText("协作护栏")).toBeInTheDocument();
     expect(screen.getByText("任务边界")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "6. 确认" }));
@@ -89,24 +88,33 @@ describe("TeammateCreateWizard", () => {
           credentials: "include"
         })
       );
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        3,
-        "/api/custom-agents",
-        expect.objectContaining({
-          credentials: "include",
-          method: "POST"
-        })
-      );
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            url === "/api/custom-agents" &&
+            typeof options === "object" &&
+            options !== null &&
+            "method" in options &&
+            options.method === "POST"
+        )
+      ).toBe(true);
     });
 
-    const postCall = fetchMock.mock.calls[2];
+    const postCall = fetchMock.mock.calls.find(
+      ([url, options]) =>
+        url === "/api/custom-agents" &&
+        typeof options === "object" &&
+        options !== null &&
+        "method" in options &&
+        options.method === "POST"
+    );
     expect(postCall).toBeDefined();
     const requestBody = JSON.parse(String(postCall?.[1] && "body" in postCall[1] ? postCall[1].body : "{}"));
 
     expect(requestBody).toMatchObject({
       name: "交付协同助手",
       provider: "opencode",
-      modelProfileId: "fast",
+      modelProfileId: "cred_opencode",
       workspaceId: "default-workspace"
     });
     expect(String(requestBody.systemPrompt)).toContain("默认工作模式：编码");
@@ -130,7 +138,8 @@ describe("TeammateCreateWizard", () => {
           }
         ], 200)
       )
-      .mockResolvedValueOnce(jsonResponse([validCredential()], 200));
+      .mockResolvedValueOnce(jsonResponse([validCredential()], 200))
+      .mockResolvedValueOnce(jsonResponse([], 200));
 
     render(<TeammateCreateWizard />);
 
@@ -163,7 +172,8 @@ describe("TeammateCreateWizard", () => {
             providerAccountId: "deepseek-chat"
           })
         ], 200)
-      );
+      )
+      .mockResolvedValueOnce(jsonResponse([], 200));
 
     render(<TeammateCreateWizard />);
 
@@ -174,6 +184,86 @@ describe("TeammateCreateWizard", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("运行 Provider")).toBeInTheDocument();
     expect(screen.getByText("国产模型 / OpenCode")).toBeInTheDocument();
+  });
+
+  it("auto-renames a workspace-level agent when the requested name already exists", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            createdAt: "2026-05-29T00:00:00.000Z",
+            id: "default-workspace",
+            name: "默认工作区",
+            ownerUserId: "user_demo",
+            updatedAt: "2026-05-29T00:00:00.000Z"
+          }
+        ], 200)
+      )
+      .mockResolvedValueOnce(jsonResponse([validCredential()], 200))
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            avatarUrl: null,
+            approvalMode: "balanced",
+            capabilityTags: ["custom-teammate"],
+            id: "agent_existing",
+            memoryMode: "workspace_plus_teammate",
+            modelProfileId: "cred_opencode",
+            name: "DeepSeek Agent",
+            outputStyle: "清晰、结构化、先给结论再给步骤。",
+            ownerUserId: "user_demo",
+            provider: "opencode",
+            scopeDescription: null,
+            systemPrompt: "已有 Agent",
+            toolBindings: [],
+            workspaceId: "default-workspace"
+          }
+        ], 200)
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: "agent_new", name: "DeepSeek Agent1" }, 201));
+
+    render(<TeammateCreateWizard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "2. 身份" }));
+    fireEvent.change(screen.getByLabelText("AI 同事名称"), {
+      target: { value: "DeepSeek Agent" }
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "工作区已存在名为“DeepSeek Agent”的 AI 同事，保存时将自动命名为“DeepSeek Agent1”。"
+    );
+
+    fireEvent.change(screen.getByLabelText("AI 同事名称"), {
+      target: { value: "DeepSeek Agent 2026" }
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("AI 同事名称"), {
+      target: { value: "DeepSeek Agent" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "6. 确认" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建 AI 同事" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/custom-agents",
+        expect.objectContaining({
+          credentials: "include",
+          method: "POST"
+        })
+      );
+    });
+
+    const postCall = fetchMock.mock.calls.find(([url]) => url === "/api/custom-agents");
+    expect(postCall).toBeDefined();
+    const requestBody = JSON.parse(String(postCall?.[1] && "body" in postCall[1] ? postCall[1].body : "{}"));
+
+    expect(requestBody).toMatchObject({
+      name: "DeepSeek Agent1",
+      modelProfileId: "cred_opencode",
+      provider: "opencode",
+      workspaceId: "default-workspace"
+    });
   });
 
   it("creates and adds the teammate to the current channel when launched from a channel", async () => {
@@ -259,7 +349,7 @@ describe("TeammateCreateWizard", () => {
       workspaceId: "default-workspace",
       teammate: {
         name: "频道测试同事",
-        modelProfileId: "balanced"
+        modelProfileId: "cred_opencode"
       }
     });
     expect(requestBody.teammate.provider).toBe("opencode");

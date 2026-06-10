@@ -145,7 +145,7 @@ export function ChannelOverviewPage() {
             </article>
           ) : shouldShowChannelEmpty ? (
             <article className="rounded-[28px] border border-dashed border-slate-200 bg-white/70 p-6 text-sm leading-7 text-slate-600">
-              当前还没有频道。你可以先从首页启动编码工作流或创建新的协作会话。
+              当前还没有频道。你可以先从首页启动网页制作协作或创建新的协作会话。
             </article>
           ) : filteredChannels.length === 0 ? (
             <article className="rounded-[28px] border border-dashed border-slate-200 bg-white/70 p-6 text-sm leading-7 text-slate-600">

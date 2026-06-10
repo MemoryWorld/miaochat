@@ -136,7 +136,7 @@ describe("createPhaseARuntimeExecution", () => {
     expect(execution.credentialId).toBe("11111111-1111-4111-8111-111111111111");
     expect(clientQueryMock).toHaveBeenCalledTimes(1);
     expect(clientQueryMock).toHaveBeenCalledWith(
-      expect.any(String),
+      expect.stringContaining("provider::text = ANY($4::text[])"),
       [
         "11111111-1111-4111-8111-111111111111",
         "user_1",

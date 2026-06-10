@@ -98,6 +98,14 @@ export function MarkdownContent({ content, tone = "light" }: MarkdownContentProp
         return <UnifiedDiffView patch={codeBlock.code} tone={tone} />;
       }
 
+      if (codeBlock?.language === "mermaid") {
+        return (
+          <div style={{ margin: "0.65rem 0", overflowX: "auto" }}>
+            <MermaidDiagram code={codeBlock.code} />
+          </div>
+        );
+      }
+
       return (
         <pre
           style={{
@@ -113,7 +121,24 @@ export function MarkdownContent({ content, tone = "light" }: MarkdownContentProp
             wordBreak: "break-word"
           }}
         >
-          {children}
+          {codeBlock ? (
+            <code
+              className={codeBlock.language ? `language-${codeBlock.language}` : undefined}
+              style={{
+                background: "transparent",
+                borderRadius: 0,
+                color: "inherit",
+                fontFamily: "inherit",
+                fontSize: "inherit",
+                padding: 0,
+                whiteSpace: "inherit"
+              }}
+            >
+              {codeBlock.code}
+            </code>
+          ) : (
+            children
+          )}
         </pre>
       );
     },
@@ -259,11 +284,7 @@ function extractCodeBlock(
     children?: React.ReactNode;
     className?: string;
   };
-  const language = /language-([\w-]+)/.exec(props.className ?? "")?.[1];
-
-  if (!language) {
-    return null;
-  }
+  const language = /language-([\w-]+)/.exec(props.className ?? "")?.[1] ?? "";
 
   return {
     code: React.Children.toArray(props.children).join("").replace(/\n$/u, ""),

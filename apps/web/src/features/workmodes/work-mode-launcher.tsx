@@ -149,9 +149,9 @@ export function WorkModeLauncher({
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-            编码工作流
+            网页制作协作
           </span>
-          <h2 className="mb-0 mt-3 text-lg font-semibold text-slate-950">用推荐团队推进编码任务</h2>
+          <h2 className="mb-0 mt-3 text-lg font-semibold text-slate-950">用推荐团队推进网页制作</h2>
           <p className="mb-0 mt-2 max-w-2xl text-sm leading-7 text-slate-600">
             技术负责人先拆计划，确认后再交给工程师、评审和测试闭环执行。
           </p>
@@ -171,7 +171,7 @@ export function WorkModeLauncher({
             }}
             size="lg"
           >
-            {isOpen ? "收起启动器" : "启动编码工作流"}
+            {isOpen ? "收起启动器" : "启动网页制作协作"}
           </Button>
         )}
       </div>
@@ -270,9 +270,9 @@ export function WorkModeLauncher({
         >
           <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h3 className="m-0 text-lg font-semibold">启动编码工作流</h3>
+              <h3 className="m-0 text-lg font-semibold">启动网页制作协作</h3>
               <p className="mb-0 mt-2 max-w-2xl text-sm leading-7 text-slate-300">
-                告诉系统这次要做什么。工作流启动后，会先由{planningTeammateName}提交计划，得到用户确认后才进入执行。
+                告诉系统这次要做什么。协作会话启动后，会先由{planningTeammateName}提交计划，得到用户确认后才进入执行。
               </p>
             </div>
             <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100">
@@ -289,7 +289,7 @@ export function WorkModeLauncher({
                 onChange={(event) => {
                   setGoal(event.target.value);
                 }}
-                placeholder="例如：把落地页 demo 拆成计划、实现、评审和测试四段工作流，并沉淀成可复用页面。"
+                placeholder="例如：把落地页 demo 拆成计划、实现、评审和测试四段，并生成可预览网页。"
                 value={goal}
               />
             </label>
@@ -346,7 +346,7 @@ export function WorkModeLauncher({
           <div>
             <h4 className="m-0 text-sm font-semibold text-white">可选：附加自定义 AI 同事</h4>
             <p className="mb-0 mt-1 text-sm leading-6 text-slate-300">
-              当前保留的推荐 AI 同事会先组成协作团队。这里可以额外附加你自己的 AI 同事，让他们在工作流里旁听或补充能力。
+              当前保留的推荐 AI 同事会先组成协作团队。这里可以额外附加你自己的 AI 同事，让他们在协作会话里旁听或补充能力。
             </p>
           </div>
             {isLoadingCustomAgents ? (
@@ -453,7 +453,7 @@ export function WorkModeLauncher({
                   <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
                     {dialogState.reason === "last_teammate"
                       ? `至少要保留 1 位 AI 同事，当前不能删除「${dialogState.teammateName}」。`
-                      : `当前不能删除「${dialogState.teammateName}」。编码工作流必须保留技术负责人和软件工程师；技术负责人负责计划与最终汇总，软件工程师负责实现。`}
+                      : `当前不能删除「${dialogState.teammateName}」。网页制作协作必须保留技术负责人和软件工程师；技术负责人负责计划与最终汇总，软件工程师负责实现。`}
                   </p>
                 </div>
                 <div className="flex justify-end">

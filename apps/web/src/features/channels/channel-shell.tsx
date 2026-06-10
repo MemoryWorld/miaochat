@@ -655,7 +655,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
     setBusyDecision(input.decision);
 
     try {
-      await fetch(`${apiBaseUrl}/coding-workflows/${workflow.data.id}/decisions`, {
+      const response = await fetch(`${apiBaseUrl}/coding-workflows/${workflow.data.id}/decisions`, {
         body: JSON.stringify({
           decision: input.decision,
           note: input.note,
@@ -667,6 +667,11 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
         },
         method: "POST"
       });
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(readErrorMessage(payload, "更新计划审批失败。"));
+      }
       await Promise.all([
         workflow.refresh(),
         approvals.refresh(),
@@ -675,6 +680,8 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
         files.refresh()
       ]);
       schedulePostSendRefresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "更新计划审批失败。");
     } finally {
       setBusyDecision(null);
     }
@@ -2033,7 +2040,7 @@ function workflowStatusSummary(workflow: CodingWorkflowDetail | null): string | 
     case "execution_running":
       return "软件工程师正在生成网页产物。";
     case "execution_failed":
-      return "编码工作流执行失败，请查看时间线里的失败说明后重新执行。";
+      return "网页制作协作执行失败，请查看时间线里的失败说明后重新执行。";
     case "review_running":
       return "代码评审工程师正在检查产物。";
     case "qa_running":

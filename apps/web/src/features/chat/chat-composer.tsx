@@ -185,6 +185,7 @@ export function ChatComposer({
           </span>
         </label>
         <input
+          accept=".txt,.md,.markdown,.json,.xml,.yaml,.yml,.js,.jsx,.mjs,.cjs,.ts,.tsx,.css,.html,.htm,.csv,.diff,.patch,text/*,application/json,application/xml,application/javascript,application/typescript,application/yaml"
           aria-label="选择文件"
           className="sr-only"
           disabled={disabled}

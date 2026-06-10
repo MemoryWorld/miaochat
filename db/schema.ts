@@ -387,6 +387,7 @@ export const codingWorkflows = pgTable("coding_workflows", {
   repoContext: text("repo_context"),
   reviewerAgentId: text("reviewer_agent_id").notNull(),
   runtimeBackend: runtimeBackend("runtime_backend").notNull().default("enhanced-hermes"),
+  sourceMessageId: text("source_message_id"),
   state: codingWorkflowState("state").notNull().default("plan_pending_approval"),
   taskSnapshot: jsonb("task_snapshot").$type<
     Array<{

@@ -187,7 +187,7 @@ async function selectPreferredByokCredential(
       WHERE id = $1
         AND owner_user_id = $2
         AND workspace_id = $3
-        AND provider = ANY($4::text[])
+        AND provider::text = ANY($4::text[])
         AND credential_source = 'user_provided'
         AND validation_state = 'valid'
       LIMIT 1

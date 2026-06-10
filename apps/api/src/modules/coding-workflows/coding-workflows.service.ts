@@ -73,6 +73,7 @@ type CodingWorkflowRow = {
   repo_context: string | null;
   reviewer_agent_id: string;
   runtime_backend: RuntimeBackend;
+  source_message_id: string | null;
   state: CodingWorkflowDetail["state"];
   task_snapshot: CodingWorkflowTask[];
   tech_lead_agent_id: string;
@@ -97,6 +98,7 @@ type CustomAgentRow = {
 };
 
 export type RuntimeAssignment = {
+  modelProfileId: string | null;
   provider: ProviderId;
   runtimeBackend: RuntimeBackend;
 };
@@ -106,6 +108,7 @@ export function resolveCodingRuntimeAssignmentFromProviders(
 ): RuntimeAssignment | null {
   if (providers.includes("opencode") || providers.includes("deepseek")) {
     return {
+      modelProfileId: null,
       provider: "opencode",
       runtimeBackend: "enhanced-hermes"
     };
@@ -113,6 +116,7 @@ export function resolveCodingRuntimeAssignmentFromProviders(
 
   if (providers.includes("hermes")) {
     return {
+      modelProfileId: null,
       provider: "hermes",
       runtimeBackend: "hermes-compat"
     };
@@ -120,6 +124,7 @@ export function resolveCodingRuntimeAssignmentFromProviders(
 
   if (providers.includes("openclaw")) {
     return {
+      modelProfileId: null,
       provider: "openclaw",
       runtimeBackend: "openclaw-compat"
     };
@@ -146,13 +151,14 @@ export class CodingWorkflowsService {
     const parsed = createCodingWorkflowInputSchema.parse(input);
     const recommendedRoleIds = normalizeRecommendedRoleIds(parsed.recommendedRoleIds);
     if (!hasRequiredCodingWorkflowRoles(recommendedRoleIds)) {
-      throw new BadRequestException("编码工作流必须保留技术负责人和软件工程师。");
+      throw new BadRequestException("网页制作协作必须保留技术负责人和软件工程师。");
     }
     const runtimeAssignment = await this.resolveRuntimeAssignment(
       ownerUserId,
       parsed.workspaceId
     );
     const builtInTeammates = await this.ensureBuiltInTeammates({
+      modelProfileId: runtimeAssignment.modelProfileId,
       ownerUserId,
       provider: runtimeAssignment.provider,
       workspaceId: parsed.workspaceId
@@ -273,6 +279,7 @@ export class CodingWorkflowsService {
           deadline,
           priority,
           runtime_backend,
+          source_message_id,
           tech_lead_agent_id,
           engineer_agent_id,
           reviewer_agent_id,
@@ -298,6 +305,7 @@ export class CodingWorkflowsService {
           ${parsed.deadline ?? null},
           ${parsed.priority},
           ${runtimeAssignment.runtimeBackend},
+          ${parsed.sourceMessageId ?? null},
           ${techLead.id},
           ${engineer.id},
           ${reviewer.id},
@@ -325,7 +333,7 @@ export class CodingWorkflowsService {
         requesterTeammateName: planningTeammate.name,
         status: "pending",
         summary: `${planningTeammate.name}已提交第 1 版计划，等待用户确认是否进入实现阶段。`,
-        title: "等待确认编码计划",
+        title: "等待确认网页制作计划",
         workflowId,
         workspaceId: parsed.workspaceId
       });
@@ -402,14 +410,14 @@ export class CodingWorkflowsService {
       workflow.state !== "plan_pending_approval" &&
       parsed.decision !== "rejected"
     ) {
-      throw new BadRequestException("Only pending plans can be approved or revised.");
+      throw new BadRequestException("只有等待确认的计划可以批准或要求修改。");
     }
 
     if (
       workflow.state !== "plan_pending_approval" &&
       workflow.state !== "plan_rejected"
     ) {
-      throw new BadRequestException("Workflow decisions are only allowed during the plan gate.");
+      throw new BadRequestException("只有计划确认阶段可以提交审批决定。");
     }
 
     const approvalId = randomUUID();
@@ -465,6 +473,7 @@ export class CodingWorkflowsService {
   }
 
   private async ensureBuiltInTeammates(input: {
+    modelProfileId: string | null;
     ownerUserId: string;
     provider: ProviderId;
     workspaceId: string;
@@ -482,6 +491,7 @@ export class CodingWorkflowsService {
         const created = await this.createBuiltInAgentWithConflictReload({
           ownerUserId: input.ownerUserId,
           profileId: profile.id,
+          modelProfileId: input.modelProfileId,
           provider: input.provider,
           workspaceId: input.workspaceId
         });
@@ -494,6 +504,7 @@ export class CodingWorkflowsService {
           UPDATE custom_agents
           SET
             capability_tags = ${JSON.stringify(profile.capabilityTags)}::jsonb,
+            model_profile_id = ${input.modelProfileId},
             provider = ${input.provider},
             system_prompt = ${profile.starterPrompt},
             updated_at = now()
@@ -505,6 +516,7 @@ export class CodingWorkflowsService {
         resolved.push({
           ...existing,
           capabilityTags: [...profile.capabilityTags],
+          modelProfileId: input.modelProfileId,
           provider: input.provider,
           systemPrompt: profile.starterPrompt
         });
@@ -518,6 +530,7 @@ export class CodingWorkflowsService {
   }
 
   private async createBuiltInAgentWithConflictReload(input: {
+    modelProfileId: string | null;
     ownerUserId: string;
     profileId: (typeof builtInCodingProfiles)[number]["id"];
     provider: ProviderId;
@@ -531,7 +544,12 @@ export class CodingWorkflowsService {
 
     try {
       return await this.customAgentsService.create(
-        buildBuiltInCodingAgentInput(profile, input.provider, input.workspaceId),
+        buildBuiltInCodingAgentInput(
+          profile,
+          input.provider,
+          input.workspaceId,
+          input.modelProfileId
+        ),
         input.ownerUserId
       );
     } catch (error) {
@@ -575,9 +593,10 @@ export class CodingWorkflowsService {
     workspaceId: string
   ): Promise<RuntimeAssignment> {
     const result = await this.database.execute<{
+      id: string;
       provider: ProviderId;
     }>(sql`
-      SELECT provider
+      SELECT id, provider
       FROM provider_credentials
       WHERE owner_user_id = ${ownerUserId}
         AND workspace_id = ${workspaceId}
@@ -590,17 +609,24 @@ export class CodingWorkflowsService {
     const runtimeAssignment = resolveCodingRuntimeAssignmentFromProviders(providers);
 
     if (runtimeAssignment) {
-      return runtimeAssignment;
+      return {
+        ...runtimeAssignment,
+        modelProfileId: resolveCredentialIdForProvider(
+          result.rows,
+          runtimeAssignment.provider
+        )
+      };
     }
 
     if (process.env.NODE_ENV === "test") {
       return {
+        modelProfileId: null,
         provider: "mock",
         runtimeBackend: "mock"
       };
     }
 
-    throw new BadRequestException("请先在设置中完成模型连接，再启动编码工作流。");
+    throw new BadRequestException("请先在设置中完成模型连接，再启动网页制作协作。");
   }
 
   private async getDetail(input: {
@@ -627,7 +653,7 @@ export class CodingWorkflowsService {
     const workflow = await this.getDetail(input);
 
     if (!workflow) {
-      throw new NotFoundException("Coding workflow was not found.");
+      throw new NotFoundException("网页制作协作不存在。");
     }
 
     return workflow;
@@ -674,6 +700,7 @@ export class CodingWorkflowsService {
         repo_context,
         reviewer_agent_id,
         runtime_backend,
+        source_message_id,
         state,
         task_snapshot,
         tech_lead_agent_id,
@@ -728,6 +755,7 @@ export class CodingWorkflowsService {
       repoContext: row.repo_context,
       reviewerAgentId: row.reviewer_agent_id,
       runtimeBackend: row.runtime_backend,
+      sourceMessageId: row.source_message_id,
       state: row.state,
       taskSnapshot: row.task_snapshot ?? [],
       teammates,
@@ -866,7 +894,7 @@ export class CodingWorkflowsService {
       requesterTeammateName: planningName,
       status: "pending",
       summary: `${planningName}已根据反馈重提第 ${nextPlanVersion} 版计划，等待用户确认。`,
-      title: `等待确认编码计划（第 ${nextPlanVersion} 版）`,
+      title: `等待确认网页制作计划（第 ${nextPlanVersion} 版）`,
       workflowId: workflow.id,
       workspaceId: workflow.workspaceId
     });
@@ -963,7 +991,7 @@ export class CodingWorkflowsService {
       status: "failed",
       stepLabel: "计划被拒绝",
       stepSummary: note ?? "用户拒绝了当前计划方向。",
-      summary: "用户拒绝了当前计划，工作流停留在计划门禁阶段。",
+      summary: "用户拒绝了当前计划，网页制作协作停留在计划门禁阶段。",
       toolActivityPreview: null,
       workflowId: workflow.id,
       workspaceId: workflow.workspaceId
@@ -974,7 +1002,7 @@ export class CodingWorkflowsService {
       conversationId: workflow.conversationId,
       label: "coding.plan_rejected",
       state: "failed",
-      summary: "用户拒绝了当前计划，工作流停留在计划门禁阶段。",
+      summary: "用户拒绝了当前计划，网页制作协作停留在计划门禁阶段。",
       taskSnapshot: workflow.taskSnapshot,
       workflow: {
         ...workflow,
@@ -1443,6 +1471,21 @@ function mapProviderToRuntimeBackend(provider: ProviderId): RuntimeBackend {
     case "claude-code":
       return "claude-code-internal";
   }
+}
+
+function resolveCredentialIdForProvider(
+  rows: Array<{ id: string; provider: ProviderId }>,
+  provider: ProviderId
+): string | null {
+  const match = rows.find((row) => {
+    if (provider === "opencode") {
+      return row.provider === "opencode" || row.provider === "deepseek";
+    }
+
+    return row.provider === provider;
+  });
+
+  return match?.id ?? null;
 }
 
 function mapConversationRow(

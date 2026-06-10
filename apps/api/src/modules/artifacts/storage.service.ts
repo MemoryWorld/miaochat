@@ -123,6 +123,43 @@ export class StorageService {
     };
   }
 
+  async writeTextAttachment(input: {
+    content: string;
+    fileName: string;
+    messageId: string;
+    mimeType: string;
+    workspaceId: string;
+  }): Promise<RuntimeArtifactWriteResult> {
+    const artifactId = randomUUID();
+    const storageKey = buildStorageKey({
+      artifactId,
+      fileName: input.fileName,
+      messageId: input.messageId,
+      workspaceId: input.workspaceId
+    });
+    const command = new PutObjectCommand({
+      Body: Buffer.from(input.content, "utf8"),
+      Bucket: this.bucket,
+      ContentType: input.mimeType,
+      Key: storageKey,
+      Metadata: {
+        artifactId,
+        artifactKind: "attachment",
+        messageId: input.messageId,
+        uploadedAs: "chat-attachment",
+        workspaceId: input.workspaceId
+      }
+    });
+
+    await this.s3.send(command);
+
+    return {
+      artifactId,
+      previewUrl: buildObjectUrl(this.endpoint, this.bucket, storageKey),
+      storageKey
+    };
+  }
+
   async writeRuntimeDiffArtifact(input: {
     draft: RuntimeDiffArtifactDraft;
     messageId: string;

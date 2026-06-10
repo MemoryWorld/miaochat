@@ -47,7 +47,7 @@ describe("ChannelOverviewPage", () => {
 
     expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByText("请先登录后再继续操作。")).toBeInTheDocument();
-    expect(screen.queryByText("当前还没有频道。你可以先从首页启动编码工作流或创建新的协作会话。")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前还没有频道。你可以先从首页启动网页制作协作或创建新的协作会话。")).not.toBeInTheDocument();
   });
 
   it("does not show a login prompt when only the channel list refresh has an auth-shaped error", async () => {
@@ -75,7 +75,7 @@ describe("ChannelOverviewPage", () => {
     expect(await screen.findByText("Unauthorized")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
     expect(screen.queryByText("请先登录后再继续操作。")).not.toBeInTheDocument();
-    expect(screen.queryByText("当前还没有频道。你可以先从首页启动编码工作流或创建新的协作会话。")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前还没有频道。你可以先从首页启动网页制作协作或创建新的协作会话。")).not.toBeInTheDocument();
   });
 });
 
