@@ -1,11 +1,15 @@
 import {
   artifactDiffCreateToolInputSchema,
   artifactMarkdownCreateToolInputSchema,
+  artifactSlidesCreateToolInputSchema,
   artifactWebpageCreateToolInputSchema,
   runtimeDiffArtifactDraftSchema,
   runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactDraftSchema,
   runtimeMarkdownArtifactToolName,
+  runtimeSlidesArtifactDraftSchema,
+  runtimeSlidesArtifactFileNameSuffix,
+  runtimeSlidesArtifactToolName,
   runtimeWebpageArtifactDraftSchema,
   runtimeWebpageArtifactToolName,
   type MultiAgentOutputEnvelope,
@@ -17,6 +21,7 @@ const maxDraftsPerResult = 3;
 export {
   runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactToolName,
+  runtimeSlidesArtifactToolName,
   runtimeWebpageArtifactToolName
 };
 
@@ -88,6 +93,24 @@ function buildArtifactDraftFromToolCall(
     return draft.success ? draft.data : null;
   }
 
+  if (toolName === runtimeSlidesArtifactToolName) {
+    const input = artifactSlidesCreateToolInputSchema.safeParse(rawInput);
+
+    if (!input.success) {
+      return null;
+    }
+
+    const draft = runtimeSlidesArtifactDraftSchema.safeParse({
+      fileName: normalizeSlidesFileName(input.data.fileName ?? input.data.title),
+      html: input.data.html,
+      mimeType: "text/html",
+      title: normalizeTitle(input.data.title),
+      type: "slides"
+    });
+
+    return draft.success ? draft.data : null;
+  }
+
   if (toolName === runtimeDiffArtifactToolName) {
     const input = artifactDiffCreateToolInputSchema.safeParse(rawInput);
 
@@ -112,6 +135,13 @@ function buildArtifactDraftFromToolCall(
 
 function normalizeTitle(value: string): string {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeSlidesFileName(value: string): string {
+  const base = normalizeArtifactFileName(value, ".html").replace(/\.html$/i, "");
+  const withoutSuffix = base.replace(/\.slides$/i, "");
+
+  return `${withoutSuffix || "slides"}${runtimeSlidesArtifactFileNameSuffix}`;
 }
 
 function normalizeArtifactFileName(

@@ -591,7 +591,7 @@ function renderPreviewLink({
         style={actionLinkStyle}
         target="_blank"
       >
-        {isHtmlArtifact(artifact) ? "打开网页" : "打开产物"}
+        {isSlidesArtifact(artifact) ? "放映幻灯片" : isHtmlArtifact(artifact) ? "打开网页" : "打开产物"}
       </a>
     );
   }
@@ -683,6 +683,10 @@ function getBadgeLabel(artifact: Artifact, cardType: ArtifactCardType): string {
     return "Attachment";
   }
 
+  if (isSlidesArtifact(artifact)) {
+    return "幻灯片";
+  }
+
   return "Preview";
 }
 
@@ -720,6 +724,13 @@ function isDiffArtifact(artifact: Artifact): boolean {
 
 function isHtmlArtifact(artifact: Artifact): boolean {
   return artifact.mimeType.toLowerCase().includes("html");
+}
+
+function isSlidesArtifact(artifact: Artifact): boolean {
+  return (
+    isHtmlArtifact(artifact) &&
+    /\.slides\.html$/i.test(artifact.storageKey ?? artifact.previewUrl ?? "")
+  );
 }
 
 const cardStyle: CSSProperties = {

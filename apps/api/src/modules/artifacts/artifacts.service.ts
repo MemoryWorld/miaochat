@@ -24,6 +24,7 @@ import {
   prepareArtifactUploadInputSchema,
   runtimeDiffArtifactDraftSchema,
   runtimeMarkdownArtifactDraftSchema,
+  runtimeSlidesArtifactDraftSchema,
   runtimeWebpageArtifactDraftSchema,
   workspaceIdSchema,
   type Artifact,
@@ -74,6 +75,12 @@ const createRuntimeDiffArtifactInputSchema = z.object({
 
 const createRuntimeWebpageArtifactInputSchema = z.object({
   draft: runtimeWebpageArtifactDraftSchema,
+  messageId: messageIdSchema,
+  workspaceId: workspaceIdSchema.optional()
+});
+
+const createRuntimeSlidesArtifactInputSchema = z.object({
+  draft: runtimeSlidesArtifactDraftSchema,
   messageId: messageIdSchema,
   workspaceId: workspaceIdSchema.optional()
 });
@@ -538,6 +545,48 @@ export class ArtifactsService {
       previewUrl: upload.previewUrl,
       storageKey: upload.storageKey,
       summary: "Initial webpage artifact."
+    });
+
+    return artifact;
+  }
+
+  async createRuntimeSlidesArtifact(
+    input: unknown,
+    actorUserId: string
+  ): Promise<Artifact> {
+    const parsed = createRuntimeSlidesArtifactInputSchema.parse(input);
+    const workspaceId = parsed.workspaceId ?? "default-workspace";
+
+    await this.assertMessageAccess({
+      actorUserId,
+      messageId: parsed.messageId,
+      mode: "send",
+      workspaceId
+    });
+
+    const upload = await this.storageService.writeRuntimeWebpageArtifact({
+      draft: parsed.draft,
+      messageId: parsed.messageId,
+      workspaceId
+    });
+
+    const artifact = await this.create({
+      id: upload.artifactId,
+      kind: "preview",
+      messageId: parsed.messageId,
+      mimeType: parsed.draft.mimeType,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      title: parsed.draft.title,
+      workspaceId
+    }, actorUserId);
+    await this.appendInitialRevision({
+      artifact,
+      authorUserId: actorUserId,
+      content: parsed.draft.html,
+      previewUrl: upload.previewUrl,
+      storageKey: upload.storageKey,
+      summary: "Initial slides artifact."
     });
 
     return artifact;

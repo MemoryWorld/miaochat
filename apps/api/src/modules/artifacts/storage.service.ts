@@ -13,6 +13,7 @@ import {
   type PrepareArtifactUploadInput,
   type RuntimeDiffArtifactDraft,
   type RuntimeMarkdownArtifactDraft,
+  type RuntimeSlidesArtifactDraft,
   type RuntimeWebpageArtifactDraft
 } from "@agenthub/contracts";
 
@@ -196,7 +197,7 @@ export class StorageService {
   }
 
   async writeRuntimeWebpageArtifact(input: {
-    draft: RuntimeWebpageArtifactDraft;
+    draft: RuntimeSlidesArtifactDraft | RuntimeWebpageArtifactDraft;
     messageId: string;
     workspaceId: string;
   }): Promise<RuntimeArtifactWriteResult> {

@@ -975,6 +975,14 @@ export class MessageDispatchService implements OnModuleDestroy {
       }, input.ownerUserId);
     }
 
+    if (input.artifact.type === "slides") {
+      return this.artifactsService.createRuntimeSlidesArtifact({
+        draft: input.artifact,
+        messageId: input.messageId,
+        workspaceId: input.workspaceId
+      }, input.ownerUserId);
+    }
+
     return this.artifactsService.createRuntimeDiffArtifact({
       draft: input.artifact,
       messageId: input.messageId,
@@ -1048,7 +1056,9 @@ function runtimeArtifactStatusSummary(status: RuntimeArtifactStatus): string {
       ? "Diff 文件"
       : status.type === "webpage"
         ? "网页预览"
-        : "Markdown 文件";
+        : status.type === "slides"
+          ? "幻灯片"
+          : "Markdown 文件";
 
   switch (status.status) {
     case "created":

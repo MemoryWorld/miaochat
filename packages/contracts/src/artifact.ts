@@ -10,6 +10,10 @@ export const runtimeDiffArtifactMaxPatchChars = 128 * 1024;
 export const runtimeDiffArtifactToolName = "artifact.diff.create" as const;
 export const runtimeWebpageArtifactMaxHtmlChars = 256 * 1024;
 export const runtimeWebpageArtifactToolName = "artifact.webpage.create" as const;
+export const runtimeSlidesArtifactMaxHtmlChars = 256 * 1024;
+export const runtimeSlidesArtifactToolName = "artifact.slides.create" as const;
+/** 幻灯片产物以 .slides.html 收尾，预览/部署链路与网页一致，前端据此识别为幻灯片。 */
+export const runtimeSlidesArtifactFileNameSuffix = ".slides.html" as const;
 
 export const artifactSchema = z.object({
   id: z.string().min(1),
@@ -100,6 +104,17 @@ export const artifactWebpageCreateToolInputSchema = z.object({
   title: z.string().trim().min(1).max(120)
 });
 
+export const artifactSlidesCreateToolInputSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).optional(),
+  html: z.string()
+    .min(1)
+    .max(runtimeSlidesArtifactMaxHtmlChars)
+    .refine((value) => value.trim().length > 0, {
+      message: "Slides HTML content cannot be blank."
+    }),
+  title: z.string().trim().min(1).max(120)
+});
+
 export const artifactDiffCreateToolInputSchema = z.object({
   fileName: z.string().trim().min(1).max(160).optional(),
   patch: z.string()
@@ -152,10 +167,24 @@ export const runtimeWebpageArtifactDraftSchema = z.object({
   type: z.literal("webpage")
 });
 
+export const runtimeSlidesArtifactDraftSchema = z.object({
+  fileName: z.string().trim().min(1).max(160).regex(/\.slides\.html$/i),
+  html: z.string()
+    .min(1)
+    .max(runtimeSlidesArtifactMaxHtmlChars)
+    .refine((value) => value.trim().length > 0, {
+      message: "Slides HTML content cannot be blank."
+    }),
+  mimeType: z.literal("text/html").default("text/html"),
+  title: z.string().trim().min(1).max(120),
+  type: z.literal("slides")
+});
+
 export const runtimeArtifactDraftSchema = z.discriminatedUnion("type", [
   runtimeMarkdownArtifactDraftSchema,
   runtimeDiffArtifactDraftSchema,
-  runtimeWebpageArtifactDraftSchema
+  runtimeWebpageArtifactDraftSchema,
+  runtimeSlidesArtifactDraftSchema
 ]);
 
 export const runtimeArtifactStatusSchema = z.object({
@@ -165,7 +194,7 @@ export const runtimeArtifactStatusSchema = z.object({
   previewUrl: z.string().url().optional(),
   status: z.enum(["creating", "created", "failed"]),
   title: z.string().trim().min(1).max(120),
-  type: z.enum(["diff", "markdown", "webpage"])
+  type: z.enum(["diff", "markdown", "webpage", "slides"])
 });
 
 export type Artifact = z.infer<typeof artifactSchema>;
@@ -192,3 +221,7 @@ export type RuntimeMarkdownArtifactDraft = z.infer<
 >;
 export type RuntimeDiffArtifactDraft = z.infer<typeof runtimeDiffArtifactDraftSchema>;
 export type RuntimeWebpageArtifactDraft = z.infer<typeof runtimeWebpageArtifactDraftSchema>;
+export type RuntimeSlidesArtifactDraft = z.infer<typeof runtimeSlidesArtifactDraftSchema>;
+export type ArtifactSlidesCreateToolInput = z.infer<
+  typeof artifactSlidesCreateToolInputSchema
+>;

@@ -269,7 +269,9 @@ export function parseMultiAgentOutputEnvelope(
       continue;
     }
 
-    const envelopeResult = multiAgentOutputEnvelopeSchema.safeParse(jsonResult.value);
+    const envelopeResult = multiAgentOutputEnvelopeSchema.safeParse(
+      normalizeEnvelopeCandidate(jsonResult.value)
+    );
 
     if (!envelopeResult.success) {
       errors.push(envelopeResult.error.issues.map((issue) => issue.message).join("; "));
@@ -293,6 +295,125 @@ export function parseMultiAgentOutputEnvelope(
       : ["No parseable multi-agent output envelope found."],
     extractedJson: false
   };
+}
+
+/**
+ * LLM 输出的 intent 形状经常漂移（"tool_call"、顶层 tool/input、漏掉
+ * idempotencyKey 等模板字段）。在 schema 校验前归一化常见变体，
+ * 避免一个字段名差异就丢掉整个工具计划。
+ */
+function normalizeEnvelopeCandidate(value: unknown): unknown {
+  if (!isPlainRecord(value) || !Array.isArray(value.intents)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    intents: value.intents.map((intent, index) =>
+      normalizeIntentCandidate(intent, index)
+    )
+  };
+}
+
+function normalizeIntentCandidate(intent: unknown, index: number): unknown {
+  if (!isPlainRecord(intent)) {
+    return intent;
+  }
+
+  const looksLikeToolIntent =
+    intent.type === "tool_call" ||
+    (intent.type === "tool_plan" && !Array.isArray(intent.calls));
+
+  if (looksLikeToolIntent) {
+    const toolName =
+      typeof intent.toolName === "string"
+        ? intent.toolName
+        : typeof intent.tool === "string"
+          ? intent.tool
+          : null;
+
+    if (!toolName) {
+      return intent;
+    }
+
+    return {
+      expectedSideEffects: intent.expectedSideEffects,
+      riskLevel: normalizeRiskLevel(intent.riskLevel),
+      summary:
+        typeof intent.summary === "string" && intent.summary.trim().length > 0
+          ? intent.summary
+          : `Create artifact via ${toolName}.`,
+      type: "tool_plan",
+      calls: [
+        normalizeToolCallCandidate(
+          {
+            input: intent.input,
+            toolName
+          },
+          index,
+          0
+        )
+      ]
+    };
+  }
+
+  if (intent.type === "tool_plan" && Array.isArray(intent.calls)) {
+    return {
+      ...intent,
+      riskLevel: normalizeRiskLevel(intent.riskLevel),
+      summary:
+        typeof intent.summary === "string" && intent.summary.trim().length > 0
+          ? intent.summary
+          : "Execute proposed tool calls.",
+      calls: intent.calls.map((call, callIndex) =>
+        normalizeToolCallCandidate(call, index, callIndex)
+      )
+    };
+  }
+
+  return intent;
+}
+
+function normalizeToolCallCandidate(
+  call: unknown,
+  intentIndex: number,
+  callIndex: number
+): unknown {
+  if (!isPlainRecord(call)) {
+    return call;
+  }
+
+  const toolName =
+    typeof call.toolName === "string"
+      ? call.toolName
+      : typeof call.tool === "string"
+        ? call.tool
+        : null;
+
+  if (!toolName) {
+    return call;
+  }
+
+  return {
+    idempotencyKey:
+      typeof call.idempotencyKey === "string" && call.idempotencyKey.length > 0
+        ? call.idempotencyKey
+        : `auto:${toolName}:${intentIndex}:${callIndex}`,
+    input: isPlainRecord(call.input) ? call.input : {},
+    inputSchemaVersion:
+      typeof call.inputSchemaVersion === "string" && call.inputSchemaVersion.length > 0
+        ? call.inputSchemaVersion
+        : "1",
+    toolName
+  };
+}
+
+function normalizeRiskLevel(value: unknown): "low" | "medium" | "high" {
+  return value === "medium" || value === "high" ? value : "low";
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function applyMultiAgentLoopGuard(
@@ -1117,21 +1238,64 @@ function extractJsonCandidates(rawText: string): string[] {
 }
 
 function extractTrailingJsonObjectCandidates(rawText: string): string[] {
-  if (!rawText.endsWith("}")) {
-    return [];
-  }
-
   const candidates: string[] = [];
 
   for (const match of rawText.matchAll(/\{/g)) {
-    const candidate = rawText.slice(match.index).trim();
+    if (match.index === undefined) {
+      continue;
+    }
 
-    if (candidate.startsWith("{") && candidate.endsWith("}")) {
-      candidates.push(candidate);
+    // 字符串感知的括号配对：忽略 JSON 字符串内的 {}（例如内嵌 HTML/CSS），
+    // 并容忍 envelope 闭合后出现的尾随文本。
+    const balanced = extractBalancedJsonObject(rawText, match.index);
+
+    if (balanced) {
+      candidates.push(balanced);
+    }
+
+    const toEnd = rawText.slice(match.index).trim();
+
+    if (toEnd.endsWith("}") && toEnd !== balanced) {
+      candidates.push(toEnd);
     }
   }
 
   return candidates;
+}
+
+function extractBalancedJsonObject(rawText: string, startIndex: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = startIndex; index < rawText.length; index += 1) {
+    const char = rawText[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return rawText.slice(startIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
 }
 
 function parseJsonObject(

@@ -1961,9 +1961,9 @@ function formatStageResultForPrompt(result: StagePromptResult): string {
 }
 
 function formatRuntimeArtifactForPrompt(artifact: RuntimeArtifactDraft): string {
-  if (artifact.type === "webpage") {
+  if (artifact.type === "webpage" || artifact.type === "slides") {
     return [
-      `- ${artifact.title}（HTML 网页，${artifact.fileName}）`,
+      `- ${artifact.title}（${artifact.type === "slides" ? "HTML 幻灯片" : "HTML 网页"}，${artifact.fileName}）`,
       "```html",
       truncatePromptArtifactContent(artifact.html, 16000),
       "```"
@@ -2308,6 +2308,8 @@ function runtimeArtifactKindLabel(type: RuntimeArtifactStatus["type"]): string {
       return "Markdown 文件";
     case "webpage":
       return "网页预览";
+    case "slides":
+      return "幻灯片";
   }
 }
 

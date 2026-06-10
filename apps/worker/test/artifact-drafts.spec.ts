@@ -6,6 +6,7 @@ import {
   extractRuntimeArtifactDrafts,
   runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactToolName,
+  runtimeSlidesArtifactToolName,
   runtimeWebpageArtifactToolName
 } from "../src/activities/artifact-drafts.js";
 
@@ -51,6 +52,43 @@ describe("runtime artifact draft extraction", () => {
         mimeType: "text/markdown",
         title: "Release notes",
         type: "markdown"
+      }
+    ]);
+  });
+
+
+  it("extracts slides artifact drafts and enforces the .slides.html suffix", () => {
+    const envelope = multiAgentOutputEnvelopeSchema.parse({
+      intents: [
+        {
+          calls: [
+            {
+              idempotencyKey: "artifact:quarterly-review",
+              input: {
+                fileName: "Quarterly review deck",
+                html: "<!doctype html><html><body><section class=\"slide\">Q1</section></body></html>",
+                title: " 季度复盘 PPT "
+              },
+              inputSchemaVersion: "1",
+              toolName: runtimeSlidesArtifactToolName
+            }
+          ],
+          expectedSideEffects: ["Create an HTML slides artifact."],
+          riskLevel: "low",
+          summary: "Create the requested slides artifact.",
+          type: "tool_plan"
+        }
+      ],
+      visibleMessage: "幻灯片已经生成。"
+    });
+
+    expect(extractRuntimeArtifactDrafts(envelope)).toEqual([
+      {
+        fileName: "Quarterly-review-deck.slides.html",
+        html: "<!doctype html><html><body><section class=\"slide\">Q1</section></body></html>",
+        mimeType: "text/html",
+        title: "季度复盘 PPT",
+        type: "slides"
       }
     ]);
   });

@@ -549,6 +549,42 @@ describe("multi-agent channel harness domain", () => {
     });
   });
 
+
+  it("normalizes drifted tool_call intents and tolerates trailing prose after the envelope", () => {
+    const html =
+      "<!DOCTYPE html><html><head><style>body{margin:0}.slide{display:none}@media(max-width:600px){.slide{padding:8px}}</style></head>" +
+      "<body><section class=\"slide\">封面 {Miaochat}</section></body></html>";
+    const parsed = parseMultiAgentOutputEnvelope({
+      rawText: [
+        "已生成幻灯片。",
+        JSON.stringify({
+          intents: [
+            {
+              input: { fileName: "intro.slides.html", html, title: "产品介绍" },
+              tool: "artifact.slides.create",
+              type: "tool_call"
+            }
+          ],
+          visibleMessage: "PPT 已生成。"
+        }),
+        "以上就是本次交付。"
+      ].join("\n")
+    });
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.envelope.intents[0]).toMatchObject({
+      calls: [
+        expect.objectContaining({
+          input: expect.objectContaining({ html, title: "产品介绍" }),
+          inputSchemaVersion: "1",
+          toolName: "artifact.slides.create"
+        })
+      ],
+      riskLevel: "low",
+      type: "tool_plan"
+    });
+  });
+
   it("parses typed agent output envelopes and safely degrades invalid output", () => {
     const parsed = parseMultiAgentOutputEnvelope({
       rawText: [

@@ -1,7 +1,7 @@
 import type { CreateProviderCredentialInput } from "@agenthub/contracts";
 import type { CredentialValidationResult } from "@agenthub/domain";
 
-import { validateDeepSeekCredential } from "./deepseek-validator";
+import { validateDeepSeekCredential } from "./deepseek-validator.js";
 
 export async function validateOpenCodeCredential(
   input: CreateProviderCredentialInput
