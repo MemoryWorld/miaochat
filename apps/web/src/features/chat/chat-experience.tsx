@@ -53,10 +53,6 @@ import {
   NewConversationDialog,
   type NewConversationAgentOption
 } from "../conversations/new-conversation-dialog";
-import {
-  WorkModeLauncher,
-  type CodingWorkflowDraft
-} from "../workmodes/work-mode-launcher";
 import { VisualWorkflowPanel } from "../workflows/visual-workflow-panel";
 import {
   mergeRuntimeArtifactStatus,
@@ -157,7 +153,6 @@ export function ChatExperience() {
   const [includeArchivedConversations, setIncludeArchivedConversations] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [hasLoadedCustomAgents, setHasLoadedCustomAgents] = useState(false);
-  const [isLaunchingCodingWorkflow, setIsLaunchingCodingWorkflow] = useState(false);
   const [isLoadingCustomAgents, setIsLoadingCustomAgents] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -183,7 +178,6 @@ export function ChatExperience() {
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [composerDraft, setComposerDraft] = useState<string | null>(null);
-  const [isCodingLauncherOpen, setIsCodingLauncherOpen] = useState(false);
   const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(true);
   const [requestedConversationId, setRequestedConversationId] = useState<
     string | null | undefined
@@ -395,9 +389,6 @@ export function ChatExperience() {
   const conversationAgentOptions = buildConversationAgentOptions(
     customAgents,
     validConversationProviders
-  );
-  const codingEligibleCustomAgents = customAgents.filter(
-    (agent) => !isBuiltInCodingTeammate(agent)
   );
   const selectedConversation =
     conversationList.find((conversation) => conversation.id === selectedConversationId) ?? null;
@@ -852,8 +843,9 @@ export function ChatExperience() {
     setErrorMessage(null);
 
     try {
+      // 每次打开弹窗都重新拉取：保证刚在创建器里新建的平台 Agent 立即可见
       await Promise.all([
-        hasLoadedCustomAgents ? Promise.resolve(customAgents) : loadCustomAgents(),
+        loadCustomAgents(),
         providerCredentials.length === 0
           ? loadProviderCredentials()
           : Promise.resolve(providerCredentials)
@@ -1038,50 +1030,6 @@ export function ChatExperience() {
     setLiveAssistantMessage(null);
     setLiveOrchestratorStatus(null);
     processedStreamEventCountRef.current = 0;
-  }
-
-  async function handleLaunchCodingWorkflow(draft: CodingWorkflowDraft): Promise<void> {
-    setErrorMessage(null);
-    setIsLaunchingCodingWorkflow(true);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/coding-workflows`, {
-        body: JSON.stringify({
-          deadline: draft.deadline || undefined,
-          extraAgentIds: draft.extraAgentIds,
-          goal: draft.goal,
-          priority: draft.priority,
-          recommendedRoleIds: draft.recommendedRoleIds,
-          repoContext: draft.repoContext || undefined,
-          workspaceId
-        }),
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        method: "POST"
-      });
-      const payload = await readJson(response);
-
-      if (!response.ok) {
-        throw new Error(readErrorMessage(payload, "启动网页制作协作失败。"));
-      }
-
-      const created = payload as {
-        conversation: Conversation;
-        workflow: CodingWorkflowDetail;
-      };
-
-      startTransition(() => {
-        applyCodingWorkflowLaunch(created);
-      });
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "启动网页制作协作失败。"
-      );
-    } finally {
-      setIsLaunchingCodingWorkflow(false);
-    }
   }
 
   async function handleWorkflowDecision(input: {
@@ -1900,22 +1848,6 @@ export function ChatExperience() {
                     创建 Workflow
                   </Button>
                 </div>
-                <Button
-                  aria-expanded={isCodingLauncherOpen}
-                  onClick={() => setIsCodingLauncherOpen((current) => !current)}
-                  variant="secondary"
-                >
-                  {isCodingLauncherOpen ? "收起网页制作团队" : "打开网页制作团队"}
-                </Button>
-                {isCodingLauncherOpen ? (
-                  <WorkModeLauncher
-                    canStartCoding={hasReadyModelConnection}
-                    customAgents={codingEligibleCustomAgents}
-                    isLaunching={isLaunchingCodingWorkflow}
-                    isLoadingCustomAgents={isLoadingCustomAgents}
-                    onLaunchCoding={handleLaunchCodingWorkflow}
-                  />
-                ) : null}
                 {visualWorkflows.length > 0 ? (
                   <VisualWorkflowPanel
                     busyWorkflowId={executingVisualWorkflowId}
@@ -1963,7 +1895,9 @@ function ConversationListItem({
   return (
     <article
       className={cn(
-        "group relative flex items-center gap-2.5 rounded-xl px-2.5 py-2 transition-colors duration-100",
+        // min-w-0：作为 grid item 时允许轨道收缩到容器宽度，否则 nowrap 标题
+        // 会把整行撑出侧栏，右侧操作按钮被聊天区盖住而无法点击
+        "group relative flex min-w-0 items-center gap-2.5 rounded-xl px-2.5 py-2 transition-colors duration-100",
         isSelected ? "bg-[#007aff]" : "hover:bg-black/[0.05]"
       )}
       data-archived={conversation.archivedAt ? "true" : "false"}
