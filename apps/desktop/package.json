@@ -3,15 +3,16 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "dist/electron-main.js",
+  "main": "dist/electron-main.bundle.mjs",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
-    "dev": "pnpm run build && electron dist/electron-main.js",
+    "dev": "pnpm run build && pnpm run bundle && electron .",
     "lint": "eslint .",
     "package": "pnpm run build && electron-packager . Miaochat --out=release --overwrite",
-    "start": "pnpm run build && electron dist/electron-main.js",
-    "test": "vitest run --config vitest.config.ts"
+    "start": "pnpm run build && pnpm run bundle && electron .",
+    "test": "vitest run --config vitest.config.ts",
+    "bundle": "esbuild src/electron-main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist/electron-main.bundle.mjs --log-level=warning"
   },
   "dependencies": {
     "@agenthub/tool-runtime": "workspace:*"
