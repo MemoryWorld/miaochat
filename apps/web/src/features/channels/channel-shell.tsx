@@ -30,6 +30,7 @@ import {
 } from "@agenthub/contracts";
 
 import { AppShell } from "../../components/app-shell";
+import { Avatar } from "../../components/ui/avatar";
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
 import {
@@ -1383,7 +1384,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
         requiresLogin ? (
           <div className="grid gap-4">
             <div>
-              <h1 className="m-0 text-3xl font-semibold tracking-tight text-slate-950">
+              <h1 className="m-0 text-[22px] font-bold tracking-tight text-foreground">
                 需要登录
               </h1>
               <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
@@ -1394,7 +1395,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
         ) : (
           <div className="grid gap-4">
             <div>
-              <h1 className="m-0 text-3xl font-semibold tracking-tight text-slate-950">
+              <h1 className="m-0 text-[22px] font-bold tracking-tight text-foreground">
                 {channel?.title ?? conversation?.title ?? (isChannelUnavailable ? "频道不可用" : "正在加载频道")}
               </h1>
               <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
@@ -1411,10 +1412,10 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                 return (
                   <Link
                     key={tab.id}
-                    className={`rounded-2xl border px-4 py-3 text-sm font-semibold no-underline transition ${
+                    className={`rounded-lg px-3.5 py-2.5 text-sm font-medium no-underline transition-colors ${
                       isActive
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                        ? "bg-slate-950 text-white"
+                        : "text-foreground hover:bg-black/[0.05]"
                     }`}
                     href={`/channels/${channelId}?tab=${tab.id}`}
                   >
@@ -1423,7 +1424,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                 );
               })}
             </div>
-            <div className="grid gap-2 rounded-[24px] border border-slate-200 bg-white/80 p-4 text-sm leading-7 text-slate-600">
+            <div className="grid gap-2 rounded-xl bg-white p-4 shadow-card text-sm leading-7 text-slate-600">
               <div className="font-semibold text-slate-950">当前频道概况</div>
               {isOverviewHydrating ? (
                 <div>正在同步频道概况...</div>
@@ -1465,7 +1466,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
           <div className="grid min-w-0 gap-4">
             {channelAvailabilityMessage ? (
               <section
-                className="grid gap-2 rounded-[24px] border border-red-100 bg-red-50/80 p-4 text-sm leading-7 text-red-800"
+                className="grid gap-2 rounded-xl bg-red-50 p-4 text-sm leading-7 text-red-800"
                 role="alert"
               >
                 <h2 className="m-0 text-base font-semibold text-red-950">频道不可用</h2>
@@ -1503,10 +1504,10 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
               />
             ) : null}
 
-            <section className="grid gap-3 rounded-[28px] border border-slate-200 bg-white/85 p-4 shadow-sm">
+            <section className="grid gap-3 rounded-xl bg-white p-4 shadow-card">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="m-0 text-base font-semibold text-slate-950">频道消息</h2>
+                  <h2 className="m-0 text-[15px] font-semibold text-foreground">频道消息</h2>
                   <p className="mb-0 mt-1 text-sm text-slate-500">
                     {isMessagesHydrating
                       ? "正在同步频道消息..."
@@ -1514,7 +1515,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                   </p>
                 </div>
                 <button
-                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-white"
+                  className="rounded-full bg-black/[0.05] px-3 py-2 text-xs font-medium text-foreground transition hover:bg-black/[0.09]"
                   onClick={() => {
                     setIsPinnedDrawerOpen((current) => !current);
                   }}
@@ -1526,7 +1527,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
               <label className="grid gap-1 text-xs font-semibold text-slate-500">
                 搜索频道
                 <input
-                  className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="rounded-lg bg-white px-3 py-2 text-sm text-foreground shadow-card"
                   onChange={(event) => {
                     setMessageSearchQuery(event.target.value);
                   }}
@@ -1543,7 +1544,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                   { label: "创建任务", value: "请把当前讨论拆成可执行任务清单。" }
                 ].map((action) => (
                   <button
-                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-black/[0.09] disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={composerDisabled || availableAiMembers.length === 0}
                     key={action.label}
                     onClick={() => {
@@ -1556,11 +1557,11 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
                 ))}
               </div>
               {isPinnedDrawerOpen ? (
-                <div className="grid gap-2 rounded-[22px] border border-slate-200 bg-slate-50 p-3">
+                <div className="grid gap-2 rounded-xl bg-black/[0.03] p-3">
                   {pinnedMessages.length > 0 ? (
                     pinnedMessages.map((message) => (
                       <a
-                        className="rounded-2xl bg-white px-3 py-2 text-sm text-slate-700 no-underline transition hover:bg-slate-100"
+                        className="rounded-lg bg-white px-3 py-2 text-sm text-foreground no-underline shadow-card transition hover:bg-black/[0.02]"
                         href={`#message-${message.id}`}
                         key={message.id}
                       >
@@ -1583,13 +1584,13 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
             </section>
 
             {approvals.data.length > 0 ? (
-              <section className="grid gap-3 rounded-[28px] border border-slate-200 bg-slate-50/80 p-5">
-                <h2 className="m-0 text-lg font-semibold text-slate-950">审批卡片</h2>
+              <section className="grid gap-3 rounded-xl bg-black/[0.03] p-4">
+                <h2 className="m-0 text-[15px] font-semibold text-foreground">审批卡片</h2>
                 <div className="grid gap-3">
                   {approvals.data.map((approval) => (
                     <article
                       key={approval.id}
-                      className="rounded-[22px] border border-slate-200 bg-white/85 p-4"
+                      className="rounded-xl bg-white p-3.5 shadow-card"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <strong className="text-slate-950">{approval.title}</strong>
@@ -1686,7 +1687,7 @@ export function ChannelShell({ channelId, initialTab = "chat" }: ChannelShellPro
             files.data.map((file) => (
               <article
                 key={file.id}
-                className="rounded-[28px] border border-slate-200 bg-white/85 p-5 shadow-sm"
+                className="rounded-xl bg-white p-4 shadow-card"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <strong className="text-slate-950">{file.title}</strong>
@@ -1753,7 +1754,7 @@ function renderFileSurfaceActions(file: FileSurfaceEntry) {
       {openHref ? (
         <a
           aria-label={`打开 ${file.title}${isMarkdownFile(file) ? " Markdown" : isHtmlFile(file) ? " 网页" : " 预览"}`}
-          className="inline-flex rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 no-underline transition hover:bg-sky-100"
+          className="inline-flex rounded-full bg-[#007aff]/10 px-3 py-1.5 text-xs font-semibold text-[#007aff] no-underline transition hover:bg-[#007aff]/15"
           href={openHref}
           rel="noreferrer"
           target="_blank"
@@ -1764,7 +1765,7 @@ function renderFileSurfaceActions(file: FileSurfaceEntry) {
       {downloadHref ? (
         <a
           aria-label={`下载 ${file.title}`}
-          className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-black/[0.09]"
           href={downloadHref}
           rel="noreferrer"
           target="_blank"
@@ -1898,11 +1899,11 @@ function ChannelArtifactPreviewPanel({
   return (
     <aside
       aria-label="网页预览"
-      className="grid max-h-[calc(100vh-3rem)] min-h-[32rem] gap-3 self-start overflow-hidden rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-sm xl:sticky xl:top-6"
+      className="grid max-h-[calc(100vh-3rem)] min-h-[32rem] gap-3 self-start overflow-hidden rounded-xl bg-white p-4 shadow-card xl:sticky xl:top-6"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="m-0 text-lg font-semibold text-slate-950">网页预览</h2>
+          <h2 className="m-0 text-[15px] font-semibold text-foreground">网页预览</h2>
           <p className="mb-0 mt-1 text-xs leading-5 text-slate-500">
             {selectedFile
               ? selectedFile.title
@@ -1912,7 +1913,7 @@ function ChannelArtifactPreviewPanel({
           </p>
         </div>
         <button
-          className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="shrink-0 rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-black/[0.09]"
           onClick={onRefresh}
           type="button"
         >
@@ -1930,7 +1931,7 @@ function ChannelArtifactPreviewPanel({
         <div className="flex flex-wrap gap-2">
           {selectedOpenHref ? (
             <a
-              className="inline-flex rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 no-underline transition hover:bg-sky-100"
+              className="inline-flex rounded-full bg-[#007aff]/10 px-3 py-1.5 text-xs font-semibold text-[#007aff] no-underline transition hover:bg-[#007aff]/15"
               href={selectedOpenHref}
               rel="noreferrer"
               target="_blank"
@@ -1940,7 +1941,7 @@ function ChannelArtifactPreviewPanel({
           ) : null}
           {selectedDownloadHref ? (
             <a
-              className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 no-underline transition hover:bg-slate-50"
+              className="inline-flex rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground no-underline transition hover:bg-black/[0.09]"
               href={selectedDownloadHref}
               rel="noreferrer"
               target="_blank"
@@ -1952,7 +1953,7 @@ function ChannelArtifactPreviewPanel({
       ) : null}
 
       {state.status === "loading" || ((isLoading || isHydrating) && !selectedFile) ? (
-        <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+        <p className="m-0 rounded-lg bg-black/[0.03] p-3 text-sm text-muted-foreground">
           {isHydrating && !selectedFile ? "正在同步网页预览..." : "正在加载预览..."}
         </p>
       ) : null}
@@ -1965,7 +1966,7 @@ function ChannelArtifactPreviewPanel({
 
       {state.status === "ready" && selectedFile && isHtmlFile(selectedFile) ? (
         <iframe
-          className="min-h-[26rem] w-full rounded-lg border border-slate-200 bg-white"
+          className="min-h-[26rem] w-full rounded-lg bg-white shadow-card"
           data-channel-webpage-preview
           sandbox="allow-scripts"
           srcDoc={state.content}
@@ -1974,7 +1975,7 @@ function ChannelArtifactPreviewPanel({
       ) : null}
 
       {state.status === "ready" && selectedFile && isMarkdownFile(selectedFile) ? (
-        <div className="max-h-[34rem] overflow-auto rounded-lg border border-slate-200 bg-white p-3 text-sm">
+        <div className="max-h-[34rem] overflow-auto rounded-lg bg-white p-3 text-sm shadow-card">
           <MarkdownContent content={state.content} />
           {state.truncated ? (
             <p className="mb-0 mt-3 text-xs text-slate-500">预览内容已截断，请打开完整文件查看。</p>
@@ -1983,7 +1984,7 @@ function ChannelArtifactPreviewPanel({
       ) : null}
 
       {!selectedFile && !isLoading && !isHydrating ? (
-        <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+        <div className="grid gap-2 rounded-lg bg-black/[0.03] p-3 text-sm text-muted-foreground">
           <p className="m-0 font-semibold text-slate-800">还没有可预览产物</p>
           {progressSummary ? <p className="m-0">{progressSummary}</p> : null}
           {activeAgentName ? (
@@ -2109,16 +2110,16 @@ function ThreadDrawer({
   const threadMessages = [thread.parent, ...thread.replies];
 
   return (
-    <section className="grid gap-3 rounded-[28px] border border-slate-200 bg-white/95 p-4 shadow-sm">
+    <section className="grid gap-3 rounded-xl bg-white p-4 shadow-card">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="m-0 text-base font-semibold text-slate-950">线程回复</h2>
+          <h2 className="m-0 text-[15px] font-semibold text-foreground">线程回复</h2>
           <p className="mb-0 mt-1 text-sm text-slate-500">
             围绕一条消息继续讨论，主频道只显示回复数量。
           </p>
         </div>
         <button
-          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-black/[0.09]"
           onClick={onClose}
           type="button"
         >
@@ -2233,11 +2234,11 @@ function ChannelMembersPanel({
   return (
     <aside
       aria-label="频道成员"
-      className="grid gap-4 self-start rounded-[28px] border border-slate-200 bg-white/85 p-5 shadow-sm xl:sticky xl:top-6"
+      className="grid gap-4 self-start rounded-xl bg-white p-4 shadow-card xl:sticky xl:top-6"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="m-0 text-lg font-semibold text-slate-950">成员与权限</h2>
+          <h2 className="m-0 text-[15px] font-semibold text-foreground">成员与权限</h2>
           <p className="mb-0 mt-2 text-sm text-slate-500">
             {(isHydrating || isLoading) && !roster
               ? "正在同步频道成员..."
@@ -2245,7 +2246,7 @@ function ChannelMembersPanel({
           </p>
         </div>
         <Link
-          className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 no-underline transition hover:bg-slate-50"
+          className="shrink-0 rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground no-underline transition hover:bg-black/[0.09]"
           href={createTeammateHref}
         >
           新建 AI 同事
@@ -2255,13 +2256,13 @@ function ChannelMembersPanel({
         <SurfaceLoading body="正在同步成员列表、权限和频道通知状态。" title="正在加载成员" />
       ) : (
         <>
-          <form className="grid gap-3 rounded-[22px] border border-slate-200 bg-slate-50/70 p-3" onSubmit={handleInviteSubmit}>
+          <form className="grid gap-3 rounded-xl bg-black/[0.03] p-3" onSubmit={handleInviteSubmit}>
             <div className="text-sm font-semibold text-slate-950">邀请同事</div>
             {inviteCandidates.length > 0 ? (
               <label className="grid gap-1 text-xs font-semibold text-slate-500">
                 工作区同事
                 <select
-                  className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="rounded-lg bg-white px-3 py-2 text-sm text-foreground shadow-card"
                   onChange={(event) => {
                     setSelectedUserId(event.target.value);
                   }}
@@ -2279,7 +2280,7 @@ function ChannelMembersPanel({
             <label className="grid gap-1 text-xs font-semibold text-slate-500">
               邮箱邀请
               <input
-                className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                className="rounded-lg bg-white px-3 py-2 text-sm text-foreground shadow-card"
                 onChange={(event) => {
                   setInviteEmail(event.target.value);
                 }}
@@ -2290,7 +2291,7 @@ function ChannelMembersPanel({
             </label>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600"
+                className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-foreground shadow-card"
                 onChange={(event) => {
                   setInvitePermission(event.target.value === "read" ? "read" : "comment");
                 }}
@@ -2311,7 +2312,7 @@ function ChannelMembersPanel({
               <p className="m-0 text-xs font-semibold leading-6 text-red-700">{actionError}</p>
             ) : null}
           </form>
-          <div className="grid gap-3 rounded-[22px] border border-slate-200 bg-slate-50/70 p-3">
+          <div className="grid gap-3 rounded-xl bg-black/[0.03] p-3">
             <div>
               <div className="text-sm font-semibold text-slate-950">我的频道状态</div>
               <p className="mb-0 mt-1 text-xs leading-6 text-slate-500">
@@ -2323,7 +2324,7 @@ function ChannelMembersPanel({
             <label className="grid gap-1 text-xs font-semibold text-slate-500">
               通知
               <select
-                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600"
+                className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-foreground shadow-card"
                 disabled={busyMemberId === "notification" || !readState}
                 onChange={(event) => {
                   void onUpdateNotificationPreference(
@@ -2352,7 +2353,7 @@ function ChannelMembersPanel({
                 />
               ))
             ) : (
-              <p className="m-0 rounded-[22px] border border-dashed border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+              <p className="m-0 rounded-xl bg-black/[0.03] p-4 text-sm leading-7 text-slate-500">
                 还没有邀请其他同事。
               </p>
             )}
@@ -2368,7 +2369,7 @@ function ChannelMembersPanel({
                 />
               ))
             ) : (
-              <p className="m-0 rounded-[22px] border border-dashed border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+              <p className="m-0 rounded-xl bg-black/[0.03] p-4 text-sm leading-7 text-slate-500">
                 还没有 AI 同事参与这个频道。
               </p>
             )}
@@ -2397,19 +2398,17 @@ function MemberCard({
   onUpdatePermission?: (permission: "comment" | "read") => void;
 }) {
   return (
-    <article className="grid gap-3 rounded-[22px] border border-slate-200 bg-white p-3">
+    <article className="grid gap-3 rounded-xl bg-black/[0.03] p-3">
       <div className="flex items-start gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-semibold text-white">
-        {initial ?? name.slice(0, 1)}
-      </div>
+      <Avatar name={initial ?? name} size="sm" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-slate-950">{name}</div>
-        <div className="text-xs text-slate-500">{description}</div>
+        <div className="truncate text-sm font-semibold text-foreground">{name}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
       </div>
         {onRemove ? (
           <button
             aria-label={`移除${name}`}
-            className="rounded-full border border-red-100 bg-red-50 px-2 py-1 text-xs font-bold text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-full px-2 py-1 text-xs font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={busy}
             onClick={onRemove}
             type="button"
@@ -2420,7 +2419,7 @@ function MemberCard({
       </div>
       {member.kind === "human" && member.role !== "owner" && member.status === "active" && onUpdatePermission ? (
         <select
-          className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600"
+          className="rounded-lg bg-black/[0.05] px-3 py-2 text-xs font-medium text-foreground"
           disabled={busy}
           onChange={(event) => {
             onUpdatePermission(event.target.value === "read" ? "read" : "comment");
@@ -2511,15 +2510,15 @@ function RecoveryActions({
   onRefresh: () => void;
 }) {
   return (
-    <section className="grid gap-3 rounded-[28px] border border-red-100 bg-red-50/70 p-5">
+    <section className="grid gap-3 rounded-xl bg-red-50 p-4">
       <div>
-        <h2 className="m-0 text-lg font-semibold text-red-950">需要恢复的执行</h2>
+        <h2 className="m-0 text-[15px] font-semibold text-red-900">需要恢复的执行</h2>
         <p className="mb-0 mt-2 text-sm leading-7 text-red-800">
           这里列出失败活动，并提供可操作的恢复入口。
         </p>
       </div>
       {failedActivity.map((round) => (
-        <article key={round.id} className="grid gap-3 rounded-[22px] border border-red-100 bg-white/90 p-4">
+        <article key={round.id} className="grid gap-3 rounded-xl bg-white p-3.5 shadow-card">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <strong className="text-slate-950">{round.summary}</strong>
             <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
@@ -2548,7 +2547,7 @@ function RecoveryActions({
 
 function SurfaceEmpty({ body, title }: { body: string; title: string }) {
   return (
-    <article className="rounded-[28px] border border-dashed border-slate-200 bg-white/70 p-6 text-sm leading-7 text-slate-600">
+    <article className="rounded-xl bg-black/[0.03] p-6 text-sm leading-7 text-slate-600">
       <strong className="text-slate-950">{title}</strong>
       <p className="mb-0 mt-2">{body}</p>
     </article>
@@ -2557,7 +2556,7 @@ function SurfaceEmpty({ body, title }: { body: string; title: string }) {
 
 function SurfaceLoading({ body, title }: { body: string; title: string }) {
   return (
-    <article className="grid gap-3 rounded-[22px] border border-slate-200 bg-slate-50/80 p-4 text-sm leading-7 text-slate-600">
+    <article className="grid gap-3 rounded-xl bg-black/[0.03] p-4 text-sm leading-7 text-slate-600">
       <strong className="text-slate-950">{title}</strong>
       <p className="m-0">{body}</p>
       <div className="grid gap-2" aria-hidden="true">
@@ -2616,9 +2615,9 @@ function shouldClearLiveStatus(messages: Message[]): boolean {
 }
 
 const recoveryActionClassName =
-  "rounded-full border border-red-100 bg-white px-3 py-1 text-red-700 transition hover:bg-red-50";
+  "rounded-full bg-white px-3 py-1 text-red-600 shadow-card transition hover:bg-red-50";
 const recoveryLinkClassName =
-  "rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700 no-underline transition hover:bg-slate-50";
+  "rounded-full bg-white px-3 py-1 text-foreground no-underline shadow-card transition hover:bg-black/[0.02]";
 
 function buildChannelAvailabilityMessage(
   loadError: string | null,

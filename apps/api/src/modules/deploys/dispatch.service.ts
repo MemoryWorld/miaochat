@@ -59,12 +59,14 @@ export class DeployDispatchService implements OnModuleDestroy {
 
   async dispatch(input: unknown, ownerUserId: string): Promise<DeployCommandResult> {
     const parsed = deployCommandInputSchema.parse(input);
+    const target = await this.loadTarget(parsed.targetName, parsed.workspaceId, ownerUserId);
     const artifact = await this.loadLatestConversationArtifact(
       parsed.conversationId,
       parsed.workspaceId,
-      ownerUserId
+      ownerUserId,
+      // 站点/容器部署的对象是网页，优先取 HTML 产物，避免把验收报告等最新非网页产物当站点发布
+      target.kind === "static-site" || target.kind === "container"
     );
-    const target = await this.loadTarget(parsed.targetName, parsed.workspaceId, ownerUserId);
     const client = await this.getTemporalClient();
     const deployment = deploymentSchema.parse(
       await client.workflow.execute("deployArtifactWorkflow", {
@@ -93,7 +95,8 @@ export class DeployDispatchService implements OnModuleDestroy {
   private async loadLatestConversationArtifact(
     conversationId: string,
     workspaceId: string,
-    ownerUserId: string
+    ownerUserId: string,
+    preferHtml = false
   ): Promise<Artifact> {
     const result = await this.database.query<ArtifactRow>(
       `
@@ -114,10 +117,15 @@ export class DeployDispatchService implements OnModuleDestroy {
         WHERE messages.conversation_id = $1
           AND messages.workspace_id = $2
           AND messages.owner_user_id = $3
-        ORDER BY messages.created_at DESC, artifacts.created_at DESC, artifacts.id DESC
+        ORDER BY
+          CASE
+            WHEN $4::boolean AND artifacts.mime_type ILIKE '%html%' THEN 0
+            ELSE 1
+          END,
+          messages.created_at DESC, artifacts.created_at DESC, artifacts.id DESC
         LIMIT 1
       `,
-      [conversationId, workspaceId, ownerUserId]
+      [conversationId, workspaceId, ownerUserId, preferHtml]
     );
 
     if (!result.rows[0]) {
