@@ -231,6 +231,44 @@ export class StorageService {
     };
   }
 
+  async writeRuntimeBinaryArtifact(input: {
+    body: Buffer;
+    contentType: string;
+    fileName: string;
+    messageId: string;
+    runtimeArtifactType: string;
+    workspaceId: string;
+  }): Promise<RuntimeArtifactWriteResult> {
+    const artifactId = randomUUID();
+    const storageKey = buildStorageKey({
+      artifactId,
+      fileName: input.fileName,
+      messageId: input.messageId,
+      workspaceId: input.workspaceId
+    });
+    const command = new PutObjectCommand({
+      Body: input.body,
+      Bucket: this.bucket,
+      ContentType: input.contentType,
+      Key: storageKey,
+      Metadata: {
+        artifactId,
+        artifactKind: "attachment",
+        messageId: input.messageId,
+        runtimeArtifactType: input.runtimeArtifactType,
+        workspaceId: input.workspaceId
+      }
+    });
+
+    await this.s3.send(command);
+
+    return {
+      artifactId,
+      previewUrl: buildObjectUrl(this.endpoint, this.bucket, storageKey),
+      storageKey
+    };
+  }
+
   async readTextObject(input: {
     maxBytes: number;
     storageKey: string;

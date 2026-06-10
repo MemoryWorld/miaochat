@@ -73,6 +73,38 @@ describe("ArtifactCard", () => {
     );
   });
 
+  it("renders PPTX artifacts as download cards with a PPT badge", () => {
+    render(
+      <ArtifactCard
+        artifact={{
+          createdAt: new Date("2026-06-10T00:00:00.000Z"),
+          id: "artifact_pptx",
+          kind: "attachment",
+          messageId: "msg_pptx",
+          mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          previewUrl: null,
+          storageKey: "artifacts/default-workspace/msg_pptx/intro.pptx",
+          title: "产品介绍",
+          workspaceId: "default-workspace"
+        }}
+        conversationId="conv_pptx"
+      />
+    );
+
+    expect(screen.getByText("PPT 文稿")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "下载 产品介绍 PPT 文稿" })).toHaveAttribute(
+      "href",
+      "/api/artifacts/artifact_pptx/file?workspaceId=default-workspace&disposition=attachment"
+    );
+    expect(screen.getByRole("link", { name: "下载 产品介绍" })).toHaveAttribute(
+      "href",
+      "/api/artifacts/artifact_pptx/file?workspaceId=default-workspace&disposition=attachment"
+    );
+    expect(
+      screen.queryByRole("button", { name: "Edit 产品介绍 through chat" })
+    ).not.toBeInTheDocument();
+  });
+
   it("loads artifact revisions, renders revision diffs, and restores a revision", async () => {
     fetchMock
       .mockResolvedValueOnce(

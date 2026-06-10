@@ -1,12 +1,16 @@
 import {
   artifactDiffCreateToolInputSchema,
   artifactMarkdownCreateToolInputSchema,
+  artifactPptxCreateToolInputSchema,
   artifactSlidesCreateToolInputSchema,
   artifactWebpageCreateToolInputSchema,
   runtimeDiffArtifactDraftSchema,
   runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactDraftSchema,
   runtimeMarkdownArtifactToolName,
+  runtimePptxArtifactDraftSchema,
+  runtimePptxArtifactMimeType,
+  runtimePptxArtifactToolName,
   runtimeSlidesArtifactDraftSchema,
   runtimeSlidesArtifactFileNameSuffix,
   runtimeSlidesArtifactToolName,
@@ -21,6 +25,7 @@ const maxDraftsPerResult = 3;
 export {
   runtimeDiffArtifactToolName,
   runtimeMarkdownArtifactToolName,
+  runtimePptxArtifactToolName,
   runtimeSlidesArtifactToolName,
   runtimeWebpageArtifactToolName
 };
@@ -111,6 +116,24 @@ function buildArtifactDraftFromToolCall(
     return draft.success ? draft.data : null;
   }
 
+  if (toolName === runtimePptxArtifactToolName) {
+    const input = artifactPptxCreateToolInputSchema.safeParse(rawInput);
+
+    if (!input.success) {
+      return null;
+    }
+
+    const draft = runtimePptxArtifactDraftSchema.safeParse({
+      fileName: normalizeArtifactFileName(input.data.fileName ?? input.data.title, ".pptx"),
+      mimeType: runtimePptxArtifactMimeType,
+      slides: input.data.slides,
+      title: normalizeTitle(input.data.title),
+      type: "pptx"
+    });
+
+    return draft.success ? draft.data : null;
+  }
+
   if (toolName === runtimeDiffArtifactToolName) {
     const input = artifactDiffCreateToolInputSchema.safeParse(rawInput);
 
@@ -146,7 +169,7 @@ function normalizeSlidesFileName(value: string): string {
 
 function normalizeArtifactFileName(
   value: string,
-  extension: ".diff" | ".html" | ".md"
+  extension: ".diff" | ".html" | ".md" | ".pptx"
 ): string {
   const withoutPath = value
     .trim()
@@ -169,7 +192,13 @@ function normalizeArtifactFileName(
     .replace(/[.-]+$/, "");
   const baseName = safeName.length > 0 ? safeName : "artifact";
   const extensionPattern =
-    extension === ".md" ? /\.md$/i : extension === ".html" ? /\.html$/i : /\.diff$/i;
+    extension === ".md"
+      ? /\.md$/i
+      : extension === ".html"
+        ? /\.html$/i
+        : extension === ".pptx"
+          ? /\.pptx$/i
+          : /\.diff$/i;
   const withExtension = extensionPattern.test(baseName) ? baseName : `${baseName}${extension}`;
 
   if (withExtension.length <= 160) {

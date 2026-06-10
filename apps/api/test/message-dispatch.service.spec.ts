@@ -57,7 +57,7 @@ describe("MessageDispatchService", () => {
       fileName: "weekly-course.md",
       mimeType: "text/markdown"
     };
-    const executeWorkflow = vi.fn(async (..._args: unknown[]) => ({
+    const executeWorkflow = vi.fn(async () => ({
       finalContent: "已读取课程 Markdown。",
       runtimeMetadata: {},
       streamEvents: []
