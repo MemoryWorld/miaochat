@@ -26,7 +26,18 @@ import {
   type VisualWorkflow
 } from "@agenthub/contracts";
 
+import { AppShell } from "../../components/app-shell";
+import { AvatarGroup } from "../../components/ui/avatar";
 import { Button } from "../../components/ui/button";
+import {
+  ArchiveIcon,
+  PinIcon,
+  SearchIcon,
+  SidebarIcon,
+  SparkleIcon,
+  TrashIcon
+} from "../../components/ui/icons";
+import { cn } from "../../lib/cn";
 import { apiBaseUrl } from "../../lib/api-base-url";
 import { readApiErrorMessage } from "../../lib/api-errors";
 import { ArtifactCard } from "../artifacts/artifact-card";
@@ -173,6 +184,7 @@ export function ChatExperience() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [composerDraft, setComposerDraft] = useState<string | null>(null);
   const [isCodingLauncherOpen, setIsCodingLauncherOpen] = useState(false);
+  const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(true);
   const [requestedConversationId, setRequestedConversationId] = useState<
     string | null | undefined
   >(undefined);
@@ -1533,105 +1545,71 @@ export function ChatExperience() {
     (stream.connectionState === "connecting" || stream.connectionState === "error");
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_48%,_#f8fafc_100%)] text-slate-950">
-      <header className="sticky top-0 z-20 border-b border-white/70 bg-white/80 px-4 py-3 shadow-[0_1px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link
-              className="rounded-full bg-slate-950 px-3 py-1.5 text-sm font-semibold text-white no-underline"
-              href="/"
-            >
-              Miaochat
-            </Link>
-            <nav aria-label="编码工作台导航" className="flex items-center gap-2 text-sm">
-              <Link className="rounded-full bg-slate-100 px-3 py-1.5 font-semibold text-slate-900 no-underline" href="/">
-                会话
-              </Link>
-              <Link className="rounded-full px-3 py-1.5 font-semibold text-slate-600 no-underline transition hover:bg-white hover:text-slate-950" href="/workflows">
-                Workflow
-              </Link>
-              <Link className="rounded-full px-3 py-1.5 font-semibold text-slate-600 no-underline transition hover:bg-white hover:text-slate-950" href="/settings?section=model-connections">
-                模型连接
-              </Link>
-            </nav>
-          </div>
-          <div className="flex items-center gap-3">
-            <WorkspaceSwitcher
-              activeWorkspaceId={workspaceId}
-              isLoading={isLoadingWorkspaces}
-              onSelect={selectWorkspace}
-              workspaces={workspaces}
-            />
-            <Link className="text-sm font-semibold text-slate-600 no-underline transition hover:text-slate-950" href="/settings">
-              设置
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main className={`mx-auto grid min-h-[calc(100vh-4rem)] max-w-[1800px] gap-3 p-3 ${
-        shouldShowWorkspaceRecoveryOnly
-          ? "xl:grid-cols-[330px_minmax(0,1fr)]"
-          : "xl:grid-cols-[330px_minmax(0,1fr)_400px]"
-      }`}>
-        <aside className="grid min-h-[72vh] content-start gap-4 rounded-[24px] border border-white/80 bg-white/82 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:sticky xl:top-20 xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto">
+    <AppShell
+      mainLayout="flush"
+      sidebar={
+        <div className="flex min-h-full flex-col gap-3">
           {requiresLogin ? (
-            <article
-              className="grid gap-3 rounded-[12px] border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-700"
-              role="alert"
-            >
-              <div>
-                <h1 className="m-0 text-lg font-semibold text-slate-950">会话</h1>
-                <p className="m-0 mt-1 text-sm leading-6 text-slate-600">
-                  {workspaceError ?? "请先登录后再继续操作。"}
-                </p>
-              </div>
+            <div className="grid gap-3 pt-2" role="alert">
+              <h1 className="m-0 text-[22px] font-bold tracking-tight">会话</h1>
+              <p className="m-0 text-sm leading-6 text-muted-foreground">
+                {workspaceError ?? "请先登录后再继续操作。"}
+              </p>
               <Link
-                className="inline-flex w-fit rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white no-underline transition hover:bg-slate-800"
+                className="inline-flex w-fit rounded-full bg-[#007aff] px-3.5 py-2 text-xs font-semibold text-white no-underline transition hover:bg-[#0070eb]"
                 href="/settings?section=profile"
               >
                 前往设置登录
               </Link>
-            </article>
+            </div>
           ) : isInitialWorkspaceLoading ? (
             <>
-              <div>
-                <h1 className="m-0 text-lg font-semibold text-slate-950">会话</h1>
-                <p className="m-0 mt-1 text-xs font-medium text-slate-500">正在恢复工作区</p>
+              <div className="pt-2">
+                <h1 className="m-0 text-[22px] font-bold tracking-tight">会话</h1>
+                <p className="m-0 mt-1 text-xs font-medium text-muted-foreground">
+                  正在恢复工作区
+                </p>
               </div>
               <ConversationListSkeleton />
             </>
           ) : (
             <>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h1 className="m-0 text-lg font-semibold text-slate-950">会话</h1>
-                  <p className="m-0 mt-1 text-xs font-medium text-slate-500">{conversationCountLabel}</p>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex items-baseline gap-2">
+                  <h1 className="m-0 text-[22px] font-bold tracking-tight">会话</h1>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {conversationCountLabel}
+                  </span>
                 </div>
-                {!hasReadyModelConnection ? (
-                  <Link
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 no-underline transition hover:bg-slate-50"
-                    href="/settings?section=model-connections"
-                  >
-                    添加模型
-                  </Link>
-                ) : null}
+                <div className="flex items-center gap-1">
+                  {!hasReadyModelConnection ? (
+                    <Link
+                      className="rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground no-underline transition hover:bg-black/[0.09]"
+                      href="/settings?section=model-connections"
+                    >
+                      添加模型
+                    </Link>
+                  ) : null}
+                  <NewConversationDialog
+                    agentOptions={conversationAgentOptions}
+                    busy={isCreating}
+                    isLoading={isLoadingCustomAgents}
+                    isOpen={isNewConversationOpen}
+                    onCreate={handleCreateCustomConversation}
+                    onOpen={handleCreateConversation}
+                    onToggleOpen={setIsNewConversationOpen}
+                  />
+                </div>
               </div>
 
-              <NewConversationDialog
-                agentOptions={conversationAgentOptions}
-                busy={isCreating}
-                isLoading={isLoadingCustomAgents}
-                isOpen={isNewConversationOpen}
-                onCreate={handleCreateCustomConversation}
-                onOpen={handleCreateConversation}
-                onToggleOpen={setIsNewConversationOpen}
-              />
-
-              <label className="grid gap-2 text-sm font-semibold text-slate-700" htmlFor="conversation-search">
-                搜索
+              <label className="relative block" htmlFor="conversation-search">
+                <span className="sr-only">搜索</span>
+                <SearchIcon
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/70"
+                  size={15}
+                />
                 <input
-                  className="h-10 rounded-full border border-slate-200 bg-slate-50 px-4 text-sm font-normal outline-none transition focus:border-slate-400 focus:bg-white"
+                  className="h-9 w-full rounded-[0.65rem] border-0 bg-black/[0.05] pl-8 pr-3 text-[13px] text-foreground outline-none transition placeholder:text-muted-foreground/60 focus:bg-black/[0.07] focus-visible:ring-2 focus-visible:ring-ring/40"
                   id="conversation-search"
                   onChange={(event) => setConversationSearch(event.target.value)}
                   placeholder="搜索会话、Agent 或产物线索"
@@ -1640,33 +1618,43 @@ export function ChatExperience() {
                 />
               </label>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
+              <div className="grid grid-cols-2 gap-0.5 rounded-[0.65rem] bg-black/[0.05] p-0.5">
+                <button
                   aria-label="查看最近会话"
                   aria-pressed={!includeArchivedConversations}
+                  className={cn(
+                    "rounded-[0.55rem] px-3 py-1.5 text-[13px] font-medium transition",
+                    !includeArchivedConversations
+                      ? "bg-white text-foreground shadow-card"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                   onClick={() => setIncludeArchivedConversations(false)}
-                  size="sm"
-                  variant={!includeArchivedConversations ? "default" : "outline"}
+                  type="button"
                 >
                   最近
-                </Button>
-                <Button
+                </button>
+                <button
                   aria-label="查看归档会话"
                   aria-pressed={includeArchivedConversations}
+                  className={cn(
+                    "rounded-[0.55rem] px-3 py-1.5 text-[13px] font-medium transition",
+                    includeArchivedConversations
+                      ? "bg-white text-foreground shadow-card"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                   onClick={() => setIncludeArchivedConversations(true)}
-                  size="sm"
-                  variant={includeArchivedConversations ? "default" : "outline"}
+                  type="button"
                 >
                   归档
-                </Button>
+                </button>
               </div>
               {includeArchivedConversations ? (
-                <p className="m-0 rounded-[10px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-700">
+                <p className="m-0 rounded-[0.65rem] bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-700">
                   {archivedConversationRetentionNotice}
                 </p>
               ) : null}
 
-              <div className="grid gap-2" data-testid="conversation-list">
+              <div className="-mx-1.5 grid flex-1 content-start gap-px" data-testid="conversation-list">
                 {isLoadingConversations && conversationList.length === 0 ? (
                   <ConversationListSkeleton />
                 ) : visibleConversations.length > 0 ? (
@@ -1696,7 +1684,7 @@ export function ChatExperience() {
                     />
                   ))
                 ) : (
-                  <p className="m-0 rounded-[8px] border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
+                  <p className="m-0 px-3 py-6 text-center text-[13px] leading-6 text-muted-foreground">
                     {hasReadyModelConnection
                       ? "还没有会话。新建单聊或群聊后，就可以让 Agent 帮你制作网页或创建 Workflow。"
                       : "当前工作区还没有可用模型连接。先完成模型连接，再开始对话。"}
@@ -1716,85 +1704,124 @@ export function ChatExperience() {
               ) : null}
             </>
           )}
-        </aside>
-
-        <section className="grid min-h-[72vh] grid-rows-[auto_minmax(0,1fr)_auto] rounded-[24px] border border-white/80 bg-white/90 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-	          <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 px-5 py-4">
-	            <div className="min-w-0">
-	              <h2 className="m-0 truncate text-xl font-semibold text-slate-950">
-		                {requiresLogin
-		                  ? "登录后继续"
-		                  : isInitialWorkspaceLoading
-		                    ? "正在恢复会话"
-		                  : selectedConversation
-		                    ? selectedConversation.title
-		                    : "选择一个会话"}
-	              </h2>
-	              <p className="m-0 mt-1 truncate text-sm text-slate-500">
-		                {requiresLogin
-			                  ? "登录后即可恢复会话、网页预览和可视化 Workflow。"
-		                  : isInitialWorkspaceLoading
-			                    ? "正在同步会话、网页预览和可视化 Workflow。"
-		                  : selectedConversation
-		                  ? selectedParticipantLabel
-		                  : "单聊 Agent，或让多个 Agent 在群聊中协作。"}
-	              </p>
-	            </div>
-            {shouldShowStreamStatus ? (
-              <span
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                  stream.connectionState === "error"
-                    ? "bg-red-50 text-red-700"
-                    : "bg-amber-50 text-amber-700"
-                }`}
-                role="status"
-              >
-                {formatStreamState(stream.connectionState)}
-              </span>
-            ) : null}
+        </div>
+      }
+      sidebarClassName="w-[20.5rem]"
+      sidebarMode="column"
+      workspaceSlot={
+        <WorkspaceSwitcher
+          activeWorkspaceId={workspaceId}
+          isLoading={isLoadingWorkspaces}
+          onSelect={selectWorkspace}
+          workspaces={workspaces}
+        />
+      }
+    >
+      <div className="flex h-full min-h-0">
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="hairline-b flex items-center justify-between gap-3 bg-white/70 px-5 py-2.5 backdrop-blur-xl">
+            <div className="flex min-w-0 items-center gap-3">
+              {selectedConversation && !shouldShowWorkspaceRecoveryOnly ? (
+                <AvatarGroup
+                  names={selectedConversation.participants.map((entry) => entry.agentName)}
+                  size="md"
+                />
+              ) : null}
+              <div className="min-w-0">
+                <h2 className="m-0 truncate text-[15px] font-semibold">
+                  {requiresLogin
+                    ? "登录后继续"
+                    : isInitialWorkspaceLoading
+                      ? "正在恢复会话"
+                      : selectedConversation
+                        ? selectedConversation.title
+                        : "选择一个会话"}
+                </h2>
+                <p className="m-0 truncate text-xs text-muted-foreground">
+                  {requiresLogin
+                    ? "登录后即可恢复会话、网页预览和可视化 Workflow。"
+                    : isInitialWorkspaceLoading
+                      ? "正在同步会话、网页预览和可视化 Workflow。"
+                      : selectedConversation
+                        ? selectedParticipantLabel
+                        : "单聊 Agent，或让多个 Agent 在群聊中协作。"}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {shouldShowStreamStatus ? (
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-[11px] font-medium",
+                    stream.connectionState === "error"
+                      ? "bg-red-50 text-red-600"
+                      : "bg-amber-50 text-amber-600"
+                  )}
+                  role="status"
+                >
+                  {formatStreamState(stream.connectionState)}
+                </span>
+              ) : null}
+              {!shouldShowWorkspaceRecoveryOnly ? (
+                <button
+                  aria-label={isDetailPanelOpen ? "收起详情面板" : "展开详情面板"}
+                  aria-pressed={isDetailPanelOpen}
+                  className={cn(
+                    "hidden h-8 w-8 items-center justify-center rounded-lg transition xl:flex",
+                    isDetailPanelOpen
+                      ? "bg-black/[0.06] text-foreground"
+                      : "text-muted-foreground hover:bg-black/[0.05] hover:text-foreground"
+                  )}
+                  onClick={() => setIsDetailPanelOpen((current) => !current)}
+                  type="button"
+                >
+                  <SidebarIcon size={17} />
+                </button>
+              ) : null}
+            </div>
           </header>
 
-	          <div className="min-h-0 overflow-y-auto px-5 py-4">
-	            {errorMessage ? (
-	              <p className="mt-0 rounded-[8px] border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
-	                {errorMessage}
-	              </p>
-	            ) : null}
-		            {requiresLogin ? (
-		              <section className="mx-auto grid max-w-xl gap-4 py-8">
-		                <AuthPanel onAuthenticated={() => void refreshWorkspaces()} />
-		              </section>
-		            ) : isInitialWorkspaceLoading ? (
-		              <section className="mx-auto grid max-w-xl gap-4 py-8">
-		                <SoftLoadingState label="正在恢复工作区" />
-		              </section>
-			            ) : selectedConversationId ? (
-			              <div className="grid gap-4">
-			                {codingWorkflow ? (
-			                  <CodingWorkflowPanel
-			                    busyDecision={isDecisioningWorkflow}
-			                    messages={messages}
-			                    onDecision={handleWorkflowDecision}
-			                    workflow={codingWorkflow}
-			                  />
-			                ) : null}
-			                <ChatThread
-			                  artifactsByMessageId={artifactsByMessageId}
-			                  artifactStatusesByMessageId={artifactStatusesByMessageId}
-			                  connectionState={stream.connectionState}
-			                  deployments={deployments}
-			                  isLoading={isLoadingWorkspaces || isLoadingMessages}
-			                  isPinningMessageId={isPinningMessageId}
-			                  liveAssistantMessage={liveAssistantMessage}
-			                  liveStatus={liveOrchestratorStatus}
-			                  messages={messages}
-			                  onApplyDiffMessage={handleApplyDiffMessage}
-			                  onQuoteMessage={handleQuoteMessage}
-			                  onTogglePinMessage={handleTogglePinMessage}
-			                  resolveAuthorLabel={resolveMessageAuthorLabel}
-			                  suppressEmptyState={requiresLogin || !selectedConversationId}
-			                />
-			              </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+            {errorMessage ? (
+              <p className="mt-0 rounded-xl bg-red-50 px-3.5 py-2.5 text-sm font-medium text-red-700">
+                {errorMessage}
+              </p>
+            ) : null}
+            {requiresLogin ? (
+              <section className="mx-auto grid max-w-xl gap-4 py-8">
+                <AuthPanel onAuthenticated={() => void refreshWorkspaces()} />
+              </section>
+            ) : isInitialWorkspaceLoading ? (
+              <section className="mx-auto grid max-w-xl gap-4 py-8">
+                <SoftLoadingState label="正在恢复工作区" />
+              </section>
+            ) : selectedConversationId ? (
+              <div className="grid gap-4">
+                {codingWorkflow ? (
+                  <CodingWorkflowPanel
+                    busyDecision={isDecisioningWorkflow}
+                    messages={messages}
+                    onDecision={handleWorkflowDecision}
+                    workflow={codingWorkflow}
+                  />
+                ) : null}
+                <ChatThread
+                  artifactsByMessageId={artifactsByMessageId}
+                  artifactStatusesByMessageId={artifactStatusesByMessageId}
+                  connectionState={stream.connectionState}
+                  deployments={deployments}
+                  isLoading={isLoadingWorkspaces || isLoadingMessages}
+                  isPinningMessageId={isPinningMessageId}
+                  liveAssistantMessage={liveAssistantMessage}
+                  liveStatus={liveOrchestratorStatus}
+                  messages={messages}
+                  onApplyDiffMessage={handleApplyDiffMessage}
+                  onQuoteMessage={handleQuoteMessage}
+                  onTogglePinMessage={handleTogglePinMessage}
+                  resolveAuthorLabel={resolveMessageAuthorLabel}
+                  suppressEmptyState={requiresLogin || !selectedConversationId}
+                />
+              </div>
             ) : (
               <ConversationWelcome
                 canStart={hasReadyModelConnection}
@@ -1802,111 +1829,115 @@ export function ChatExperience() {
                 onDraft={(draft) => setComposerDraft(draft)}
               />
             )}
-	          </div>
+          </div>
 
-		          {!shouldShowWorkspaceRecoveryOnly ? (
-		            <div className="border-t border-slate-200/80 px-5 py-4">
-		              <ChatComposer
-	                disabled={!selectedConversationId || isSending}
-	                disabledReason={
-	                  isComposerWaitingForStream ? realtimeStreamConnectingMessage : null
-	                }
-	                draftContent={composerDraft}
-	                onDraftApplied={() => setComposerDraft(null)}
-	                onSend={handleSend}
-	                participants={selectedConversation?.participants ?? []}
-	                submitDisabled={isComposerWaitingForStream}
-	              />
-	            </div>
-	          ) : null}
-	        </section>
-
-		        {!shouldShowWorkspaceRecoveryOnly ? (
-		        <aside className="grid content-start gap-4 rounded-[24px] border border-white/80 bg-white/82 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:sticky xl:top-20 xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto">
-          <section className="grid gap-3 rounded-[16px] border border-slate-200 bg-slate-50/80 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="m-0 text-base font-semibold text-slate-950">网页预览</h2>
-                <p className="m-0 mt-1 text-sm leading-6 text-slate-500">
-                  HTML 产物生成后会自动显示在这里。
-                </p>
-              </div>
-              <Button
-                onClick={() =>
-                  setComposerDraft("请根据当前需求制作一个响应式单文件 HTML 网页，并生成可下载产物。")
+          {!shouldShowWorkspaceRecoveryOnly ? (
+            <div className="px-5 pb-4 pt-1">
+              <ChatComposer
+                disabled={!selectedConversationId || isSending}
+                disabledReason={
+                  isComposerWaitingForStream ? realtimeStreamConnectingMessage : null
                 }
-                size="sm"
-                variant="outline"
-              >
-                制作网页
-              </Button>
-            </div>
-            {selectedHtmlArtifact ? (
-              <HtmlArtifactPreview artifact={selectedHtmlArtifact} />
-            ) : isLoadingMessages || isLoadingWorkflow || (isLoadingConversations && conversationList.length === 0) ? (
-              <SoftLoadingState label="正在同步网页产物" />
-            ) : (
-              <p className="m-0 rounded-[8px] border border-dashed border-slate-200 bg-white/70 p-4 text-sm leading-7 text-slate-500">
-                还没有可预览的 HTML 产物。
-              </p>
-            )}
-          </section>
-
-          <section className="grid gap-3 rounded-[16px] border border-slate-200 bg-white/90 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-	                <h2 className="m-0 text-base font-semibold text-slate-950">可视化 Workflow</h2>
-	                <p className="m-0 mt-1 text-sm text-slate-500">创建可复用的节点流程。</p>
-              </div>
-              <Button
-                onClick={() =>
-                  setComposerDraft(
-                    "请创建一个可视化 workflow：输入主题，生成网页大纲，生成 HTML，进行 QA 检查，最后输出可下载网页。"
-                  )
-                }
-                size="sm"
-                variant="outline"
-              >
-                创建 Workflow
-              </Button>
-            </div>
-            <Button
-              aria-expanded={isCodingLauncherOpen}
-              onClick={() => setIsCodingLauncherOpen((current) => !current)}
-              variant="secondary"
-            >
-	              {isCodingLauncherOpen ? "收起网页制作团队" : "打开网页制作团队"}
-            </Button>
-            {isCodingLauncherOpen ? (
-              <WorkModeLauncher
-                canStartCoding={hasReadyModelConnection}
-                customAgents={codingEligibleCustomAgents}
-                isLaunching={isLaunchingCodingWorkflow}
-                isLoadingCustomAgents={isLoadingCustomAgents}
-                onLaunchCoding={handleLaunchCodingWorkflow}
+                draftContent={composerDraft}
+                onDraftApplied={() => setComposerDraft(null)}
+                onSend={handleSend}
+                participants={selectedConversation?.participants ?? []}
+                submitDisabled={isComposerWaitingForStream}
               />
-            ) : null}
-	            {visualWorkflows.length > 0 ? (
-              <VisualWorkflowPanel
-                busyWorkflowId={executingVisualWorkflowId}
-                onCancel={handleCancelVisualWorkflow}
-                onExecute={handleExecuteVisualWorkflow}
-                onRegenerate={handleRegenerateVisualWorkflow}
-                workflows={visualWorkflows}
-              />
-            ) : null}
-          </section>
+            </div>
+          ) : null}
+        </section>
 
-          <TimelineFiles entries={timelineFileEntries} isLoading={isLoadingMessages} />
-          <PinnedTimeline
-            messages={pinnedTimelineMessages}
-            resolveAuthorLabel={resolveMessageAuthorLabel}
-          />
-	        </aside>
-	        ) : null}
-	      </main>
-	    </div>
-	  );
+        {!shouldShowWorkspaceRecoveryOnly && isDetailPanelOpen ? (
+          <aside className="hidden w-[22.5rem] shrink-0 overflow-y-auto border-l border-separator bg-white/45 p-4 backdrop-blur-xl xl:block">
+            <div className="grid content-start gap-3">
+              <section className="grid gap-3 rounded-xl bg-white p-4 shadow-card">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="m-0 text-[15px] font-semibold">网页预览</h2>
+                    <p className="m-0 mt-1 text-xs leading-5 text-muted-foreground">
+                      HTML 产物生成后会自动显示在这里。
+                    </p>
+                  </div>
+                  <Button
+                    className="shrink-0 whitespace-nowrap"
+                    onClick={() =>
+                      setComposerDraft("请根据当前需求制作一个响应式单文件 HTML 网页，并生成可下载产物。")
+                    }
+                    size="sm"
+                    variant="outline"
+                  >
+                    制作网页
+                  </Button>
+                </div>
+                {selectedHtmlArtifact ? (
+                  <HtmlArtifactPreview artifact={selectedHtmlArtifact} />
+                ) : isLoadingMessages || isLoadingWorkflow || (isLoadingConversations && conversationList.length === 0) ? (
+                  <SoftLoadingState label="正在同步网页产物" />
+                ) : (
+                  <p className="m-0 rounded-xl bg-black/[0.03] p-4 text-center text-xs leading-6 text-muted-foreground">
+                    还没有可预览的 HTML 产物。
+                  </p>
+                )}
+              </section>
+
+              <section className="grid gap-3 rounded-xl bg-white p-4 shadow-card">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="m-0 text-[15px] font-semibold">可视化 Workflow</h2>
+                    <p className="m-0 mt-1 text-xs text-muted-foreground">创建可复用的节点流程。</p>
+                  </div>
+                  <Button
+                    className="shrink-0 whitespace-nowrap"
+                    onClick={() =>
+                      setComposerDraft(
+                        "请创建一个可视化 workflow：输入主题，生成网页大纲，生成 HTML，进行 QA 检查，最后输出可下载网页。"
+                      )
+                    }
+                    size="sm"
+                    variant="outline"
+                  >
+                    创建 Workflow
+                  </Button>
+                </div>
+                <Button
+                  aria-expanded={isCodingLauncherOpen}
+                  onClick={() => setIsCodingLauncherOpen((current) => !current)}
+                  variant="secondary"
+                >
+                  {isCodingLauncherOpen ? "收起网页制作团队" : "打开网页制作团队"}
+                </Button>
+                {isCodingLauncherOpen ? (
+                  <WorkModeLauncher
+                    canStartCoding={hasReadyModelConnection}
+                    customAgents={codingEligibleCustomAgents}
+                    isLaunching={isLaunchingCodingWorkflow}
+                    isLoadingCustomAgents={isLoadingCustomAgents}
+                    onLaunchCoding={handleLaunchCodingWorkflow}
+                  />
+                ) : null}
+                {visualWorkflows.length > 0 ? (
+                  <VisualWorkflowPanel
+                    busyWorkflowId={executingVisualWorkflowId}
+                    onCancel={handleCancelVisualWorkflow}
+                    onExecute={handleExecuteVisualWorkflow}
+                    onRegenerate={handleRegenerateVisualWorkflow}
+                    workflows={visualWorkflows}
+                  />
+                ) : null}
+              </section>
+
+              <TimelineFiles entries={timelineFileEntries} isLoading={isLoadingMessages} />
+              <PinnedTimeline
+                messages={pinnedTimelineMessages}
+                resolveAuthorLabel={resolveMessageAuthorLabel}
+              />
+            </div>
+          </aside>
+        ) : null}
+      </div>
+    </AppShell>
+  );
 }
 
 function ConversationListItem({
@@ -1926,73 +1957,108 @@ function ConversationListItem({
   onPin: () => void;
   onSelect: () => void;
 }) {
-  const participantLabel =
-    conversation.participants.map((entry) => entry.agentName).join(", ") ||
-    "未绑定 Agent";
+  const participantNames = conversation.participants.map((entry) => entry.agentName);
+  const participantLabel = participantNames.join(", ") || "未绑定 Agent";
 
   return (
     <article
-      className={`grid gap-2 rounded-[16px] border px-3 py-3 transition ${
-        isSelected
-          ? "border-slate-950 bg-slate-950 text-white shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
-          : "border-slate-200 bg-white/85 text-slate-950 hover:bg-white"
-      }`}
+      className={cn(
+        "group relative flex items-center gap-2.5 rounded-xl px-2.5 py-2 transition-colors duration-100",
+        isSelected ? "bg-[#007aff]" : "hover:bg-black/[0.05]"
+      )}
       data-archived={conversation.archivedAt ? "true" : "false"}
       data-conversation-id={conversation.id}
       data-pinned={conversation.isPinned ? "true" : "false"}
     >
       <button
-        className="grid min-w-0 gap-1 text-left"
+        aria-label={conversation.title}
+        className="absolute inset-0 cursor-pointer rounded-xl"
         disabled={isDeleting}
         onClick={onSelect}
         type="button"
-      >
-        <span className="flex min-w-0 items-center gap-2">
+      />
+      <AvatarGroup names={participantNames} size="md" />
+      <div className="pointer-events-none min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <strong
+            className={cn(
+              "truncate text-sm font-semibold",
+              isSelected ? "text-white" : "text-foreground"
+            )}
+          >
+            {conversation.title}
+          </strong>
+          <time
+            className={cn(
+              "shrink-0 text-[11px]",
+              isSelected ? "text-white/75" : "text-muted-foreground"
+            )}
+            dateTime={toIsoDateTime(conversation.updatedAt)}
+          >
+            {formatConversationTime(conversation.updatedAt)}
+          </time>
+        </div>
+        <div
+          className={cn(
+            "flex items-center gap-1 truncate text-xs",
+            isSelected ? "text-white/75" : "text-muted-foreground"
+          )}
+        >
           {conversation.isPinned ? (
-            <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold">
-              置顶
-            </span>
+            <PinIcon className="shrink-0" size={11} />
           ) : null}
-          <strong className="truncate text-sm">{conversation.title}</strong>
-        </span>
-        <span className={`truncate text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
-          {conversation.mode === "direct" ? "单聊" : "群聊"} · {participantLabel}
-        </span>
-      </button>
-      <div className="flex flex-wrap gap-1.5">
+          <span className="truncate">
+            {conversation.mode === "direct" ? "单聊" : "群聊"} · {participantLabel}
+          </span>
+        </div>
+      </div>
+      <div
+        className={cn(
+          "relative z-10 hidden shrink-0 items-center gap-0.5 group-focus-within:flex group-hover:flex"
+        )}
+      >
         <button
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+          aria-label={conversation.isPinned ? "取消置顶" : "置顶"}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-lg transition",
             isSelected
-              ? "bg-white/12 text-white hover:bg-white/18"
-              : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
-          }`}
+              ? "text-white/80 hover:bg-white/20 hover:text-white"
+              : "text-muted-foreground hover:bg-black/[0.07] hover:text-foreground"
+          )}
           onClick={onPin}
+          title={conversation.isPinned ? "取消置顶" : "置顶"}
           type="button"
         >
-          {conversation.isPinned ? "取消置顶" : "置顶"}
+          <PinIcon size={14} />
         </button>
         <button
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+          aria-label={conversation.archivedAt ? "恢复" : "归档"}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-lg transition",
             isSelected
-              ? "bg-white/12 text-white hover:bg-white/18"
-              : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
-          }`}
+              ? "text-white/80 hover:bg-white/20 hover:text-white"
+              : "text-muted-foreground hover:bg-black/[0.07] hover:text-foreground"
+          )}
           onClick={onArchive}
+          title={conversation.archivedAt ? "恢复" : "归档"}
           type="button"
         >
-          {conversation.archivedAt ? "恢复" : "归档"}
+          <ArchiveIcon size={14} />
         </button>
         <button
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+          aria-label="删除"
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-lg transition",
             isSelected
-              ? "bg-red-400/20 text-red-100 hover:bg-red-400/30"
-              : "border border-red-100 bg-red-50 text-red-600 hover:bg-red-100"
-          }`}
+              ? "text-white/80 hover:bg-white/20 hover:text-white"
+              : "text-red-500 hover:bg-red-50"
+          )}
           disabled={isDeleting}
           onClick={onDelete}
+          title="删除"
           type="button"
         >
-          删除
+          <TrashIcon size={14} />
         </button>
       </div>
     </article>
@@ -2015,26 +2081,27 @@ function DeleteConversationPrompt({
   }
 
   return (
-    <section className="grid gap-2 rounded-[12px] border border-red-100 bg-red-50 p-3 text-xs text-red-800">
+    <section className="grid gap-2.5 rounded-xl bg-white p-3.5 text-xs text-foreground shadow-pop">
       <p className="m-0 leading-5">再次确认后会删除这个会话及其消息记录。</p>
-      <div className="flex flex-wrap gap-2">
-        <Button
+      <div className="flex flex-wrap justify-end gap-2">
+        <button
+          className="rounded-full px-3 py-1.5 font-medium text-muted-foreground transition hover:bg-black/[0.05] hover:text-foreground"
+          disabled={deletingConversationId === conversation.id}
+          onClick={onCancel}
+          type="button"
+        >
+          取消
+        </button>
+        <button
+          className="rounded-full bg-red-500 px-3 py-1.5 font-semibold text-white transition hover:bg-red-600 disabled:opacity-50"
           disabled={deletingConversationId === conversation.id}
           onClick={() => {
             void onConfirm(conversation);
           }}
-          size="sm"
+          type="button"
         >
           {deletingConversationId === conversation.id ? "删除中..." : "确认删除"}
-        </Button>
-        <Button
-          disabled={deletingConversationId === conversation.id}
-          onClick={onCancel}
-          size="sm"
-          variant="outline"
-        >
-          取消
-        </Button>
+        </button>
       </div>
     </section>
   );
@@ -2050,12 +2117,16 @@ function ConversationWelcome({
   onDraft: (draft: string) => void;
 }) {
   return (
-    <section className="grid min-h-[46vh] place-items-center">
-      <div className="grid max-w-xl gap-4 text-center">
+    <section className="grid min-h-[56vh] place-items-center">
+      <div className="grid max-w-md justify-items-center gap-5 text-center">
+        <span className="flex h-16 w-16 items-center justify-center rounded-[1.25rem] bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-glass">
+          <SparkleIcon size={30} />
+        </span>
         <div>
-          <h2 className="m-0 text-2xl font-semibold text-slate-950">选择或新建一个对话</h2>
-          <p className="m-0 mt-3 text-sm leading-7 text-slate-600">
-            单聊适合明确任务，群聊适合让多个 Agent 分工。聊天历史和置顶消息会作为上下文传递。
+          <h2 className="m-0 text-2xl font-bold tracking-tight">选择或新建一个对话</h2>
+          <p className="m-0 mt-2.5 text-sm leading-7 text-muted-foreground">
+            单聊适合明确任务，群聊适合让多个 Agent 分工。
+            聊天历史和置顶消息会作为上下文传递。
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">
@@ -2123,7 +2194,7 @@ function HtmlArtifactPreview({ artifact }: { artifact: Artifact }) {
 
   if (status === "error" || !html) {
     return (
-      <p className="m-0 rounded-[8px] border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+      <p className="m-0 rounded-xl bg-red-50 p-4 text-sm text-red-700">
         HTML 预览暂时无法打开。可以在文件区展开或下载产物。
       </p>
     );
@@ -2131,7 +2202,7 @@ function HtmlArtifactPreview({ artifact }: { artifact: Artifact }) {
 
   return (
     <iframe
-      className="h-[360px] w-full rounded-[12px] border border-slate-200 bg-white"
+      className="h-[360px] w-full rounded-xl bg-white shadow-card"
       sandbox="allow-scripts"
       srcDoc={html}
       title={`${artifact.title} 预览`}
@@ -2141,12 +2212,18 @@ function HtmlArtifactPreview({ artifact }: { artifact: Artifact }) {
 
 function ConversationListSkeleton() {
   return (
-    <div className="grid gap-2" aria-label="正在加载会话">
+    <div aria-label="正在加载会话" className="grid gap-1.5">
       {[0, 1, 2].map((index) => (
         <div
-          className="h-20 rounded-[16px] bg-[linear-gradient(100deg,_rgba(241,245,249,0.65)_0%,_rgba(255,255,255,0.95)_45%,_rgba(226,232,240,0.72)_100%)] animate-pulse"
+          className="flex animate-pulse items-center gap-2.5 rounded-xl px-2.5 py-2"
           key={index}
-        />
+        >
+          <span className="h-10 w-10 rounded-full bg-black/[0.07]" />
+          <span className="grid flex-1 gap-1.5">
+            <span className="h-3 w-2/3 rounded-full bg-black/[0.07]" />
+            <span className="h-2.5 w-1/2 rounded-full bg-black/[0.05]" />
+          </span>
+        </div>
       ))}
     </div>
   );
@@ -2154,10 +2231,10 @@ function ConversationListSkeleton() {
 
 function SoftLoadingState({ label }: { label: string }) {
   return (
-    <div className="grid gap-3 rounded-[12px] border border-slate-200 bg-white/72 p-4" role="status">
-      <div className="h-3 w-32 rounded-full bg-[linear-gradient(100deg,_#e2e8f0,_#ffffff,_#cbd5e1)] animate-pulse" />
-      <div className="h-24 rounded-[10px] bg-[linear-gradient(100deg,_rgba(226,232,240,0.75),_rgba(255,255,255,0.92),_rgba(203,213,225,0.65))] animate-pulse" />
-      <p className="m-0 text-sm font-medium text-slate-500">{label}</p>
+    <div className="grid gap-3 rounded-xl bg-black/[0.03] p-4" role="status">
+      <div className="h-3 w-32 animate-pulse rounded-full bg-black/[0.08]" />
+      <div className="h-24 animate-pulse rounded-lg bg-black/[0.06]" />
+      <p className="m-0 text-sm font-medium text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -2170,22 +2247,20 @@ function TimelineFiles({
   isLoading: boolean;
 }) {
   return (
-    <section className="grid gap-4 rounded-[16px] border border-slate-200 bg-white/90 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="m-0 text-base font-semibold text-slate-950">会话文件</h2>
-          <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-            {isLoading
-              ? "正在同步文件产物。"
-              : entries.length > 0
-                ? `当前会话已有 ${entries.length} 个文件产物。`
-                : "当前会话还没有文件产物。"}
-          </p>
-        </div>
+    <section className="grid gap-3 rounded-xl bg-white p-4 shadow-card">
+      <div>
+        <h2 className="m-0 text-[15px] font-semibold">会话文件</h2>
+        <p className="mb-0 mt-1 text-xs leading-5 text-muted-foreground">
+          {isLoading
+            ? "正在同步文件产物。"
+            : entries.length > 0
+              ? `当前会话已有 ${entries.length} 个文件产物。`
+              : "当前会话还没有文件产物。"}
+        </p>
       </div>
       {isLoading && entries.length === 0 ? <SoftLoadingState label="正在同步文件" /> : null}
       {entries.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 2xl:grid-cols-2">
+        <div className="grid gap-2.5">
           {entries.map(({ artifact, message }) => (
             <ArtifactCard
               artifact={artifact}
@@ -2207,32 +2282,30 @@ function PinnedTimeline({
   resolveAuthorLabel: (message: Message) => string | undefined;
 }) {
   return (
-    <section className="grid gap-4 rounded-[16px] border border-slate-200 bg-white/90 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="m-0 text-base font-semibold text-slate-950">长期上下文</h2>
-          <p className="mb-0 mt-1 text-sm leading-6 text-slate-600">
-            {messages.length > 0
-              ? `当前会话已有 ${messages.length} 条置顶消息，会随上下文传递给 Agent。`
-              : "还没有置顶消息。可以在消息操作中 pin 关键要求。"}
-          </p>
-        </div>
+    <section className="grid gap-3 rounded-xl bg-white p-4 shadow-card">
+      <div>
+        <h2 className="m-0 text-[15px] font-semibold">长期上下文</h2>
+        <p className="mb-0 mt-1 text-xs leading-5 text-muted-foreground">
+          {messages.length > 0
+            ? `当前会话已有 ${messages.length} 条置顶消息，会随上下文传递给 Agent。`
+            : "还没有置顶消息。可以在消息操作中 pin 关键要求。"}
+        </p>
       </div>
       {messages.length > 0 ? (
-        <div className="grid gap-3">
+        <div className="grid gap-2">
           {messages.map((message) => (
             <article
+              className="grid gap-2 rounded-xl bg-black/[0.03] p-3"
               key={message.id}
-              className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
             >
-              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                 <span>{resolveAuthorLabel(message) ?? "AI 同事"}</span>
-                <span aria-hidden="true">/</span>
+                <span aria-hidden="true">·</span>
                 <time dateTime={toIsoDateTime(message.createdAt)}>
                   {formatTimelineDate(message.createdAt)}
                 </time>
               </div>
-              <p className="m-0 whitespace-pre-wrap text-sm leading-7 text-slate-800">
+              <p className="m-0 whitespace-pre-wrap text-[13px] leading-6 text-foreground">
                 {message.content}
               </p>
             </article>
@@ -2243,6 +2316,35 @@ function PinnedTimeline({
   );
 }
 
+function formatConversationTime(value: Date | string): string {
+  const date = new Date(value);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayDiff = Math.floor(
+    (startOfToday.getTime() - new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) /
+      86_400_000
+  );
+
+  if (dayDiff <= 0) {
+    return new Intl.DateTimeFormat("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(date);
+  }
+
+  if (dayDiff === 1) {
+    return "昨天";
+  }
+
+  if (dayDiff < 7) {
+    return new Intl.DateTimeFormat("zh-CN", { weekday: "short" }).format(date);
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    day: "2-digit",
+    month: "2-digit"
+  }).format(date);
+}
 function formatStreamState(
   state: "connecting" | "error" | "idle" | "open"
 ): "空闲" | "连接中" | "连接失败" | "已连接" {

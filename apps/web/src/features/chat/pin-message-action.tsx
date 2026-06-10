@@ -1,5 +1,7 @@
 "use client";
 
+import { cn } from "../../lib/cn";
+
 type PinMessageActionProps = {
   disabled?: boolean;
   isPending?: boolean;
@@ -19,27 +21,17 @@ export function PinMessageAction({
 
   return (
     <button
+      className={cn(
+        "rounded-full px-2 py-1 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-50",
+        tone === "dark"
+          ? "text-white/80 hover:bg-white/15 hover:text-white"
+          : isPinned
+            ? "text-foreground hover:bg-black/[0.06]"
+            : "text-[#007aff] hover:bg-[#007aff]/10"
+      )}
       disabled={isDisabled}
       onClick={() => {
         onPin?.();
-      }}
-      style={{
-        ...baseChipStyle,
-        background: isPinned
-          ? tone === "dark"
-            ? "rgba(255, 255, 255, 0.16)"
-            : "rgba(16, 24, 40, 0.08)"
-          : tone === "dark"
-            ? "rgba(255, 255, 255, 0.12)"
-            : "rgba(11, 110, 255, 0.08)",
-        color: isPinned
-          ? tone === "dark"
-            ? "#fff"
-            : "#101828"
-          : tone === "dark"
-            ? "#fff"
-            : "#175cd3",
-        cursor: isDisabled ? "default" : "pointer"
       }}
       type="button"
     >
@@ -53,14 +45,3 @@ export function PinMessageAction({
     </button>
   );
 }
-
-const baseChipStyle = {
-  border: 0,
-  borderRadius: "999px",
-  display: "inline-flex",
-  font: "inherit",
-  fontSize: "0.78rem",
-  fontWeight: 600,
-  marginTop: "0.75rem",
-  padding: "0.4rem 0.7rem"
-} as const;

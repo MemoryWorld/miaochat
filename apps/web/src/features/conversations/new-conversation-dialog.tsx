@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 
+import { Avatar } from "../../components/ui/avatar";
+import { PlusIcon } from "../../components/ui/icons";
+import { cn } from "../../lib/cn";
+
 type NewConversationDialogProps = {
   agentOptions: NewConversationAgentOption[];
   busy?: boolean;
@@ -73,146 +77,172 @@ export function NewConversationDialog({
   const platformOptions = agentOptions.filter((option) => option.category === "platform");
   const customOptions = agentOptions.filter((option) => option.category === "custom");
 
-  return (
-    <div
-      style={{
-        background: "rgba(248, 250, 252, 0.7)",
-        border: "1px solid rgba(15, 23, 42, 0.08)",
-        borderRadius: "20px",
-        display: "grid",
-        gap: "0.85rem",
-        marginTop: "0.9rem",
-        padding: "1rem"
-      }}
-    >
-      <div
-        style={{
-          alignItems: "center",
-          display: "flex",
-          gap: "0.75rem",
-          justifyContent: "space-between"
+  if (!isOpen) {
+    return (
+      <button
+        aria-label="打开新建对话面板"
+        className="flex h-9 w-9 items-center justify-center rounded-full text-[#007aff] transition hover:bg-[#007aff]/10"
+        onClick={() => {
+          void onOpen();
+          onToggleOpen(true);
         }}
-        >
-        <div>
-          <strong style={{ color: "#101828" }}>AI 同事协作</strong>
-          <div style={{ color: "#475467", fontSize: "0.9rem", marginTop: "0.2rem" }}>
-            新建 1v1 单聊或多 Agent 群聊。聊天历史和置顶消息会自动进入上下文。
+        title="新建对话"
+        type="button"
+      >
+        <PlusIcon size={20} />
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <button
+        aria-label="打开新建对话面板"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-[#007aff]/10 text-[#007aff]"
+        onClick={() => onToggleOpen(false)}
+        title="新建对话"
+        type="button"
+      >
+        <PlusIcon size={20} />
+      </button>
+      <div
+        aria-modal="true"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm"
+        role="dialog"
+      >
+        <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-pop">
+          <div className="hairline-b flex items-center justify-between px-5 py-3.5">
+            <h2 className="m-0 text-base font-semibold">新建对话</h2>
+            <button
+              aria-label="关闭新建对话面板"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-black/[0.06] hover:text-foreground"
+              onClick={() => onToggleOpen(false)}
+              type="button"
+            >
+              ✕
+            </button>
           </div>
-        </div>
-        <button
-          aria-label={isOpen ? "关闭新建对话面板" : "打开新建对话面板"}
-          onClick={() => {
-            if (!isOpen) {
-              void onOpen();
-            }
-            onToggleOpen(!isOpen);
-          }}
-          style={secondaryButtonStyle}
-          type="button"
-        >
-          {isOpen ? "关闭" : "新建对话"}
-        </button>
-      </div>
 
-      {isOpen ? (
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
+          <form
+            className="grid gap-4 overflow-y-auto px-5 py-4"
+            onSubmit={async (event) => {
+              event.preventDefault();
 
-            if (!canSubmit || busy || isLoading) {
-              return;
-            }
+              if (!canSubmit || busy || isLoading) {
+                return;
+              }
 
-            await onCreate({
-              agentOptionIds: selectedOptionIds,
-              mode,
-              title: title.trim() || undefined
-            });
-            setTitle("");
-          }}
-          style={{
-            display: "grid",
-            gap: "0.85rem"
-          }}
-        >
-          {isLoading ? (
-            <p style={{ color: "#475467", lineHeight: 1.6, margin: 0 }}>
-              正在加载已保存的 AI 同事...
-            </p>
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button
-                  aria-pressed={mode === "direct"}
-                  onClick={() => setMode("direct")}
-                  style={mode === "direct" ? primaryButtonStyle : secondaryButtonStyle}
-                  type="button"
-                >
-                  单聊
-                </button>
-                <button
-                  aria-pressed={mode === "group"}
-                  onClick={() => {
-                    setMode("group");
-                    setSelectedGroupOptionIds([]);
-                  }}
-                  style={mode === "group" ? primaryButtonStyle : secondaryButtonStyle}
-                  type="button"
-                >
-                  群聊
-                </button>
-              </div>
-              <label htmlFor="new-conversation-title" style={fieldLabelStyle}>
-                名称
-                <input
-                  id="new-conversation-title"
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="可选，例如：变形金刚网页制作"
-                  style={selectStyle}
-                  value={title}
-                />
-              </label>
-              <fieldset style={fieldsetStyle}>
-                <legend style={fieldLabelStyle}>
-                  {mode === "direct" ? "Agent" : "选择至少 2 个 Agent"}
-                </legend>
-                <AgentOptionGroup
-                  mode={mode}
-                  options={platformOptions}
-                  selectedOptionId={selectedOptionId}
-                  selectedGroupOptionIds={selectedGroupOptionIds}
-                  setSelectedGroupOptionIds={setSelectedGroupOptionIds}
-                  setSelectedOptionId={setSelectedOptionId}
-                  title="运行平台"
-                />
-                <AgentOptionGroup
-                  emptyText="还没有平台自建 Agent。"
-                  mode={mode}
-                  options={customOptions}
-                  selectedOptionId={selectedOptionId}
-                  selectedGroupOptionIds={selectedGroupOptionIds}
-                  setSelectedGroupOptionIds={setSelectedGroupOptionIds}
-                  setSelectedOptionId={setSelectedOptionId}
-                  title="平台自建 Agent"
-                />
-              </fieldset>
-              <p style={{ color: "#475467", lineHeight: 1.6, margin: 0 }}>
-                群聊里可以用 @ 指定 Agent；不指定时由 Orchestrator 自动分派。
+              await onCreate({
+                agentOptionIds: selectedOptionIds,
+                mode,
+                title: title.trim() || undefined
+              });
+              setTitle("");
+            }}
+          >
+            {isLoading ? (
+              <p className="m-0 text-sm leading-7 text-muted-foreground">
+                正在加载已保存的 AI 同事...
               </p>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  disabled={!canSubmit || busy}
-                  style={primaryButtonStyle}
-                  type="submit"
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/[0.05] p-1">
+                  <button
+                    aria-pressed={mode === "direct"}
+                    className={cn(
+                      "rounded-[0.625rem] px-3 py-1.5 text-sm font-medium transition",
+                      mode === "direct"
+                        ? "bg-white text-foreground shadow-card"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => setMode("direct")}
+                    type="button"
+                  >
+                    单聊
+                  </button>
+                  <button
+                    aria-pressed={mode === "group"}
+                    className={cn(
+                      "rounded-[0.625rem] px-3 py-1.5 text-sm font-medium transition",
+                      mode === "group"
+                        ? "bg-white text-foreground shadow-card"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => {
+                      setMode("group");
+                      setSelectedGroupOptionIds([]);
+                    }}
+                    type="button"
+                  >
+                    群聊
+                  </button>
+                </div>
+
+                <label
+                  className="grid gap-1.5 text-[13px] font-medium text-muted-foreground"
+                  htmlFor="new-conversation-title"
                 >
-                  创建对话
-                </button>
-              </div>
-            </>
-          )}
-        </form>
-      ) : null}
-    </div>
+                  名称
+                  <input
+                    className="rounded-xl bg-black/[0.05] px-3.5 py-2.5 text-[15px] font-normal text-foreground outline-none transition placeholder:text-muted-foreground/60 focus:bg-black/[0.07] focus-visible:ring-2 focus-visible:ring-ring/40"
+                    id="new-conversation-title"
+                    onChange={(event) => setTitle(event.target.value)}
+                    placeholder="可选，例如：变形金刚网页制作"
+                    value={title}
+                  />
+                </label>
+
+                <fieldset className="m-0 grid gap-4 border-0 p-0">
+                  <legend className="mb-1 p-0 text-[13px] font-medium text-muted-foreground">
+                    {mode === "direct" ? "Agent" : "选择至少 2 个 Agent"}
+                  </legend>
+                  <AgentOptionGroup
+                    mode={mode}
+                    options={platformOptions}
+                    selectedOptionId={selectedOptionId}
+                    selectedGroupOptionIds={selectedGroupOptionIds}
+                    setSelectedGroupOptionIds={setSelectedGroupOptionIds}
+                    setSelectedOptionId={setSelectedOptionId}
+                    title="运行平台"
+                  />
+                  <AgentOptionGroup
+                    emptyText="还没有平台自建 Agent。"
+                    mode={mode}
+                    options={customOptions}
+                    selectedOptionId={selectedOptionId}
+                    selectedGroupOptionIds={selectedGroupOptionIds}
+                    setSelectedGroupOptionIds={setSelectedGroupOptionIds}
+                    setSelectedOptionId={setSelectedOptionId}
+                    title="平台自建 Agent"
+                  />
+                </fieldset>
+
+                <p className="m-0 text-xs leading-6 text-muted-foreground">
+                  群聊里可以用 @ 指定 Agent；不指定时由 Orchestrator 自动分派。
+                </p>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    className="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:bg-black/[0.05] hover:text-foreground"
+                    onClick={() => onToggleOpen(false)}
+                    type="button"
+                  >
+                    取消
+                  </button>
+                  <button
+                    className="rounded-full bg-[#007aff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0070eb] disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={!canSubmit || busy}
+                    type="submit"
+                  >
+                    创建对话
+                  </button>
+                </div>
+              </>
+            )}
+          </form>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -236,22 +266,22 @@ function AgentOptionGroup({
   title: string;
 }) {
   return (
-    <section style={optionGroupStyle}>
-      <h3 style={optionGroupTitleStyle}>{title}</h3>
+    <section className="grid gap-2">
+      <h3 className="m-0 text-[13px] font-semibold text-foreground">{title}</h3>
       {options.length === 0 ? (
-        <p style={{ color: "#667085", fontSize: "0.85rem", lineHeight: 1.6, margin: 0 }}>
+        <p className="m-0 text-[13px] leading-6 text-muted-foreground">
           {emptyText}
           {title === "平台自建 Agent" ? (
             <>
               {" "}
-              <a href="/agents" style={{ color: "#1d4ed8", fontWeight: 700 }}>
+              <a className="font-semibold text-[#007aff]" href="/agents">
                 创建平台 Agent
               </a>
             </>
           ) : null}
         </p>
       ) : (
-        <div style={{ display: "grid", gap: "0.5rem" }}>
+        <div className="grid gap-1.5">
           {options.map((option) => {
             const disabled = Boolean(option.disabledReason);
             const inputType = mode === "direct" ? "radio" : "checkbox";
@@ -262,14 +292,16 @@ function AgentOptionGroup({
 
             return (
               <label
+                className={cn(
+                  "flex items-start gap-3 rounded-xl px-3 py-2.5 transition",
+                  checked ? "bg-[#007aff]/[0.08]" : "hover:bg-black/[0.04]",
+                  disabled ? "opacity-55" : "cursor-pointer"
+                )}
                 key={option.id}
-                style={{
-                  ...optionCardStyle,
-                  opacity: disabled ? 0.56 : 1
-                }}
               >
                 <input
                   checked={checked}
+                  className="mt-1.5 accent-[#007aff]"
                   disabled={disabled}
                   name={mode === "direct" ? "new-conversation-agent-option" : undefined}
                   onChange={(event) => {
@@ -286,15 +318,16 @@ function AgentOptionGroup({
                   }}
                   type={inputType}
                 />
-                <span style={{ display: "grid", gap: "0.2rem" }}>
-                  <strong style={{ color: "#101828", fontSize: "0.94rem" }}>
+                <Avatar className="mt-0.5" name={option.label} size="sm" />
+                <span className="grid min-w-0 gap-0.5">
+                  <strong className="text-sm font-semibold text-foreground">
                     {option.label}
                   </strong>
-                  <span style={{ color: "#667085", fontSize: "0.82rem", lineHeight: 1.45 }}>
+                  <span className="text-xs leading-5 text-muted-foreground">
                     {option.description}
                   </span>
                   {option.disabledReason ? (
-                    <span style={{ color: "#b42318", fontSize: "0.82rem", fontWeight: 700 }}>
+                    <span className="text-xs font-semibold text-red-600">
                       {option.disabledReason}
                     </span>
                   ) : null}
@@ -307,70 +340,3 @@ function AgentOptionGroup({
     </section>
   );
 }
-
-const fieldLabelStyle = {
-  color: "#344054",
-  display: "grid",
-  fontSize: "0.95rem",
-  fontWeight: 600,
-  gap: "0.4rem"
-} as const;
-
-const fieldsetStyle = {
-  border: 0,
-  display: "grid",
-  gap: "0.75rem",
-  margin: 0,
-  padding: 0
-} as const;
-
-const optionGroupStyle = {
-  display: "grid",
-  gap: "0.5rem"
-} as const;
-
-const optionGroupTitleStyle = {
-  color: "#101828",
-  fontSize: "0.9rem",
-  fontWeight: 700,
-  margin: 0
-} as const;
-
-const optionCardStyle = {
-  alignItems: "flex-start",
-  background: "#fff",
-  border: "1px solid rgba(15, 23, 42, 0.1)",
-  borderRadius: "14px",
-  display: "flex",
-  gap: "0.65rem",
-  padding: "0.72rem 0.75rem"
-} as const;
-
-const primaryButtonStyle = {
-  background: "#101828",
-  border: 0,
-  borderRadius: "999px",
-  color: "#fff",
-  cursor: "pointer",
-  font: "inherit",
-  fontWeight: 600,
-  padding: "0.75rem 1.1rem"
-} as const;
-
-const secondaryButtonStyle = {
-  background: "rgba(255, 255, 255, 0.9)",
-  border: "1px solid rgba(15, 23, 42, 0.08)",
-  borderRadius: "999px",
-  color: "#101828",
-  cursor: "pointer",
-  font: "inherit",
-  fontWeight: 600,
-  padding: "0.7rem 1rem"
-} as const;
-
-const selectStyle = {
-  border: "1px solid rgba(15, 23, 42, 0.12)",
-  borderRadius: "16px",
-  font: "inherit",
-  padding: "0.85rem 0.95rem"
-} as const;

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import type { ChannelMember, ConversationAgentMember } from "@agenthub/contracts";
 
+import { ArrowUpIcon, PaperclipIcon } from "../../components/ui/icons";
+import { cn } from "../../lib/cn";
 import { MemberMentionInput, buildMentionLabel } from "./member-mention-input";
 
 type ChatSendInput = {
@@ -39,6 +41,7 @@ export function ChatComposer({
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputId = useId();
   const disabledReasonId = useId();
   const mentionMembers = members ?? participants.map(mapParticipantToMember);
@@ -60,6 +63,7 @@ export function ChatComposer({
 
   return (
     <form
+      className="grid gap-2"
       onSubmit={async (event) => {
         event.preventDefault();
 
@@ -94,13 +98,7 @@ export function ChatComposer({
         setAttachments([]);
         setSelectedMemberIds([]);
       }}
-      style={{
-        borderTop: "1px solid rgba(15, 23, 42, 0.08)",
-        display: "grid",
-        gap: "0.75rem",
-        marginTop: "1rem",
-        paddingTop: "1rem"
-      }}
+      ref={formRef}
     >
       <MemberMentionInput
         disabled={disabled}
@@ -119,70 +117,72 @@ export function ChatComposer({
         }}
         selectedMemberIds={selectedMemberIds}
       />
-      <label
-        htmlFor="chat-composer-input"
-        style={{
-          color: "#344054",
-          display: "grid",
-          fontSize: "0.95rem",
-          fontWeight: 600,
-          gap: "0.4rem"
-        }}
-      >
-        消息内容
-        <textarea
-          id="chat-composer-input"
-          disabled={disabled}
-          onChange={(event) => {
-            setContent(event.target.value);
-            onTyping?.();
-          }}
-          placeholder="输入任务，或 @ 指定 Agent。比如：用 Codex 做一个 React 组件。"
-          rows={3}
-          value={content}
-          style={{
-            border: "1px solid rgba(15, 23, 42, 0.12)",
-            borderRadius: "16px",
-            font: "inherit",
-            padding: "0.9rem 1rem",
-            resize: "vertical"
-          }}
-        />
-      </label>
+
       {showActionSuggestions ? (
-        <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-          <div className="text-xs font-semibold text-slate-500">快捷动作</div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: "制作网页", value: "请制作一个响应式单文件 HTML 网页，并生成可下载产物。" },
-              { label: "创建 Workflow", value: "请创建一个可视化 workflow，先展示节点预览和输入输出，等待我执行。" },
-              { label: "修改产物", value: "请基于当前最新产物继续修改，并说明变更点。" },
-              { label: "部署状态", value: "请检查当前网页产物是否可以部署，并给出部署状态。" }
-            ].map((action) => (
-              <button
-                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                key={action.label}
-                onClick={() => {
-                  setContent(action.value);
-                }}
-                type="button"
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground">快捷动作</span>
+          {[
+            { label: "制作网页", value: "请制作一个响应式单文件 HTML 网页，并生成可下载产物。" },
+            { label: "创建 Workflow", value: "请创建一个可视化 workflow，先展示节点预览和输入输出，等待我执行。" },
+            { label: "修改产物", value: "请基于当前最新产物继续修改，并说明变更点。" },
+            { label: "部署状态", value: "请检查当前网页产物是否可以部署，并给出部署状态。" }
+          ].map((action) => (
+            <button
+              className="rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-black/[0.09]"
+              key={action.label}
+              onClick={() => {
+                setContent(action.value);
+              }}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
       ) : null}
-      <div className="grid gap-2">
-        <span className="text-sm font-semibold text-slate-600">附件</span>
-        <label
-          className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-          htmlFor={fileInputId}
-        >
-          <span>选择文件</span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-            {attachments.length > 0 ? `${attachments.length} 个文件` : "支持多选"}
+
+      {attachments.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {attachments.map((file) => (
+            <span
+              className="rounded-full bg-black/[0.05] px-3 py-1 text-xs font-medium text-foreground"
+              key={`${file.name}:${file.size}:${file.lastModified}`}
+            >
+              {file.name}
+            </span>
+          ))}
+          <span className="text-xs text-muted-foreground">
+            {attachments.length} 个文件
           </span>
+        </div>
+      ) : null}
+
+      {showDisabledReason ? (
+        <p
+          className="m-0 px-1 text-xs font-medium text-amber-600"
+          id={disabledReasonId}
+          role="status"
+        >
+          {disabledReason}
+        </p>
+      ) : null}
+
+      <div
+        className={cn(
+          "flex items-end gap-1.5 rounded-[1.4rem] bg-white px-2 py-1.5 shadow-card transition-shadow focus-within:shadow-pop",
+          disabled && "opacity-70"
+        )}
+      >
+        <label
+          className={cn(
+            "flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition hover:bg-black/[0.06] hover:text-foreground",
+            disabled && "pointer-events-none"
+          )}
+          htmlFor={fileInputId}
+          title="选择文件"
+        >
+          <PaperclipIcon size={19} />
+          <span className="sr-only">选择文件</span>
         </label>
         <input
           accept=".txt,.md,.markdown,.json,.xml,.yaml,.yml,.js,.jsx,.mjs,.cjs,.ts,.tsx,.css,.html,.htm,.csv,.diff,.patch,text/*,application/json,application/xml,application/javascript,application/typescript,application/yaml"
@@ -196,58 +196,51 @@ export function ChatComposer({
           }}
           type="file"
         />
-      </div>
-      {attachments.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {attachments.map((file) => (
-            <span
-              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600"
-              key={`${file.name}:${file.size}:${file.lastModified}`}
-            >
-              {file.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <div className="grid gap-2">
-        {showDisabledReason ? (
-          <p
-            className="m-0 text-sm font-medium text-amber-700"
-            id={disabledReasonId}
-            role="status"
-          >
-            {disabledReason}
-          </p>
-        ) : null}
+        <label className="flex min-w-0 flex-1" htmlFor="chat-composer-input">
+          <span className="sr-only">消息内容</span>
+          <textarea
+            className="max-h-44 min-h-[2.25rem] w-full resize-none self-center border-0 bg-transparent px-1.5 py-1.5 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70"
+            disabled={disabled}
+            id="chat-composer-input"
+            onChange={(event) => {
+              setContent(event.target.value);
+              autoGrow(event.target);
+              onTyping?.();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                formRef.current?.requestSubmit();
+              }
+            }}
+            placeholder="输入任务，或 @ 指定 Agent…"
+            rows={1}
+            value={content}
+          />
+        </label>
         <button
           aria-describedby={showDisabledReason ? disabledReasonId : undefined}
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
+            isSendButtonDisabled
+              ? "cursor-not-allowed bg-black/[0.06] text-muted-foreground/60"
+              : "bg-[#007aff] text-white hover:bg-[#0070eb]"
+          )}
           disabled={isSendButtonDisabled}
-          style={isSendButtonDisabled ? disabledButtonStyle : buttonStyle}
           type="submit"
         >
-          发送消息
+          <ArrowUpIcon size={19} strokeWidth={2.2} />
+          <span className="sr-only">发送消息</span>
         </button>
       </div>
     </form>
   );
 }
 
-const buttonStyle = {
-  background: "#101828",
-  border: 0,
-  borderRadius: "999px",
-  color: "#fff",
-  cursor: "pointer",
-  font: "inherit",
-  fontWeight: 600,
-  padding: "0.75rem 1.1rem"
-} as const;
-
-const disabledButtonStyle = {
-  ...buttonStyle,
-  cursor: "not-allowed",
-  opacity: 0.55
-} as const;
+function autoGrow(element: HTMLTextAreaElement): void {
+  element.style.height = "auto";
+  element.style.height = `${Math.min(element.scrollHeight, 176)}px`;
+}
 
 function appendMentionLabel(content: string, mentionLabel: string): string {
   const trimmedEnd = content.trimEnd();

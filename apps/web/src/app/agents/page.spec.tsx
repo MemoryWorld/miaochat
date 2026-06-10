@@ -42,7 +42,7 @@ describe("AgentsPage", () => {
     expect(screen.getByRole("button", { name: "2. 身份" })).toBeInTheDocument();
   });
 
-  it("does not request the old custom-agent directory data", async () => {
+  it("loads workspace agents only for duplicate-name warnings", async () => {
     mockWorkspaceFetch();
 
     render(<AgentsPage />);
@@ -50,10 +50,10 @@ describe("AgentsPage", () => {
     await screen.findByRole("heading", { name: "定义 AI 同事" });
 
     expect(
-      fetchMock.mock.calls.some(([url]) =>
+      fetchMock.mock.calls.filter(([url]) =>
         String(url).includes("/custom-agents?workspaceId=default-workspace")
-      )
-    ).toBe(false);
+      ).length
+    ).toBeLessThanOrEqual(1);
   });
 });
 
@@ -74,6 +74,10 @@ function mockWorkspaceFetch(): void {
         ],
         200
       );
+    }
+
+    if (url === "/api/custom-agents?workspaceId=default-workspace") {
+      return jsonResponse([], 200);
     }
 
     if (url === "/api/credentials?workspaceId=default-workspace") {

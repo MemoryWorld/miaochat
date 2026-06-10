@@ -5,21 +5,23 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: 210 45% 98%;
-    --border: 212 28% 88%;
+    --background: 240 24% 97%;
+    --border: 240 6% 89%;
     --card: 0 0% 100%;
     --font-mono:
-      "IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", "Cascadia Mono",
-      "Roboto Mono", monospace;
+      ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", Menlo,
+      Consolas, monospace;
     --font-sans:
-      "Avenir Next", "Segoe UI Variable", "PingFang SC", "Hiragino Sans GB",
-      "Noto Sans SC", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
-    --foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --primary: 217 91% 60%;
+      -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+      "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+      "Microsoft YaHei", sans-serif;
+    --foreground: 240 4% 11%;
+    --muted: 240 9% 94%;
+    --muted-foreground: 240 2% 44%;
+    --primary: 211 100% 50%;
     --primary-foreground: 0 0% 100%;
-    --ring: 217 91% 60%;
+    --ring: 211 100% 50%;
+    --separator: 240 9% 89%;
   }
 
   * {
@@ -33,12 +35,12 @@
   body {
     margin: 0;
     min-height: 100vh;
-    background:
-      radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 32%),
-      radial-gradient(circle at right 20%, rgba(249, 115, 22, 0.12), transparent 26%),
-      linear-gradient(180deg, #f8fbff 0%, #edf3f8 100%);
+    background: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: var(--font-sans);
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
@@ -46,19 +48,68 @@
     color: inherit;
   }
 
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.015em;
+  }
+
   code,
-  pre,
-  textarea {
+  pre {
     font-family: var(--font-mono);
   }
 
+  textarea,
+  input,
+  select,
+  button {
+    font-family: inherit;
+  }
+
   ::selection {
-    background: rgba(14, 165, 233, 0.22);
+    background: rgba(0, 122, 255, 0.18);
+  }
+
+  ::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(60, 60, 67, 0.22);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(60, 60, 67, 0.36);
+    background-clip: padding-box;
+    border: 2px solid transparent;
   }
 }
 
 @layer components {
+  /* macOS 风格半透明材质面板 */
   .glass-panel {
-    @apply border border-white/60 bg-white/75 shadow-glass backdrop-blur-xl;
+    @apply border border-black/[0.07] bg-white/80 backdrop-blur-2xl;
+  }
+
+  /* iOS 分隔线（hairline） */
+  .hairline-b {
+    border-bottom: 1px solid hsl(var(--separator));
+  }
+
+  .hairline-t {
+    border-top: 1px solid hsl(var(--separator));
+  }
+
+  .hairline-r {
+    border-right: 1px solid hsl(var(--separator));
   }
 }

@@ -11,6 +11,8 @@ type AppShellProps = {
   children: ReactNode;
   headerSlot?: ReactNode;
   mainClassName?: string;
+  /** page：居中容器可滚动；flush：子内容自管布局与滚动（聊天等全高页面用） */
+  mainLayout?: "flush" | "page";
   sidebar?: ReactNode;
   sidebarClassName?: string;
   sidebarMode?: "column" | "inline";
@@ -21,6 +23,7 @@ export function AppShell({
   children,
   headerSlot,
   mainClassName,
+  mainLayout = "page",
   sidebar,
   sidebarClassName,
   sidebarMode = "inline",
@@ -29,49 +32,41 @@ export function AppShell({
   const renderSidebarAsColumn = sidebarMode === "column" && sidebar;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.12),_transparent_24%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_42%,_#f8fafc_100%)] px-3 py-3 lg:px-5 lg:py-4">
-      <div className="mx-auto grid max-w-[1680px] gap-3">
-        <header className="glass-panel flex min-h-16 flex-col gap-3 rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(248,250,252,0.94))] px-4 py-3 shadow-[0_20px_60px_rgba(15,23,42,0.09)] lg:flex-row lg:items-center lg:justify-between lg:px-5">
-          <div className="flex items-center gap-3">
-            <Link
-              className="rounded-full bg-slate-950 px-3 py-1.5 text-sm font-semibold tracking-tight text-white no-underline"
-              href="/"
-            >
-              Miaochat
-            </Link>
-            <div className="h-5 w-px bg-slate-200" aria-hidden="true" />
-            <Link
-              className="text-sm font-semibold text-slate-700 no-underline transition hover:text-slate-950"
-              href="/settings?section=profile"
-            >
-              账户
-            </Link>
-          </div>
-          {headerSlot ? <div className="lg:justify-self-end">{headerSlot}</div> : null}
-        </header>
-
-        <div
-          className={cn(
-            "grid min-h-[calc(100vh-6rem)] gap-3",
-            renderSidebarAsColumn
-              ? "xl:grid-cols-[260px_320px_minmax(0,1fr)]"
-              : "xl:grid-cols-[260px_minmax(0,1fr)]"
-          )}
+    <div className="flex h-screen overflow-hidden bg-background">
+      <aside className="hairline-r flex w-[4.25rem] shrink-0 flex-col items-center gap-4 bg-white/65 py-4 backdrop-blur-2xl">
+        <Link
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-base font-bold text-white no-underline shadow-card transition-transform duration-150 hover:scale-105"
+          href="/"
+          title="Miaochat"
         >
-          <aside className="glass-panel rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.92))] p-4 shadow-[0_20px_60px_rgba(15,23,42,0.09)] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-            <WorkspaceNavigation />
-            {workspaceSlot ? (
-              <section className="mt-4 grid min-w-0 gap-2 rounded-[22px] border border-slate-200 bg-white/80 p-3">
-                <div className="text-sm font-semibold text-slate-950">工作区</div>
-                {workspaceSlot}
-              </section>
-            ) : null}
-          </aside>
+          <span aria-hidden="true">喵</span>
+          <span className="sr-only">Miaochat</span>
+        </Link>
+        <WorkspaceNavigation />
+        <div className="mt-auto flex flex-col items-center gap-3">
+          <Link
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-700 no-underline transition hover:bg-slate-300"
+            href="/settings?section=profile"
+            title="账户"
+          >
+            我<span className="sr-only">账户</span>
+          </Link>
+        </div>
+      </aside>
 
+      <div className="flex min-w-0 flex-1 flex-col">
+        {headerSlot || workspaceSlot ? (
+          <header className="hairline-b flex min-h-12 flex-wrap items-center justify-between gap-3 bg-white/70 px-4 py-2 backdrop-blur-xl">
+            <div className="min-w-0">{workspaceSlot}</div>
+            {headerSlot ? <div>{headerSlot}</div> : null}
+          </header>
+        ) : null}
+
+        <div className="flex min-h-0 flex-1">
           {renderSidebarAsColumn ? (
             <aside
               className={cn(
-                "glass-panel rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.92))] p-5 shadow-[0_28px_80px_rgba(15,23,42,0.10)] xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto",
+                "hairline-r w-[21rem] shrink-0 overflow-y-auto bg-white/45 p-4 backdrop-blur-xl",
                 sidebarClassName
               )}
             >
@@ -79,24 +74,27 @@ export function AppShell({
             </aside>
           ) : null}
 
-          <main
-            className={cn(
-              "glass-panel min-h-[70vh] rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(248,250,252,0.94))] p-4 shadow-[0_20px_60px_rgba(15,23,42,0.09)] lg:p-6",
-              mainClassName
-            )}
-          >
-            {sidebar && sidebarMode === "inline" ? (
-              <section
-                className={cn(
-                  "mb-6 grid gap-4 rounded-[28px] border border-slate-200 bg-slate-50/80 p-5 shadow-sm",
-                  sidebarClassName
-                )}
-              >
-                {sidebar}
-              </section>
-            ) : null}
-            {children}
-          </main>
+          {mainLayout === "flush" ? (
+            <main className={cn("flex min-w-0 flex-1 flex-col overflow-hidden", mainClassName)}>
+              {children}
+            </main>
+          ) : (
+            <main className={cn("min-w-0 flex-1 overflow-y-auto", mainClassName)}>
+              <div className="mx-auto max-w-[80rem] px-6 py-6">
+                {sidebar && sidebarMode === "inline" ? (
+                  <section
+                    className={cn(
+                      "mb-6 grid gap-4 rounded-2xl bg-white p-5 shadow-card",
+                      sidebarClassName
+                    )}
+                  >
+                    {sidebar}
+                  </section>
+                ) : null}
+                {children}
+              </div>
+            </main>
+          )}
         </div>
       </div>
     </div>

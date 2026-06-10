@@ -5,12 +5,13 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        xl: "1.25rem",
-        "2xl": "1.5rem"
+        xl: "1rem",
+        "2xl": "1.25rem"
       },
       boxShadow: {
-        glass:
-          "0 24px 80px -36px rgba(15, 23, 42, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.45)"
+        card: "0 0 0 1px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.04)",
+        glass: "0 8px 40px rgba(0, 0, 0, 0.08)",
+        pop: "0 0 0 1px rgba(0, 0, 0, 0.05), 0 12px 32px rgba(0, 0, 0, 0.12)"
       },
       colors: {
         background: "hsl(var(--background))",
@@ -21,11 +22,15 @@ export default {
         "muted-foreground": "hsl(var(--muted-foreground))",
         primary: "hsl(var(--primary))",
         "primary-foreground": "hsl(var(--primary-foreground))",
-        ring: "hsl(var(--ring))"
+        ring: "hsl(var(--ring))",
+        separator: "hsl(var(--separator))"
       },
       fontFamily: {
         mono: ["var(--font-mono)", "monospace"],
         sans: ["var(--font-sans)", "system-ui", "sans-serif"]
+      },
+      transitionTimingFunction: {
+        apple: "cubic-bezier(0.32, 0.72, 0, 1)"
       }
     }
   },

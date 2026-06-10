@@ -19,16 +19,16 @@ export function WorkspaceSwitcher({
   const fallbackLabel = isLoading ? "正在同步工作区" : activeWorkspaceId;
 
   return (
-    <div className="grid min-w-0 gap-2" data-testid="workspace-switcher">
+    <div className="flex min-w-0 items-center gap-2" data-testid="workspace-switcher">
       <label
-        className="text-xs font-semibold tracking-[0.08em] text-slate-500"
+        className="shrink-0 text-xs font-medium text-muted-foreground"
         htmlFor="workspace-switcher-select"
       >
-        当前工作区
+        工作区
       </label>
       <select
         aria-label="Active workspace"
-        className="block w-[calc(100%-0.25rem)] -translate-x-0.5 truncate rounded-full border border-slate-200 bg-white/90 px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-sky-300"
+        className="block max-w-[14rem] cursor-pointer truncate appearance-none rounded-lg border-0 bg-black/[0.05] px-2.5 py-1.5 text-[13px] font-medium text-foreground outline-none transition hover:bg-black/[0.08] focus-visible:ring-2 focus-visible:ring-ring/40"
         disabled={isLoading || workspaces.length === 0}
         id="workspace-switcher-select"
         onChange={(event) => onSelect(event.target.value)}

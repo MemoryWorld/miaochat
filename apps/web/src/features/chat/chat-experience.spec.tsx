@@ -234,7 +234,7 @@ describe("ChatExperience", () => {
     expect(screen.getByRole("heading", { name: "网页预览" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "可视化 Workflow" })).toBeInTheDocument();
     const primaryNavigation = screen.getByRole("navigation", {
-      name: "编码工作台导航"
+      name: "Primary workspace navigation"
     });
 
     expect(within(primaryNavigation).getByRole("link", { name: "会话" })).toBeInTheDocument();

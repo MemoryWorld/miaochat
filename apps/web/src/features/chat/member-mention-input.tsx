@@ -26,19 +26,19 @@ export function MemberMentionInput({
   }
 
   return (
-    <div className="grid gap-2">
-      <div className="text-xs font-semibold text-slate-500">提及 Agent 或成员</div>
-      <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">提及 Agent 或成员</span>
+      <div className="flex flex-wrap gap-1.5">
         {mentionableMembers.map((member) => {
           const isSelected = selectedMemberIds.includes(member.memberId);
 
           return (
             <button
               aria-pressed={isSelected}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                 isSelected
-                  ? "border-sky-200 bg-sky-50 text-sky-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  ? "bg-[#007aff]/12 text-[#007aff]"
+                  : "bg-black/[0.05] text-foreground hover:bg-black/[0.09]"
               }`}
               disabled={disabled}
               key={member.memberId}

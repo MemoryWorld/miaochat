@@ -70,24 +70,19 @@ export function SettingsHost({
   return (
     <AppShell
       sidebar={
-        <div className="grid gap-4">
-          <div>
-            <Badge className="mb-3" tone="primary">
-              设置
-            </Badge>
-            <h1 className="m-0 text-3xl font-semibold tracking-tight text-slate-950">
-              设置与管理
-            </h1>
-            <p className="mb-0 mt-2 text-sm leading-7 text-slate-600">
+        <div className="grid content-start gap-4">
+          <div className="pt-1">
+            <h1 className="m-0 text-[22px] font-bold tracking-tight text-foreground">设置</h1>
+            <p className="mb-0 mt-1 text-xs leading-5 text-muted-foreground">
               管理账户、工作区、模型连接、成员、账单和能力说明。
             </p>
           </div>
           {legacySetupMode ? (
-            <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-7 text-amber-800">
+            <div className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs leading-5 text-amber-700">
               `/setup` 已并入设置里的模型连接。后续请从这里添加或验证 API Key。
             </div>
           ) : null}
-          <nav className="grid gap-2" aria-label="Settings sections">
+          <nav aria-label="Settings sections" className="grid gap-0.5">
             {settingsSections.map((section) => {
               const isActive = section.id === selectedSection;
               const href = `/settings?section=${section.id}`;
@@ -95,10 +90,10 @@ export function SettingsHost({
               return (
                 <Link
                   key={section.id}
-                  className={`rounded-2xl border px-4 py-3 text-sm font-semibold no-underline transition ${
+                  className={`rounded-lg px-3 py-2 text-sm font-medium no-underline transition-colors ${
                     isActive
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                      ? "bg-slate-950 text-white"
+                      : "text-foreground hover:bg-black/[0.05]"
                   }`}
                   href={href}
                 >
@@ -109,6 +104,8 @@ export function SettingsHost({
           </nav>
         </div>
       }
+      sidebarClassName="w-[16rem]"
+      sidebarMode="column"
       workspaceSlot={
         <WorkspaceSwitcher
           activeWorkspaceId={activeWorkspaceId}

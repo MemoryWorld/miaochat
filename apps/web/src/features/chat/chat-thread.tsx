@@ -6,6 +6,7 @@ import {
   type RuntimeArtifactStatus
 } from "@agenthub/contracts";
 
+import { Avatar } from "../../components/ui/avatar";
 import { DeployStatusCard } from "../artifacts/deploy-status-card";
 import type { DeployCommandResult } from "./deploy-command";
 import { ChatMessage } from "./chat-message";
@@ -58,18 +59,8 @@ export function ChatThread({
     : "";
 
   return (
-    <section
-      style={{
-        display: "grid",
-        gap: "0.9rem"
-      }}
-    >
-      <div
-        style={{
-          color: "#475467",
-          fontSize: "0.92rem"
-        }}
-      >
+    <section className="grid content-start gap-1">
+      <div className="justify-self-center rounded-full px-3 py-0.5 text-[11px] font-medium text-muted-foreground/70">
         流状态：{formatConnectionState(connectionState)}
       </div>
       {deployments.map((entry) => (
@@ -81,14 +72,7 @@ export function ChatThread({
         />
       ))}
       {isLoading && messages.length === 0 && deployments.length === 0 && !liveAssistantMessage ? (
-        <div
-          style={{
-            border: "1px dashed rgba(15, 23, 42, 0.16)",
-            borderRadius: "20px",
-            color: "#475467",
-            padding: "1rem 1.1rem"
-          }}
-        >
+        <div className="justify-self-center rounded-full bg-black/[0.04] px-4 py-2 text-sm text-muted-foreground">
           正在加载会话消息...
         </div>
       ) : null}
@@ -97,14 +81,7 @@ export function ChatThread({
       messages.length === 0 &&
       deployments.length === 0 &&
       !liveAssistantMessage ? (
-        <div
-          style={{
-            border: "1px dashed rgba(15, 23, 42, 0.16)",
-            borderRadius: "20px",
-            color: "#475467",
-            padding: "1rem 1.1rem"
-          }}
-        >
+        <div className="justify-self-center py-10 text-center text-sm leading-7 text-muted-foreground">
           当前会话还没有消息。发送第一条消息，开始和 Agent 一起推进网页或 Workflow。
         </div>
       ) : null}
@@ -123,12 +100,10 @@ export function ChatThread({
           !showDateDivider;
 
         return (
-          <div className="grid gap-2" key={message.id}>
+          <div className="grid gap-1" key={message.id}>
             {showDateDivider ? (
-              <div className="flex items-center gap-3 text-xs font-semibold text-slate-400">
-                <span className="h-px flex-1 bg-slate-200" />
+              <div className="mt-3 justify-self-center rounded-full px-3 py-0.5 text-[11px] font-medium text-muted-foreground/80">
                 {formatDateLabel(message.createdAt)}
-                <span className="h-px flex-1 bg-slate-200" />
               </div>
             ) : null}
             <ChatMessage
@@ -150,61 +125,41 @@ export function ChatThread({
         );
       })}
       {liveAssistantMessage && !hasPersistedLiveMessage ? (
-        <article
-          style={{
-            background: "rgba(217, 239, 255, 0.92)",
-            border: "1px solid rgba(11, 110, 255, 0.12)",
-            borderRadius: "20px",
-            color: "#0b2545",
-            justifySelf: "start",
-            maxWidth: "80%",
-            padding: "0.95rem 1rem"
-          }}
-        >
-          <div
-            style={{
-              fontSize: "0.78rem",
-              fontWeight: 700,
-              marginBottom: "0.35rem",
-              textTransform: "uppercase"
-            }}
-          >
-            AI 同事
-          </div>
-          <div style={{ lineHeight: 1.7 }}>
-            {liveAssistantMessage.content.trim().length > 0 ? (
-              <MarkdownContent content={liveAssistantVisibleContent} />
-            ) : (
-              <TypingIndicator />
-            )}
-          </div>
-          <div
-            style={{
-              color: "#175cd3",
-              fontSize: "0.78rem",
-              marginTop: "0.5rem"
-            }}
-          >
-            {liveAssistantMessage.content.trim().length > 0
-              ? liveAssistantMessage.isComplete
-                ? "正在同步持久化结果"
-                : "正在通过实时流返回内容"
-              : formatLiveStatusSummary(liveStatus) ?? "AI 同事正在处理你的消息"}
-          </div>
-          {liveAssistantMessage.content.trim().length === 0 && liveStatus ? (
-            <div
-              aria-live="polite"
-              className="mt-2 grid gap-1 rounded-xl border border-sky-100 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-700"
-            >
-              {liveStatus.activeAgentName ? (
-                <span>当前同事：{liveStatus.activeAgentName}</span>
+        <article className="mt-3 flex w-full gap-2.5">
+          <span className="shrink-0">
+            <Avatar name="AI" size="sm" />
+          </span>
+          <div className="flex min-w-0 max-w-[76%] flex-col items-start">
+            <div className="mb-1 px-1 text-[13px] font-semibold text-foreground">AI 同事</div>
+            <div className="rounded-[1.15rem] bg-white px-3.5 py-2.5 text-[15px] leading-relaxed shadow-card">
+              {liveAssistantMessage.content.trim().length > 0 ? (
+                <MarkdownContent content={liveAssistantVisibleContent} />
+              ) : (
+                <TypingIndicator />
+              )}
+              {liveAssistantMessage.content.trim().length === 0 && liveStatus ? (
+                <div
+                  aria-live="polite"
+                  className="mt-2 grid gap-0.5 text-xs font-medium text-muted-foreground"
+                >
+                  {liveStatus.activeAgentName ? (
+                    <span>当前同事：{liveStatus.activeAgentName}</span>
+                  ) : null}
+                  <span>
+                    进度：{Math.min(liveStatus.successfulAgentCount, liveStatus.totalAgentCount)}
+                    /{liveStatus.totalAgentCount}
+                  </span>
+                </div>
               ) : null}
-              <span>
-                进度：{Math.min(liveStatus.successfulAgentCount, liveStatus.totalAgentCount)}
-                /{liveStatus.totalAgentCount}
-              </span>
             </div>
-          ) : null}
+            <div className="mt-1 px-1 text-[11px] text-muted-foreground/80">
+              {liveAssistantMessage.content.trim().length > 0
+                ? liveAssistantMessage.isComplete
+                  ? "正在同步持久化结果"
+                  : "正在通过实时流返回内容"
+                : formatLiveStatusSummary(liveStatus) ?? "AI 同事正在处理你的消息"}
+            </div>
+          </div>
         </article>
       ) : null}
     </section>
@@ -213,12 +168,12 @@ export function ChatThread({
 
 function TypingIndicator() {
   return (
-    <span className="inline-flex items-center gap-1 text-sm font-semibold text-slate-600">
+    <span className="inline-flex items-center gap-1 py-1">
       <span className="sr-only">AI 同事正在输入</span>
       {[0, 1, 2].map((index) => (
         <span
           aria-hidden="true"
-          className="h-2 w-2 animate-pulse rounded-full bg-slate-500"
+          className="h-2 w-2 animate-pulse rounded-full bg-slate-400"
           key={index}
           style={{
             animationDelay: `${index * 120}ms`

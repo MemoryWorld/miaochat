@@ -7,6 +7,8 @@ import {
   type RuntimeArtifactStatus
 } from "@agenthub/contracts";
 
+import { Avatar } from "../../components/ui/avatar";
+import { cn } from "../../lib/cn";
 import { ArtifactCard } from "../artifacts/artifact-card";
 import { MarkdownContent } from "./markdown-content";
 import { MessageActionsMenu } from "./message-actions-menu";
@@ -44,153 +46,164 @@ export function ChatMessage({
     ? message.content
     : sanitizeAssistantVisibleContent(message.content);
   const hasDiffArtifact = artifacts.some((artifact) => artifact.kind === "diff");
+  const displayLabel = authorLabel ?? message.role;
 
   return (
     <article
+      className={cn(
+        "group flex w-full gap-2.5",
+        isUser ? "flex-row-reverse" : "flex-row",
+        isGroupedWithPrevious ? "mt-0.5" : "mt-3"
+      )}
       data-message-id={message.id}
       data-message-role={message.role}
       id={`message-${message.id}`}
-      style={{
-        background: isUser ? "rgba(16, 24, 40, 0.92)" : "rgba(243, 244, 246, 0.95)",
-        borderRadius: "20px",
-        color: isUser ? "#fff" : "#101828",
-        justifySelf: isUser ? "end" : "start",
-        marginTop: isGroupedWithPrevious ? "-0.35rem" : 0,
-        maxWidth: "80%",
-        padding: "0.95rem 1rem"
-      }}
     >
-      {!isGroupedWithPrevious ? (
-        <div className="mb-2 flex items-center gap-2">
-          <div
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-              isUser ? "bg-white text-slate-950" : "bg-slate-950 text-white"
-            }`}
-          >
-            {(authorLabel ?? message.role).slice(0, 1)}
-          </div>
-          <div>
-            <div className="text-xs font-bold opacity-85">{authorLabel ?? message.role}</div>
-            <time className="text-[11px] opacity-65" dateTime={new Date(message.createdAt).toISOString()}>
+      {!isUser ? (
+        <span className={cn("shrink-0", isGroupedWithPrevious && "invisible")}>
+          <Avatar name={displayLabel} size="sm" />
+        </span>
+      ) : null}
+
+      <div
+        className={cn(
+          "flex min-w-0 max-w-[76%] flex-col",
+          isUser ? "items-end" : "items-start"
+        )}
+      >
+        {!isGroupedWithPrevious && !isUser ? (
+          <div className="mb-1 flex items-baseline gap-2 px-1">
+            <span className="text-[13px] font-semibold text-foreground">{displayLabel}</span>
+            <time
+              className="text-[11px] text-muted-foreground"
+              dateTime={new Date(message.createdAt).toISOString()}
+            >
               {formatMessageTime(message.createdAt)}
             </time>
           </div>
-        </div>
-      ) : null}
-      <MarkdownContent content={visibleContent} tone={isUser ? "dark" : "light"} />
-      {artifactStatuses.length > 0 ? (
+        ) : null}
+
         <div
-          aria-label={`Markdown file status for message ${message.id}`}
-          aria-live="polite"
-          data-message-artifact-statuses
-          style={{
-            display: "grid",
-            gap: "0.4rem",
-            marginTop: "0.65rem"
-          }}
+          className={cn(
+            "relative rounded-[1.15rem] px-3.5 py-2.5 text-[15px] leading-relaxed",
+            isUser
+              ? "bg-[#007aff] text-white"
+              : "bg-white text-foreground shadow-card"
+          )}
         >
-          {artifactStatuses.map((status) => (
+          <MarkdownContent content={visibleContent} tone={isUser ? "dark" : "light"} />
+
+          {artifactStatuses.length > 0 ? (
             <div
-              key={`${status.type}:${status.title}`}
-              style={{
-                background: runtimeArtifactStatusBackground(status.status),
-                border: `1px solid ${runtimeArtifactStatusBorder(status.status)}`,
-                borderRadius: "8px",
-                color: runtimeArtifactStatusTextColor(status.status),
-                fontSize: "0.78rem",
-                fontWeight: 700,
-                lineHeight: 1.6,
-                padding: "0.45rem 0.55rem"
-              }}
+              aria-label={`Markdown file status for message ${message.id}`}
+              aria-live="polite"
+              className="mt-2.5 grid gap-1.5"
+              data-message-artifact-statuses
             >
-              <div>{formatRuntimeArtifactStatus(status)}</div>
-              {status.status === "failed" && status.error ? (
-                <div style={{ fontWeight: 600, opacity: 0.82 }}>{status.error}</div>
-              ) : null}
+              {artifactStatuses.map((status) => (
+                <div
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium leading-relaxed",
+                    runtimeArtifactStatusClass(status.status)
+                  )}
+                  key={`${status.type}:${status.title}`}
+                >
+                  <div>{formatRuntimeArtifactStatus(status)}</div>
+                  {status.status === "failed" && status.error ? (
+                    <div className="opacity-80">{status.error}</div>
+                  ) : null}
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
+
+          {artifacts.length > 0 ? (
+            <div
+              aria-label={`Artifacts attached to message ${message.id}`}
+              className="mt-2.5 grid gap-2"
+              data-message-artifacts
+            >
+              {artifacts.map((artifact) => (
+                <ArtifactCard
+                  artifact={artifact}
+                  conversationId={message.conversationId}
+                  key={artifact.id}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      {artifacts.length > 0 ? (
+
         <div
-          aria-label={`Artifacts attached to message ${message.id}`}
-          data-message-artifacts
-          style={{
-            display: "grid",
-            gap: "0.55rem",
-            marginTop: "0.7rem"
-          }}
+          className={cn(
+            "mt-1 flex flex-wrap items-center gap-1 px-1 text-xs opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100",
+            isUser ? "flex-row-reverse" : "flex-row"
+          )}
         >
-          {artifacts.map((artifact) => (
-            <ArtifactCard
-              artifact={artifact}
-              conversationId={message.conversationId}
-              key={artifact.id}
-            />
-          ))}
+          {isUser && !isGroupedWithPrevious ? (
+            <time
+              className="text-[11px] text-muted-foreground"
+              dateTime={new Date(message.createdAt).toISOString()}
+            >
+              {formatMessageTime(message.createdAt)}
+            </time>
+          ) : null}
+          <button
+            className={actionClassName}
+            onClick={() => {
+              void navigator.clipboard?.writeText(visibleContent);
+            }}
+            type="button"
+          >
+            复制
+          </button>
+          <button
+            className={actionClassName}
+            onClick={() => onReply?.(message)}
+            type="button"
+          >
+            回复
+          </button>
+          <PinMessageAction
+            disabled={isPinDisabled}
+            isPending={isPinPending}
+            isPinned={message.isPinned}
+            onPin={onPin}
+            tone="light"
+          />
+          <MessageActionsMenu
+            buttonClassName={actionClassName}
+            conversationId={message.conversationId}
+            diffActionLabel="应用 Diff"
+            diffActionStatus="Diff 已应用并记录为产物版本。"
+            messageContent={visibleContent}
+            messageId={message.id}
+            onApplyDiff={hasDiffArtifact ? () => onApplyDiff?.(message) : undefined}
+            onQuote={onQuote}
+            showApplyDiff={hasDiffArtifact}
+            showCopy={false}
+            showRegenerate={message.role === "assistant"}
+            statusClassName="font-medium text-muted-foreground"
+            workspaceId={message.workspaceId}
+          />
         </div>
-      ) : null}
-      <PinMessageAction
-        disabled={isPinDisabled}
-        isPending={isPinPending}
-        isPinned={message.isPinned}
-        onPin={onPin}
-        tone={isUser ? "dark" : "light"}
-      />
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-        <button
-          className={isUser ? darkActionClassName : lightActionClassName}
-          onClick={() => {
-            void navigator.clipboard?.writeText(visibleContent);
-          }}
-          type="button"
-        >
-          复制
-        </button>
-        <button
-          className={isUser ? darkActionClassName : lightActionClassName}
-          onClick={() => onReply?.(message)}
-          type="button"
-        >
-          回复
-        </button>
-        <MessageActionsMenu
-          buttonClassName={isUser ? darkActionClassName : lightActionClassName}
-          conversationId={message.conversationId}
-          diffActionLabel="应用 Diff"
-          diffActionStatus="Diff 已应用并记录为产物版本。"
-          messageContent={visibleContent}
-          messageId={message.id}
-          onApplyDiff={hasDiffArtifact ? () => onApplyDiff?.(message) : undefined}
-          onQuote={onQuote}
-          showApplyDiff={hasDiffArtifact}
-          showCopy={false}
-          showRegenerate={message.role === "assistant"}
-          statusClassName={isUser ? "font-semibold text-white/80" : "font-semibold text-slate-500"}
-          workspaceId={message.workspaceId}
-        />
+
+        {message.threadReplyCount > 0 && onReply ? (
+          <button
+            className="mt-1 rounded-full px-2.5 py-1 text-xs font-semibold text-[#007aff] transition hover:bg-[#007aff]/10"
+            onClick={() => onReply?.(message)}
+            type="button"
+          >
+            查看 {message.threadReplyCount} 条回复
+          </button>
+        ) : null}
       </div>
-      {message.threadReplyCount > 0 && onReply ? (
-        <button
-          className={isUser ? darkThreadClassName : lightThreadClassName}
-          onClick={() => onReply?.(message)}
-          type="button"
-        >
-          查看 {message.threadReplyCount} 条回复
-        </button>
-      ) : null}
     </article>
   );
 }
 
-const darkActionClassName =
-  "rounded-full border border-white/15 bg-white/10 px-2.5 py-1 font-semibold text-white transition hover:bg-white/20";
-const lightActionClassName =
-  "rounded-full border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-600 transition hover:bg-slate-50";
-const darkThreadClassName =
-  "mt-3 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/20";
-const lightThreadClassName =
-  "mt-3 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50";
+const actionClassName =
+  "rounded-full px-2 py-1 font-medium text-muted-foreground transition-colors hover:bg-black/[0.06] hover:text-foreground";
 
 function formatRuntimeArtifactStatus(status: RuntimeArtifactStatus): string {
   switch (status.status) {
@@ -203,40 +216,14 @@ function formatRuntimeArtifactStatus(status: RuntimeArtifactStatus): string {
   }
 }
 
-function runtimeArtifactStatusBackground(
-  status: RuntimeArtifactStatus["status"]
-): string {
+function runtimeArtifactStatusClass(status: RuntimeArtifactStatus["status"]): string {
   switch (status) {
     case "created":
-      return "rgba(236, 253, 243, 0.92)";
+      return "bg-emerald-50 text-emerald-700";
     case "failed":
-      return "rgba(254, 243, 242, 0.92)";
+      return "bg-red-50 text-red-700";
     case "creating":
-      return "rgba(239, 248, 255, 0.92)";
-  }
-}
-
-function runtimeArtifactStatusBorder(status: RuntimeArtifactStatus["status"]): string {
-  switch (status) {
-    case "created":
-      return "rgba(18, 183, 106, 0.3)";
-    case "failed":
-      return "rgba(240, 68, 56, 0.32)";
-    case "creating":
-      return "rgba(46, 144, 250, 0.3)";
-  }
-}
-
-function runtimeArtifactStatusTextColor(
-  status: RuntimeArtifactStatus["status"]
-): string {
-  switch (status) {
-    case "created":
-      return "#027a48";
-    case "failed":
-      return "#b42318";
-    case "creating":
-      return "#175cd3";
+      return "bg-sky-50 text-sky-700";
   }
 }
 
