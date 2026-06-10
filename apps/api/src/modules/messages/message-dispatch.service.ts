@@ -192,8 +192,15 @@ export class MessageDispatchService implements OnModuleDestroy {
       };
     }
 
+    const resolvedConversation = await this.resolveConversation(
+      parsed.conversationId,
+      parsed.workspaceId,
+      sendAccess.ownerUserId
+    );
+    // 网页制作协作（内置团队）只在单聊里通过消息意图启动；
+    // 群聊/频道的产物由频道内成员经 orchestrator 协作完成，不做劫持。
     const codingWorkflowIntent =
-      parsed.mentionedAgentIds.length === 0
+      parsed.mentionedAgentIds.length === 0 && resolvedConversation.mode === "direct"
         ? parseCodingWebpageCreationIntent(parsed.content)
         : null;
 
@@ -223,12 +230,6 @@ export class MessageDispatchService implements OnModuleDestroy {
         launchedCodingWorkflow
       };
     }
-
-    const resolvedConversation = await this.resolveConversation(
-      parsed.conversationId,
-      parsed.workspaceId,
-      sendAccess.ownerUserId
-    );
 
     if (resolvedConversation.agents.length === 0) {
       return userMessage;

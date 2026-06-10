@@ -571,8 +571,135 @@ describe("MessageDispatchService", () => {
       })
     );
     expect(visualWorkflowsService.createFromMessage).not.toHaveBeenCalled();
-    expect(conversationsRepository.listConversationAgentsWithProviders).not.toHaveBeenCalled();
+    // 现在会先解析会话 mode（仅单聊允许劫持为编码工作流），所以会查询一次会话成员
+    expect(conversationsRepository.listConversationAgentsWithProviders).toHaveBeenCalledWith(
+      "conv_direct",
+      "workspace_1",
+      "user_owner"
+    );
     expect(executeWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("keeps webpage creation requests inside group conversations for member collaboration", async () => {
+    const executeWorkflow = vi.fn();
+    const codingWorkflowsService = {
+      create: vi.fn()
+    };
+    const messagesService = {
+      create: vi.fn(async () => ({
+        authorUserId: "user_owner",
+        content: "请制作一个介绍乐器的网站，单文件 HTML。",
+        conversationId: "conv_group",
+        createdAt: new Date("2026-06-10T00:00:00.000Z"),
+        id: "msg_user_group_webpage",
+        isPinned: false,
+        mentionedAgentIds: [],
+        mentionedUserIds: [],
+        ownerUserId: "user_owner",
+        reactions: [],
+        role: "user",
+        sourceAgentId: null,
+        threadLastReplyAt: null,
+        threadParentMessageId: null,
+        threadReplyCount: 0,
+        workspaceId: "workspace_1"
+      })),
+      createAssistantMessage: vi.fn(async (input: unknown) => input),
+      resolveSendAccess: vi.fn(async () => ({
+        ownerUserId: "user_owner",
+        permission: "comment"
+      }))
+    };
+    const conversationsRepository = {
+      listConversationAgentsWithProviders: vi.fn(async () => [
+        {
+          agent_id: "agent_planner",
+          agent_name: "方案规划同事",
+          capability_tags: [],
+          mode: "group",
+          output_style: null,
+          provider: "deepseek",
+          scope_description: null,
+          system_prompt: null
+        },
+        {
+          agent_id: "agent_executor",
+          agent_name: "执行落地同事",
+          capability_tags: [],
+          mode: "group",
+          output_style: null,
+          provider: "deepseek",
+          scope_description: null,
+          system_prompt: null
+        }
+      ])
+    };
+    const service = new MessageDispatchService(
+      conversationsRepository as never,
+      messagesService as never,
+      { incrementCounter: vi.fn() } as never,
+      {
+        recordAgentRunsStarted: vi.fn(async () => undefined),
+        recordDirectExecution: vi.fn(async () => undefined),
+        recordGroupExecution: vi.fn(async () => undefined)
+      } as never,
+      { loadConversationContext: vi.fn(async () => undefined) } as never,
+      { consume: vi.fn(async () => ({ allowed: true })) } as never,
+      { publish: vi.fn() } as never,
+      { error: vi.fn(), warn: vi.fn() } as never,
+      {
+        startSpan: vi.fn(() => ({
+          end: vi.fn(),
+          fail: vi.fn()
+        }))
+      } as never,
+      undefined,
+      codingWorkflowsService as never,
+      { assert: vi.fn(async () => undefined) } as never,
+      { createFromMessage: vi.fn() } as never
+    );
+
+    Object.assign(
+      service as unknown as {
+        getTemporalClient: () => Promise<{
+          workflow: {
+            execute: typeof executeWorkflow;
+          };
+        }>;
+      },
+      {
+        getTemporalClient: async () => ({
+          workflow: {
+            execute: executeWorkflow
+          }
+        })
+      }
+    );
+
+    await service.send(
+      {
+        content: "请制作一个介绍乐器的网站，单文件 HTML。",
+        conversationId: "conv_group",
+        role: "user",
+        workspaceId: "workspace_1"
+      },
+      "user_owner"
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // 群聊不再劫持为内置编码团队：产物由频道内成员经 orchestrator 协作完成
+    expect(codingWorkflowsService.create).not.toHaveBeenCalled();
+    expect(executeWorkflow).toHaveBeenCalledWith(
+      "groupOrchestratorWorkflow",
+      expect.objectContaining({
+        args: [
+          expect.objectContaining({
+            conversationId: "conv_group",
+            lockInitialTargets: false
+          })
+        ]
+      })
+    );
   });
 
   it.each([

@@ -196,6 +196,7 @@ export function TeammateCreateWizard() {
     useState<CreateCustomAgentInput["approvalMode"]>(defaultTemplate.approvalMode);
   const [avatarUrl, setAvatarUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [memoryMode, setMemoryMode] =
     useState<CreateCustomAgentInput["memoryMode"]>(defaultTemplate.memoryMode);
   const [name, setName] = useState(defaultTemplate.name);
@@ -313,6 +314,7 @@ export function TeammateCreateWizard() {
     }
 
     setErrorMessage(null);
+    setSuccessMessage(null);
     setIsSaving(true);
 
     try {
@@ -376,7 +378,13 @@ export function TeammateCreateWizard() {
         return;
       }
 
+      // 刷新工作区 Agent 列表，避免"创建成功但列表里看不到"的缓存问题
+      void customAgents.refresh();
+
       startTransition(() => {
+        setSuccessMessage(
+          `AI 同事「${teammate.name}」已创建，回到聊天里新建会话或 @ 它即可使用。`
+        );
         setAvatarUrl("");
         setScopeDescription("");
         setSelectedStepIndex(0);
@@ -428,6 +436,11 @@ export function TeammateCreateWizard() {
             返回 AI 同事目录
           </Link>
           {errorMessage ? <p className="m-0 text-sm font-medium text-red-700">{errorMessage}</p> : null}
+          {successMessage ? (
+            <p className="m-0 text-sm font-medium text-emerald-700" role="status">
+              {successMessage}
+            </p>
+          ) : null}
         </div>
       }
       workspaceSlot={
