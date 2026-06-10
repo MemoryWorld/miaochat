@@ -2,12 +2,20 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 
+export type SelectionEditRequest = {
+  instruction: string;
+  selection: string;
+  selectionEndLine: number;
+  selectionStartLine: number;
+};
+
 type CodeEditorOverlayProps = {
   artifactId: string;
   error?: string | null;
   initialContent: string;
   language?: string;
   onCancel: () => void;
+  onDispatchSelectionEdit?: (input: SelectionEditRequest) => void | Promise<void>;
   onSave: (content: string) => void | Promise<void>;
   title?: string;
 };
@@ -23,16 +31,39 @@ export function CodeEditorOverlay({
   initialContent,
   language,
   onCancel,
+  onDispatchSelectionEdit,
   onSave,
   title
 }: CodeEditorOverlayProps) {
   const [content, setContent] = useState(initialContent);
   const [busy, setBusy] = useState(false);
+  const [selectionRange, setSelectionRange] = useState<{ end: number; start: number } | null>(null);
+  const [instruction, setInstruction] = useState("");
+  const [selectionBusy, setSelectionBusy] = useState(false);
 
   const metrics = useMemo(() => {
     const lineCount = content.length === 0 ? 1 : content.split("\n").length;
     return `${lineCount} lines / ${content.length} chars`;
   }, [content]);
+
+  const selectionInfo = useMemo(() => {
+    if (!selectionRange) {
+      return null;
+    }
+
+    const start = Math.min(selectionRange.start, content.length);
+    const end = Math.min(selectionRange.end, content.length);
+
+    if (start >= end) {
+      return null;
+    }
+
+    return {
+      selection: content.slice(start, end),
+      selectionEndLine: content.slice(0, end).replace(/\n$/, "").split("\n").length,
+      selectionStartLine: content.slice(0, start).split("\n").length
+    };
+  }, [content, selectionRange]);
 
   async function handleSave(): Promise<void> {
     setBusy(true);
@@ -40,6 +71,22 @@ export function CodeEditorOverlay({
       await onSave(content);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleDispatchSelectionEdit(): Promise<void> {
+    if (!onDispatchSelectionEdit || !selectionInfo || !instruction.trim()) {
+      return;
+    }
+
+    setSelectionBusy(true);
+    try {
+      await onDispatchSelectionEdit({
+        instruction: instruction.trim(),
+        ...selectionInfo
+      });
+    } finally {
+      setSelectionBusy(false);
     }
   }
 
@@ -62,10 +109,53 @@ export function CodeEditorOverlay({
       <textarea
         aria-label="Code editor content"
         onChange={(event) => setContent(event.target.value)}
+        onSelect={(event) => {
+          const target = event.currentTarget;
+          setSelectionRange(
+            target.selectionStart === target.selectionEnd
+              ? null
+              : { end: target.selectionEnd, start: target.selectionStart }
+          );
+        }}
         spellCheck={false}
         style={textareaStyle}
         value={content}
       />
+
+      {onDispatchSelectionEdit && !selectionInfo ? (
+        <p style={selectionHintStyle}>
+          在上方代码中选中片段，可直接描述修改交给 AI 同事处理。
+        </p>
+      ) : null}
+
+      {onDispatchSelectionEdit && selectionInfo ? (
+        <section aria-label="选区修改" data-selection-edit style={selectionPanelStyle}>
+          <span style={selectionMetaStyle}>
+            已选中第 {selectionInfo.selectionStartLine}–{selectionInfo.selectionEndLine} 行（{selectionInfo.selection.length} 字符）
+          </span>
+          <textarea
+            aria-label="描述要对选中片段做的修改"
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder="例如：把这一段的配色换成深色主题"
+            style={instructionInputStyle}
+            value={instruction}
+          />
+          <div style={selectionActionsStyle}>
+            <button
+              disabled={selectionBusy || instruction.trim().length === 0}
+              onClick={() => void handleDispatchSelectionEdit()}
+              style={
+                selectionBusy || instruction.trim().length === 0
+                  ? disabledButtonStyle
+                  : primaryButtonStyle
+              }
+              type="button"
+            >
+              {selectionBusy ? "发送中..." : "发送修改请求"}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {error ? <p role="alert" style={errorStyle}>{error}</p> : null}
 
@@ -195,4 +285,45 @@ const errorStyle: CSSProperties = {
   fontWeight: 700,
   margin: 0,
   padding: "0.55rem 0.65rem"
+};
+
+const selectionHintStyle: CSSProperties = {
+  color: "#667085",
+  fontSize: "0.78rem",
+  margin: 0
+};
+
+const selectionPanelStyle: CSSProperties = {
+  background: "rgba(240, 247, 255, 0.85)",
+  border: "1px solid rgba(0, 122, 255, 0.25)",
+  borderRadius: "8px",
+  display: "grid",
+  gap: "0.5rem",
+  padding: "0.6rem 0.7rem"
+};
+
+const selectionMetaStyle: CSSProperties = {
+  color: "#175cd3",
+  fontSize: "0.78rem",
+  fontWeight: 800
+};
+
+const instructionInputStyle: CSSProperties = {
+  background: "#fff",
+  border: "1px solid rgba(15, 23, 42, 0.14)",
+  borderRadius: "8px",
+  boxSizing: "border-box",
+  fontFamily: "inherit",
+  fontSize: "0.84rem",
+  lineHeight: 1.5,
+  minHeight: "60px",
+  outline: "none",
+  padding: "0.5rem 0.6rem",
+  resize: "vertical",
+  width: "100%"
+};
+
+const selectionActionsStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end"
 };
