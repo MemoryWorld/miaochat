@@ -41,15 +41,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
       - name: Check staging environment
         id: staging-env
         shell: bash
@@ -94,6 +85,17 @@ jobs:
           fi
 
           echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        if: steps.staging-env.outputs.ready == 'true'
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        if: steps.staging-env.outputs.ready == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
         if: steps.staging-env.outputs.ready == 'true'
