@@ -50,14 +50,63 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Check staging environment
+        id: staging-env
+        shell: bash
+        run: |
+          required=(
+            AGENTHUB_API_BASE_URL
+            AGENTHUB_WEB_BASE_URL
+            HERMES_E2E_ACCOUNT_ID
+            HERMES_E2E_SECRET
+            OPENCLAW_E2E_ACCOUNT_ID
+            OPENCLAW_E2E_SECRET
+            CODEX_E2E_ACCOUNT_ID
+            CODEX_E2E_SECRET
+            CLAUDE_CODE_E2E_ACCOUNT_ID
+            CLAUDE_CODE_E2E_SECRET
+            AGENTHUB_LOAD_CONVERSATION_IDS
+            AGENTHUB_LOAD_GROUP_CONVERSATION_IDS
+            AGENTHUB_LOAD_STREAM_CONVERSATION_IDS
+            HERMES_BASE_URL
+            HERMES_REAL_ACCOUNT_ID
+            HERMES_REAL_SECRET
+            OPENCLAW_BASE_URL
+            OPENCLAW_REAL_ACCOUNT_ID
+            OPENCLAW_REAL_SECRET
+            CODEX_REAL_SECRET
+            CLAUDE_CODE_REAL_SECRET
+          )
+
+          missing=()
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Staging acceptance skipped::Missing staging environment variables: ${missing[*]}"
+            printf 'Missing staging environment variables:\n'
+            printf -- '- %s\n' "${missing[@]}"
+            exit 0
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
+        if: steps.staging-env.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browser
+        if: steps.staging-env.outputs.ready == 'true'
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Install k6
+        if: steps.staging-env.outputs.ready == 'true'
         uses: grafana/setup-k6-action@v1
 
       - name: Run staging provider acceptance and load tests
+        if: steps.staging-env.outputs.ready == 'true'
         run: pnpm test:e2e:staging
